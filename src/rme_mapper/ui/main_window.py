@@ -30,6 +30,7 @@ from rme_mapper.maps.map_canvas import MapCanvas
 from rme_mapper.maps.map_config import get_default_geopackage_path
 from rme_mapper.models.map_layer import LayerRole, MapLayer
 from rme_mapper.models.map_point import MapPoint
+from rme_mapper.services.geodesic_service import GeodesicService
 from rme_mapper.services.geopackage_service import GeoPackageService
 from rme_mapper.services.layer_service import LayerService
 from rme_mapper.services.point_service import PointService
@@ -202,9 +203,9 @@ class MainWindow(QMainWindow):
         layout.addLayout(btn_row_layout)
 
         # Таблица пользовательских точек
-        self.points_table = QTableWidget(0, 5, self)
+        self.points_table = QTableWidget(0, 6, self)
         self.points_table.setObjectName("pointsTable")
-        self.points_table.setHorizontalHeaderLabels(["№", "Название", "Широта", "Долгота", "Форма"])
+        self.points_table.setHorizontalHeaderLabels(["№", "Название", "Широта", "Долгота", "Форма", "Радиус"])
         self.points_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.points_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.points_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -216,6 +217,7 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
 
         # Сигналы таблицы
         self.points_table.cellDoubleClicked.connect(self._on_table_row_double_clicked)
@@ -312,6 +314,25 @@ class MainWindow(QMainWindow):
         color_row.addWidget(self.prop_color_swatch)
         color_row.addStretch()
         prop_form.addRow("<b>Цвет (RGB):</b>", color_row)
+
+        self.prop_zone_val = QLabel("—")
+        prop_form.addRow("<b>Зона:</b>", self.prop_zone_val)
+
+        self.prop_zone_radius_val = QLabel("—")
+        prop_form.addRow("<b>Радиус зоны:</b>", self.prop_zone_radius_val)
+
+        zone_color_row = QHBoxLayout()
+        self.prop_zone_color_val = QLabel("—")
+        self.prop_zone_color_swatch = QFrame()
+        self.prop_zone_color_swatch.setFixedSize(20, 20)
+        self.prop_zone_color_swatch.setStyleSheet("border: 1px solid #999; border-radius: 3px;")
+        zone_color_row.addWidget(self.prop_zone_color_val)
+        zone_color_row.addWidget(self.prop_zone_color_swatch)
+        zone_color_row.addStretch()
+        prop_form.addRow("<b>Цвет зоны:</b>", zone_color_row)
+
+        self.prop_zone_opacity_val = QLabel("—")
+        prop_form.addRow("<b>Прозрачность зоны:</b>", self.prop_zone_opacity_val)
 
         self.prop_container.setVisible(False)
         placeholder_layout.addWidget(self.prop_container)
@@ -440,6 +461,12 @@ class MainWindow(QMainWindow):
                     red=data.red,
                     green=data.green,
                     blue=data.blue,
+                    zone_enabled=data.zone_enabled,
+                    radius_m=data.radius_m,
+                    zone_red=data.zone_red,
+                    zone_green=data.zone_green,
+                    zone_blue=data.zone_blue,
+                    zone_opacity=data.zone_opacity,
                 )
                 self.map_canvas.add_user_point(point)
                 self._add_point_to_table(point)
@@ -479,6 +506,12 @@ class MainWindow(QMainWindow):
                     red=data.red,
                     green=data.green,
                     blue=data.blue,
+                    zone_enabled=data.zone_enabled,
+                    radius_m=data.radius_m,
+                    zone_red=data.zone_red,
+                    zone_green=data.zone_green,
+                    zone_blue=data.zone_blue,
+                    zone_opacity=data.zone_opacity,
                 )
                 self.map_canvas.update_user_point(updated)
                 self._update_point_in_table(row, updated)
@@ -498,12 +531,15 @@ class MainWindow(QMainWindow):
         lon_item = QTableWidgetItem(f"{point.longitude:.6f}")
         shape_name = SYMBOL_DISPLAY_NAMES.get(point.symbol, point.symbol)
         shape_item = QTableWidgetItem(shape_name)
+        radius_str = GeodesicService.format_radius(point.radius_m, point.zone_enabled)
+        radius_item = QTableWidgetItem(radius_str)
 
         self.points_table.setItem(row, 0, num_item)
         self.points_table.setItem(row, 1, name_item)
         self.points_table.setItem(row, 2, lat_item)
         self.points_table.setItem(row, 3, lon_item)
         self.points_table.setItem(row, 4, shape_item)
+        self.points_table.setItem(row, 5, radius_item)
 
         self._table_point_ids.append(point.id)
 
@@ -514,6 +550,8 @@ class MainWindow(QMainWindow):
         self.points_table.item(row, 3).setText(f"{point.longitude:.6f}")
         shape_name = SYMBOL_DISPLAY_NAMES.get(point.symbol, point.symbol)
         self.points_table.item(row, 4).setText(shape_name)
+        radius_str = GeodesicService.format_radius(point.radius_m, point.zone_enabled)
+        self.points_table.item(row, 5).setText(radius_str)
 
     def delete_selected_point(self) -> None:
         """Удаление выбранной в таблице точки."""
@@ -582,6 +620,21 @@ class MainWindow(QMainWindow):
             f"background-color: rgb({point.red}, {point.green}, {point.blue}); "
             f"border: 1px solid #777; border-radius: 3px;"
         )
+
+        self.prop_zone_val.setText("Да" if point.zone_enabled else "Нет")
+        if point.zone_enabled:
+            self.prop_zone_radius_val.setText(GeodesicService.format_radius(point.radius_m, True))
+            self.prop_zone_color_val.setText(f"RGB({point.zone_red}, {point.zone_green}, {point.zone_blue})")
+            self.prop_zone_color_swatch.setStyleSheet(
+                f"background-color: rgb({point.zone_red}, {point.zone_green}, {point.zone_blue}); "
+                f"border: 1px solid #777; border-radius: 3px;"
+            )
+            self.prop_zone_opacity_val.setText(f"{point.zone_opacity}%")
+        else:
+            self.prop_zone_radius_val.setText("—")
+            self.prop_zone_color_val.setText("—")
+            self.prop_zone_color_swatch.setStyleSheet("background-color: transparent; border: 1px solid #ccc; border-radius: 3px;")
+            self.prop_zone_opacity_val.setText("—")
 
     def _clear_properties_panel(self) -> None:
         """Очистка панели свойств при отсутствии выбора."""

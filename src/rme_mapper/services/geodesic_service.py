@@ -1,0 +1,145 @@
+"""Сервис геодезических вычислений на эллипсоиде WGS84 через pyproj.Geod."""
+
+import logging
+from typing import Any
+
+import pyproj
+from shapely.geometry import Polygon
+
+logger = logging.getLogger("rme_mapper.services.geodesic")
+
+
+class GeodesicService:
+    """Сервис точных геодезических расчетов и построения окружностей на эллипсоиде WGS84."""
+
+    _geod: pyproj.Geod | None = None
+
+    @classmethod
+    def get_geod(cls) -> pyproj.Geod:
+        """Получение синглтон-экземпляра pyproj.Geod с эллипсоидом WGS84."""
+        if cls._geod is None:
+            cls._geod = pyproj.Geod(ellps="WGS84")
+        return cls._geod
+
+    @classmethod
+    def create_geodesic_circle(
+        cls,
+        longitude: float | None = None,
+        latitude: float | None = None,
+        radius_m: float = 0.0,
+        segments: int = 128,
+        *,
+        lon: float | None = None,
+        lat: float | None = None,
+        num_points: int | None = None,
+    ) -> Polygon:
+        """Построение замкнутого геодезического полигона окружности заданного радиуса (в метрах).
+
+        Использует прямую геодезическую задачу (Geod.fwd) на эллипсоиде WGS84.
+        Координаты возвращаются в системе OGC:CRS84 (lon, lat).
+
+        Параметры:
+            longitude: Долгота центральной точки (или lon).
+            latitude: Широта центральной точки (или lat).
+            radius_m: Радиус окружности в метрах (должен быть > 0).
+            segments: Количество сегментов аппроксимации (или num_points, минимум 16, по умолчанию 128).
+
+        Возвращает:
+            shapely.geometry.Polygon: Замкнутый полигон окружности.
+        """
+        if longitude is None and lon is not None:
+            longitude = lon
+        if latitude is None and lat is not None:
+            latitude = lat
+        if num_points is not None:
+            segments = num_points
+
+        if longitude is None or latitude is None:
+            raise ValueError("Необходимо указать долготу и широту центральной точки.")
+
+        if radius_m <= 0:
+            raise ValueError(f"Радиус должен быть положительным числом (> 0). Получено: {radius_m}")
+
+        if segments < 16:
+            raise ValueError(f"Количество сегментов должно быть не менее 16. Получено: {segments}")
+
+        geod = cls.get_geod()
+        coords: list[tuple[float, float]] = []
+
+        step = 360.0 / segments
+        for i in range(segments):
+            azimuth = i * step
+            lon_i, lat_i, _ = geod.fwd(longitude, latitude, azimuth, radius_m)
+            coords.append((lon_i, lat_i))
+
+        # Замыкаем полигон первой точкой
+        coords.append(coords[0])
+
+        polygon = Polygon(coords)
+        return polygon
+
+    @classmethod
+    def calculate_distance(
+        cls,
+        lon1: float,
+        lat1: float,
+        lon2: float,
+        lat2: float,
+    ) -> float:
+        """Вычисление расстояния между двумя точками на эллипсоиде WGS84 в метрах (Geod.inv)."""
+        geod = cls.get_geod()
+        _, _, distance = geod.inv(lon1, lat1, lon2, lat2)
+        return float(distance)
+
+    @classmethod
+    def parse_radius(cls, value: Any, unit: str = "км") -> float:
+        """Парсинг строки/числа радиуса с переводом в метры.
+
+        Поддерживает:
+            10, 10.5, '10,5'
+            Единицы: 'м', 'm', 'км', 'km'.
+        """
+        if value is None:
+            raise ValueError("Радиус не может быть пустым.")
+
+        if isinstance(value, str):
+            cleaned = value.strip().replace(",", ".")
+            if not cleaned:
+                raise ValueError("Радиус не может быть пустым.")
+            try:
+                num = float(cleaned)
+            except ValueError:
+                raise ValueError(f"Некорректное числовое значение радиуса: '{value}'")
+        elif isinstance(value, (int, float)):
+            num = float(value)
+        else:
+            raise ValueError(f"Некорректный тип значения радиуса: {type(value).__name__}")
+
+        if num <= 0:
+            raise ValueError(f"Радиус должен быть больше 0. Получено: {num}")
+
+        unit_clean = unit.strip().lower()
+        if unit_clean in {"км", "km"}:
+            radius_m = num * 1000.0
+        elif unit_clean in {"м", "m"}:
+            radius_m = num
+        else:
+            raise ValueError(f"Неизвестная единица измерения: '{unit}'. Допустимы: 'м', 'км'.")
+
+        return radius_m
+
+    @classmethod
+    def format_radius(cls, radius_m: float, zone_enabled: bool = True) -> str:
+        """Форматирование радиуса для отображения в интерфейсе (таблица, свойства)."""
+        if not zone_enabled or radius_m <= 0:
+            return "—"
+
+        if radius_m >= 1000.0:
+            km = radius_m / 1000.0
+            if km.is_integer():
+                return f"{int(km)} км"
+            return f"{km:.2f}".rstrip("0").rstrip(".") + " км"
+        else:
+            if radius_m.is_integer():
+                return f"{int(radius_m)} м"
+            return f"{radius_m:.1f}".rstrip("0").rstrip(".") + " м"

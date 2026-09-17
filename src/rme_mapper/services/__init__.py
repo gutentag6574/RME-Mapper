@@ -9,12 +9,14 @@
 """
 
 from rme_mapper.services.coordinate_service import CoordinateService
+from rme_mapper.services.geodesic_service import GeodesicService
 from rme_mapper.services.geopackage_service import GeoPackageService
 from rme_mapper.services.layer_service import LayerService
 from rme_mapper.services.point_service import PointService
 
 __all__ = [
     "CoordinateService",
+    "GeodesicService",
     "GeoPackageService",
     "LayerService",
     "PointService",

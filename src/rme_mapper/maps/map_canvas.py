@@ -36,6 +36,7 @@ from shapely.geometry import (
 
 from rme_mapper.models.map_layer import LayerRole, MapLayer
 from rme_mapper.models.map_point import MapPoint
+from rme_mapper.services.geodesic_service import GeodesicService
 
 logger = logging.getLogger("rme_mapper.maps.canvas")
 
@@ -64,6 +65,8 @@ class MapCanvas(QGraphicsView):
         self._layer_items: dict[str, QGraphicsItem] = {}
         # Словарь графических элементов пользовательских точек: point_id -> QGraphicsItem
         self._user_point_items: dict[str, QGraphicsItem] = {}
+        # Словарь графических элементов зон радиуса: point_id -> QGraphicsItem
+        self._user_zone_items: dict[str, QGraphicsItem] = {}
 
         self._setup_view_properties()
         self._create_controls()
@@ -258,9 +261,11 @@ class MapCanvas(QGraphicsView):
             point.name, point.longitude, -point.latitude,
             point.symbol, point.size, point.red, point.green, point.blue,
         )
+        # Синхронно добавляем/обновляем зону радиуса
+        self.update_point_zone(point)
 
     def update_user_point(self, point: MapPoint) -> None:
-        """Мгновенное обновление маркера существующей точки без пересоздания карты."""
+        """Мгновенное обновление маркера и зоны существующей точки без пересоздания карты."""
         item = self._user_point_items.get(point.id)
         if item is not None and isinstance(item, QGraphicsPathItem):
             path = self._create_marker_path(point.symbol, point.size)
@@ -278,23 +283,104 @@ class MapCanvas(QGraphicsView):
         else:
             self.add_user_point(point)
 
+        # Синхронно обновляем зону радиуса
+        self.update_point_zone(point)
+
+    # -------------------------------------------------------------------------
+    # Географические зоны радиуса (Этап 7)
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _create_zone_path(longitude: float, latitude: float, radius_m: float) -> QPainterPath:
+        """Создание QPainterPath для геодезической зоны радиуса."""
+        polygon = GeodesicService.create_geodesic_circle(longitude, latitude, radius_m)
+        coords = list(polygon.exterior.coords)
+        path = QPainterPath()
+        if coords:
+            # Преобразование координат сцены: x = lon, y = -lat
+            path.moveTo(coords[0][0], -coords[0][1])
+            for lon, lat in coords[1:]:
+                path.lineTo(lon, -lat)
+            path.closeSubpath()
+        return path
+
+    def update_point_zone(self, point: MapPoint) -> None:
+        """Отображение или обновление геодезической зоны радиуса вокруг точки.
+
+        Зона располагается на Z=90.0 (между дорогами и маркером) и масштабируется
+        вместе с картой (ItemIgnoresTransformations = False).
+        """
+        if not point.zone_enabled or point.radius_m <= 0 or not point.visible:
+            self.remove_point_zone(point.id)
+            return
+
+        path = self._create_zone_path(point.longitude, point.latitude, point.radius_m)
+
+        alpha = int(point.zone_opacity * 255 / 100.0)
+        brush_color = QColor(point.zone_red, point.zone_green, point.zone_blue, alpha)
+        brush = QBrush(brush_color)
+
+        pen_color = QColor(point.zone_red, point.zone_green, point.zone_blue, max(180, alpha))
+        pen = QPen(pen_color, 1.5)
+        pen.setCosmetic(True)
+
+        item = self._user_zone_items.get(point.id)
+        if item is not None and isinstance(item, QGraphicsPathItem):
+            item.setPath(path)
+            item.setBrush(brush)
+            item.setPen(pen)
+            item.setVisible(point.visible)
+        else:
+            self.remove_point_zone(point.id)
+            item = QGraphicsPathItem(path)
+            item.setBrush(brush)
+            item.setPen(pen)
+            item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, False)
+            item.setZValue(90.0)
+            item.setVisible(point.visible)
+            self._scene.addItem(item)
+            self._user_zone_items[point.id] = item
+
+        logger.info(
+            "Зона точки '%s' обновлена: radius=%s м, opacity=%s%%",
+            point.name, point.radius_m, point.zone_opacity,
+        )
+
+    def remove_point_zone(self, point_id: str) -> None:
+        """Удаление графического элемента зоны с холста."""
+        if point_id in self._user_zone_items:
+            item = self._user_zone_items.pop(point_id)
+            self._scene.removeItem(item)
+            logger.info("Зона точки '%s' удалена с карты", point_id)
+
+    def has_point_zone(self, point_id: str) -> bool:
+        """Проверка наличия графического элемента зоны на холсте."""
+        return point_id in self._user_zone_items
+
     def remove_user_point(self, point_id: str) -> None:
-        """Удаление пользовательской точки с карты."""
+        """Удаление пользовательской точки и ее зоны с карты."""
         if point_id in self._user_point_items:
             item = self._user_point_items.pop(point_id)
             self._scene.removeItem(item)
             logger.info("Пользовательская точка '%s' удалена с карты", point_id)
 
+        self.remove_point_zone(point_id)
+
     def clear_user_points(self) -> None:
-        """Удаление всех пользовательских точек с карты."""
+        """Удаление всех пользовательских точек и зон с карты."""
+        for item in self._user_zone_items.values():
+            self._scene.removeItem(item)
+        self._user_zone_items.clear()
+
         for item in self._user_point_items.values():
             self._scene.removeItem(item)
         self._user_point_items.clear()
-        logger.info("Все пользовательские точки очищены с карты")
+        logger.info("Все пользовательские точки и зоны очищены с карты")
 
     def has_user_point(self, point_id: str) -> bool:
         """Проверка наличия маркера точки на холсте."""
         return point_id in self._user_point_items
+
 
     def center_on_coordinates(
         self,

@@ -47,5 +47,5 @@ htmlcov/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
-$RECYCLE.BIN/
-.DS_Store
+# Temporary scratch files
+scratch/

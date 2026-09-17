@@ -28,6 +28,12 @@ class PointService:
         red: int = 220,
         green: int = 30,
         blue: int = 30,
+        zone_enabled: bool = False,
+        radius_m: float = 0.0,
+        zone_red: int = 220,
+        zone_green: int = 30,
+        zone_blue: int = 30,
+        zone_opacity: int = 30,
     ) -> MapPoint:
         """Создание и добавление новой пользовательской точки.
 
@@ -49,6 +55,12 @@ class PointService:
             "red": red,
             "green": green,
             "blue": blue,
+            "zone_enabled": zone_enabled,
+            "radius_m": radius_m,
+            "zone_red": zone_red,
+            "zone_green": zone_green,
+            "zone_blue": zone_blue,
+            "zone_opacity": zone_opacity,
         }
         if point_id:
             kwargs["id"] = point_id
@@ -57,9 +69,9 @@ class PointService:
         self._points[point.id] = point
 
         logger.info(
-            "Добавлена точка: id=%s, name='%s', lat=%s, lon=%s, symbol=%s, size=%s, rgb=(%s,%s,%s)",
+            "Добавлена точка: id=%s, name='%s', lat=%s, lon=%s, zone_enabled=%s, radius_m=%s",
             point.id, point.name, point.latitude, point.longitude,
-            point.symbol, point.size, point.red, point.green, point.blue,
+            point.zone_enabled, point.radius_m,
         )
         return point
 
@@ -75,6 +87,12 @@ class PointService:
         green: int | None = None,
         blue: int | None = None,
         visible: bool | None = None,
+        zone_enabled: bool | None = None,
+        radius_m: float | None = None,
+        zone_red: int | None = None,
+        zone_green: int | None = None,
+        zone_blue: int | None = None,
+        zone_opacity: int | None = None,
     ) -> MapPoint:
         """Обновление существующей пользовательской точки по ее ID.
 
@@ -102,13 +120,26 @@ class PointService:
             point.blue = blue
         if visible is not None:
             point.visible = visible
+        if zone_enabled is not None:
+            point.zone_enabled = zone_enabled
+        if radius_m is not None:
+            point.radius_m = radius_m
+        if zone_red is not None:
+            point.zone_red = zone_red
+        if zone_green is not None:
+            point.zone_green = zone_green
+        if zone_blue is not None:
+            point.zone_blue = zone_blue
+        if zone_opacity is not None:
+            point.zone_opacity = zone_opacity
 
         logger.info(
-            "Обновлена точка: id=%s, name='%s', lat=%s, lon=%s, symbol=%s, size=%s, rgb=(%s,%s,%s)",
+            "Обновлена точка: id=%s, name='%s', lat=%s, lon=%s, zone_enabled=%s, radius_m=%s",
             point.id, point.name, point.latitude, point.longitude,
-            point.symbol, point.size, point.red, point.green, point.blue,
+            point.zone_enabled, point.radius_m,
         )
         return point
+
 
     def update_point_object(self, point: MapPoint) -> MapPoint:
         """Обновление точки передачей готового экземпляра MapPoint (сохраняя point.id)."""

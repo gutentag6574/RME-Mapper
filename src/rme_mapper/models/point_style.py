@@ -126,3 +126,97 @@ class StyleValidator:
             green=g,
             blue=b,
         )
+
+    @classmethod
+    def validate_radius(cls, radius: Any, enabled: bool = True, zone_enabled: bool | None = None) -> float:
+        """Валидация значения радиуса зоны в метрах (от 1 до 1 000 000 м)."""
+        if zone_enabled is not None:
+            enabled = zone_enabled
+
+        if not enabled:
+            if radius is None or radius == "" or radius == 0 or radius == 0.0:
+                return 0.0
+
+        if radius is None:
+            raise ValueError("Радиус зоны не может быть пустым.")
+
+        if isinstance(radius, str):
+            cleaned = radius.strip().replace(",", ".")
+            if not cleaned:
+                if not enabled:
+                    return 0.0
+                raise ValueError("Радиус зоны не может быть пустым.")
+            try:
+                val = float(cleaned)
+            except ValueError:
+                raise ValueError(f"Некорректный формат радиуса: '{radius}'. Ожидается число.")
+        elif isinstance(radius, (int, float)):
+            val = float(radius)
+        else:
+            raise ValueError(f"Некорректный тип радиуса: {type(radius).__name__}")
+
+        if not enabled and val == 0.0:
+            return 0.0
+
+        if val <= 0:
+            raise ValueError(f"Радиус зоны должен быть больше 0. Получено: {val}")
+
+        if val < 1.0 or val > 1_000_000.0:
+            raise ValueError(
+                f"Радиус зоны должен находиться в диапазоне от 1 м до 1 000 000 м (1000 км). "
+                f"Получено: {val}"
+            )
+
+        return val
+
+    @classmethod
+    def validate_opacity(cls, opacity: Any) -> int:
+        """Валидация непрозрачности зоны (в процентах от 0 до 100)."""
+        if opacity is None:
+            raise ValueError("Прозрачность зоны не может быть пустой.")
+
+        if isinstance(opacity, str):
+            cleaned = opacity.strip().replace(",", ".")
+            if not cleaned:
+                raise ValueError("Прозрачность зоны не может быть пустой.")
+            try:
+                num = float(cleaned)
+            except ValueError:
+                raise ValueError("Прозрачность зоны должна быть числом от 0 до 100.")
+        elif isinstance(opacity, (int, float)):
+            num = float(opacity)
+        else:
+            raise ValueError("Прозрачность зоны должна быть числом от 0 до 100.")
+
+        if not num.is_integer():
+            num = round(num)
+
+        int_val = int(num)
+        if int_val < 0 or int_val > 100:
+            raise ValueError(
+                f"Прозрачность зоны должна быть в диапазоне от 0% до 100%. Получено: {int_val}"
+            )
+
+        return int_val
+
+
+def validate_radius(radius: Any, enabled: bool = True, zone_enabled: bool | None = None) -> float:
+    """Модульная функция валидации радиуса зоны."""
+    return StyleValidator.validate_radius(radius, enabled=enabled, zone_enabled=zone_enabled)
+
+
+def validate_opacity(opacity: Any) -> int:
+    """Модульная функция валидации прозрачности зоны."""
+    return StyleValidator.validate_opacity(opacity)
+
+
+@dataclass
+class PointZoneStyle:
+    """Параметры географической зоны вокруг точки."""
+
+    enabled: bool = False
+    radius_m: float = 0.0
+    red: int = 220
+    green: int = 30
+    blue: int = 30
+    opacity: int = 30

@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass, field
 
 
-from rme_mapper.models.point_style import PointStyle
+from rme_mapper.models.point_style import PointStyle, PointZoneStyle
 
 
 @dataclass
@@ -27,6 +27,12 @@ class MapPoint:
     red: int = 220
     green: int = 30
     blue: int = 30
+    zone_enabled: bool = False
+    radius_m: float = 0.0
+    zone_red: int = 220
+    zone_green: int = 30
+    zone_blue: int = 30
+    zone_opacity: int = 30
 
     @property
     def style(self) -> PointStyle:
@@ -37,4 +43,16 @@ class MapPoint:
             red=self.red,
             green=self.green,
             blue=self.blue,
+        )
+
+    @property
+    def zone(self) -> PointZoneStyle:
+        """Получение объекта стиля географической зоны точки."""
+        return PointZoneStyle(
+            enabled=self.zone_enabled,
+            radius_m=self.radius_m,
+            red=self.zone_red,
+            green=self.zone_green,
+            blue=self.zone_blue,
+            opacity=self.zone_opacity,
         )
