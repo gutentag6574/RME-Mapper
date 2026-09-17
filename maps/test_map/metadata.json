@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "map_id": "test_map",
+  "status": "TO_FILL",
+  "name": "УТОЧНИТЬ",
+  "short_name": "Тестовая карта",
+  "description": "Первая карта для разработки и проверки RME Mapper",
+  "source_file": "source/УТОЧНИТЬ",
+  "prepared_file": null,
+  "preview_file": "preview/thumbnail.png",
+  "source": {
+    "title": "УТОЧНИТЬ",
+    "organization": null,
+    "author": null,
+    "year": null,
+    "url": null,
+    "license_or_permission": "УТОЧНИТЬ"
+  },
+  "raster": {
+    "format": "УТОЧНИТЬ",
+    "width_px": null,
+    "height_px": null,
+    "bands": null,
+    "has_georeferencing": null,
+    "has_world_file": null,
+    "has_auxiliary_files": null
+  },
+  "crs": {
+    "layer_crs_name": "УТОЧНИТЬ",
+    "epsg": null,
+    "wkt": null,
+    "proj": null,
+    "units": "УТОЧНИТЬ",
+    "is_custom_crs": null
+  },
+  "extent": {
+    "xmin": null,
+    "ymin": null,
+    "xmax": null,
+    "ymax": null
+  },
+  "qgis_reference": {
+    "project_crs_name": "УТОЧНИТЬ",
+    "project_epsg": null,
+    "checked_in_qgis": false,
+    "control_points_checked": 0,
+    "notes": null
+  },
+  "application": {
+    "enabled": true,
+    "default_map": true,
+    "allow_point_overlay": true,
+    "allow_radius_overlay": true
+  }
+}
