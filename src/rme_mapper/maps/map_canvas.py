@@ -199,27 +199,47 @@ class MapCanvas(QGraphicsView):
         self.add_layer_item(dummy_layer, gdf)
 
     # -------------------------------------------------------------------------
-    # Пользовательские точки (Этап 4)
+    # Пользовательские точки (Этапы 4 и 6)
     # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _create_marker_path(symbol: str, size: float) -> QPainterPath:
+        """Создание QPainterPath для формы маркера с центрированием в (0, 0)."""
+        path = QPainterPath()
+        half = size / 2.0
+        sym = (symbol or "circle").strip().lower()
+
+        if sym == "square":
+            path.addRect(-half, -half, size, size)
+        elif sym == "triangle":
+            # Симметричный треугольник, центрированный в (0, 0)
+            path.moveTo(0.0, -half)
+            path.lineTo(half, half)
+            path.lineTo(-half, half)
+            path.closeSubpath()
+        else:  # "circle" и по умолчанию
+            path.addEllipse(-half, -half, size, size)
+
+        return path
 
     def add_user_point(self, point: MapPoint) -> None:
         """Отображение пользовательской точки на холсте.
 
-        Использует флаг ItemIgnoresTransformations: маркер всегда имеет фиксированный
-        комфортный размер на экране (12px), независимо от текущего масштаба карты.
+        Использует флаг ItemIgnoresTransformations: маркер сохраняет постоянный
+        экранный размер в пикселях (point.size), независимо от масштаба карты.
         """
         # Удаляем предыдущий элемент, если был
         self.remove_user_point(point.id)
 
-        radius = 6.0
-        item = QGraphicsEllipseItem(-radius, -radius, radius * 2, radius * 2)
+        path = self._create_marker_path(point.symbol, point.size)
+        item = QGraphicsPathItem(path)
 
         pen = QPen(QColor("#FFFFFF"))
         pen.setWidthF(1.5)
         pen.setCosmetic(True)
         item.setPen(pen)
 
-        brush = QBrush(QColor("#E63946"))
+        brush = QBrush(QColor(point.red, point.green, point.blue))
         item.setBrush(brush)
 
         # Инвариантность к масштабу карты (размер значка постоянен на экране)
@@ -234,9 +254,29 @@ class MapCanvas(QGraphicsView):
         self._scene.addItem(item)
         self._user_point_items[point.id] = item
         logger.info(
-            "Пользовательская точка '%s' добавлена на карту: pos=(%s, %s)",
+            "Пользовательская точка '%s' добавлена на карту: pos=(%s, %s), shape=%s, size=%s, rgb=(%s,%s,%s)",
             point.name, point.longitude, -point.latitude,
+            point.symbol, point.size, point.red, point.green, point.blue,
         )
+
+    def update_user_point(self, point: MapPoint) -> None:
+        """Мгновенное обновление маркера существующей точки без пересоздания карты."""
+        item = self._user_point_items.get(point.id)
+        if item is not None and isinstance(item, QGraphicsPathItem):
+            path = self._create_marker_path(point.symbol, point.size)
+            item.setPath(path)
+
+            brush = QBrush(QColor(point.red, point.green, point.blue))
+            item.setBrush(brush)
+
+            item.setPos(point.longitude, -point.latitude)
+            item.setVisible(point.visible)
+            logger.info(
+                "Маркер точки '%s' обновлен: pos=(%s, %s), shape=%s, size=%s",
+                point.name, point.longitude, -point.latitude, point.symbol, point.size,
+            )
+        else:
+            self.add_user_point(point)
 
     def remove_user_point(self, point_id: str) -> None:
         """Удаление пользовательской точки с карты."""

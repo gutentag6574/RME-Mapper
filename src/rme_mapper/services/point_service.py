@@ -23,6 +23,11 @@ class PointService:
         longitude: float,
         source_crs: str = "OGC:CRS84",
         point_id: str | None = None,
+        symbol: str = "circle",
+        size: float = 12.0,
+        red: int = 220,
+        green: int = 30,
+        blue: int = 30,
     ) -> MapPoint:
         """Создание и добавление новой пользовательской точки.
 
@@ -39,6 +44,11 @@ class PointService:
             "latitude": latitude,
             "longitude": longitude,
             "source_crs": source_crs,
+            "symbol": symbol,
+            "size": size,
+            "red": red,
+            "green": green,
+            "blue": blue,
         }
         if point_id:
             kwargs["id"] = point_id
@@ -47,9 +57,64 @@ class PointService:
         self._points[point.id] = point
 
         logger.info(
-            "Добавлена точка: id=%s, name='%s', lat=%s, lon=%s",
+            "Добавлена точка: id=%s, name='%s', lat=%s, lon=%s, symbol=%s, size=%s, rgb=(%s,%s,%s)",
             point.id, point.name, point.latitude, point.longitude,
+            point.symbol, point.size, point.red, point.green, point.blue,
         )
+        return point
+
+    def update_point(
+        self,
+        point_id: str,
+        name: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        symbol: str | None = None,
+        size: float | None = None,
+        red: int | None = None,
+        green: int | None = None,
+        blue: int | None = None,
+        visible: bool | None = None,
+    ) -> MapPoint:
+        """Обновление существующей пользовательской точки по ее ID.
+
+        Сохраняет исходный ID точки и обновляет только переданные поля.
+        """
+        point = self._points.get(point_id)
+        if point is None:
+            raise KeyError(f"Точка с ID '{point_id}' не найдена в хранилище.")
+
+        if name is not None:
+            point.name = name.strip() if name.strip() else point.name
+        if latitude is not None:
+            point.latitude = latitude
+        if longitude is not None:
+            point.longitude = longitude
+        if symbol is not None:
+            point.symbol = symbol
+        if size is not None:
+            point.size = size
+        if red is not None:
+            point.red = red
+        if green is not None:
+            point.green = green
+        if blue is not None:
+            point.blue = blue
+        if visible is not None:
+            point.visible = visible
+
+        logger.info(
+            "Обновлена точка: id=%s, name='%s', lat=%s, lon=%s, symbol=%s, size=%s, rgb=(%s,%s,%s)",
+            point.id, point.name, point.latitude, point.longitude,
+            point.symbol, point.size, point.red, point.green, point.blue,
+        )
+        return point
+
+    def update_point_object(self, point: MapPoint) -> MapPoint:
+        """Обновление точки передачей готового экземпляра MapPoint (сохраняя point.id)."""
+        if point.id not in self._points:
+            raise KeyError(f"Точка с ID '{point.id}' не найдена в хранилище.")
+        self._points[point.id] = point
         return point
 
     def get_points(self) -> list[MapPoint]:

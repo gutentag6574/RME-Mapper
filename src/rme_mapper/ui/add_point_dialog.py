@@ -1,13 +1,16 @@
-"""Диалоговое окно ручного добавления точки в формате DD или DMS."""
+"""Диалоговое окно создания и редактирования пользовательской точки (DD / DMS, стиль, цвет)."""
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QBrush, QColor, QPainter, QPen
 from PySide6.QtWidgets import (
-    QButtonGroup,
+    QColorDialog,
     QComboBox,
     QDialog,
+    QDoubleSpinBox,
     QFormLayout,
     QGridLayout,
     QGroupBox,
@@ -23,35 +26,140 @@ from PySide6.QtWidgets import (
 )
 
 from rme_mapper.coordinates.validator import CoordinateValidator
+from rme_mapper.maps.map_canvas import MapCanvas
+from rme_mapper.models.map_point import MapPoint
+from rme_mapper.models.point_style import PointStyle, StyleValidator
 from rme_mapper.services.coordinate_service import CoordinateService
 
-logger = logging.getLogger("rme_mapper.ui.add_point_dialog")
+logger = logging.getLogger("rme_mapper.ui.point_dialog")
 
 
-class AddPointDialog(QDialog):
-    """Диалог ввода параметров пользовательской точки с поддержкой DD и DMS."""
+def decimal_to_dms(val: float) -> tuple[int, int, float]:
+    """Разбиение десятичного градуса на градусы, минуты и секунды."""
+    abs_val = abs(val)
+    deg = int(abs_val)
+    rem = (abs_val - deg) * 60.0
+    mn = int(rem)
+    sec = round((rem - mn) * 60.0, 3)
+    if sec >= 60.0:
+        sec = 0.0
+        mn += 1
+    if mn >= 60:
+        mn = 0
+        deg += 1
+    return deg, mn, sec
+
+
+class MarkerPreviewWidget(QWidget):
+    """Виджет интерактивного предпросмотра маркера точки."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(64, 64)
+        self.symbol: str = "circle"
+        self.size_val: float = 12.0
+        self.red: int = 220
+        self.green: int = 30
+        self.blue: int = 30
+
+    def update_style(self, symbol: str, size: float, red: int, green: int, blue: int) -> None:
+        """Обновление параметров и перерисовка предпросмотра."""
+        self.symbol = symbol
+        self.size_val = size
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.update()
+
+    def paintEvent(self, event: Any) -> None:
+        """Отрисовка маркера по центру виджета."""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Фоновая рамка предпросмотра
+        painter.fillRect(self.rect(), QColor("#F8F9FA"))
+        painter.setPen(QPen(QColor("#CCCCCC"), 1))
+        painter.drawRect(0, 0, self.width() - 1, self.height() - 1)
+
+        center_x = self.width() / 2.0
+        center_y = self.height() / 2.0
+
+        # Получаем форму маркера
+        path = MapCanvas._create_marker_path(self.symbol, min(self.size_val, 48.0))
+
+        painter.save()
+        painter.translate(center_x, center_y)
+
+        pen = QPen(QColor("#FFFFFF"), 1.5)
+        painter.setPen(pen)
+        painter.setBrush(QBrush(QColor(self.red, self.green, self.blue)))
+        painter.drawPath(path)
+        painter.restore()
+
+
+@dataclass
+class PointDialogData:
+    """Результат работы диалога точки."""
+
+    name: str
+    latitude: float
+    longitude: float
+    symbol: str = "circle"
+    size: float = 12.0
+    red: int = 220
+    green: int = 30
+    blue: int = 30
+
+    def __getitem__(self, index: int) -> Any:
+        return (
+            self.name,
+            self.latitude,
+            self.longitude,
+            self.symbol,
+            self.size,
+            self.red,
+            self.green,
+            self.blue,
+        )[index]
+
+    def __len__(self) -> int:
+        return 8
+
+
+class PointDialog(QDialog):
+    """Универсальный диалог создания (CREATE) и редактирования (EDIT) точки."""
 
     def __init__(
         self,
         parent: QWidget | None = None,
         boundary_geometry: Any = None,
         default_name: str = "",
+        point: MapPoint | None = None,
+        mode: str = "CREATE",
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Добавить точку")
-        self.setModal(True)
-        self.resize(440, 300)
-
         self._boundary_geometry = boundary_geometry
-        self._parsed_data: tuple[str, float, float] | None = None
+        self._point = point
+        self.mode = "EDIT" if point is not None else mode.upper()
+        self._parsed_data: PointDialogData | None = None
+
+        if self.mode == "EDIT":
+            self.setWindowTitle("Редактировать точку")
+        else:
+            self.setWindowTitle("Добавить точку")
+
+        self.setModal(True)
+        self.resize(480, 440)
 
         self._setup_ui(default_name)
+        if self._point:
+            self._populate_fields_from_point(self._point)
 
     def _setup_ui(self, default_name: str) -> None:
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
 
-        # Поле названия точки
+        # 1. Поле названия точки
         name_layout = QHBoxLayout()
         name_label = QLabel("Название:", self)
         self.name_edit = QLineEdit(self)
@@ -61,7 +169,7 @@ class AddPointDialog(QDialog):
         name_layout.addWidget(self.name_edit)
         layout.addLayout(name_layout)
 
-        # Выбор формата координат
+        # 2. Выбор формата координат
         format_group_box = QGroupBox("Формат координат", self)
         format_layout = QHBoxLayout(format_group_box)
         self.rb_dd = QRadioButton("Десятичные градусы (DD)", format_group_box)
@@ -107,11 +215,9 @@ class AddPointDialog(QDialog):
         dms_layout = QVBoxLayout(dms_widget)
         dms_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Сетка ввода DMS
         dms_grid = QGridLayout()
         dms_grid.setSpacing(6)
 
-        # Заголовки колонок
         dms_grid.addWidget(QLabel(""), 0, 0)
         dms_grid.addWidget(QLabel("Градусы"), 0, 1)
         dms_grid.addWidget(QLabel("Минуты"), 0, 2)
@@ -163,7 +269,7 @@ class AddPointDialog(QDialog):
         dms_grid.addWidget(self.lon_dir_combo, 2, 4)
 
         dms_hint = QLabel(
-            "Широта: 0..90° [N/S], Долгота: 0..180° [E/W]. Секунды поддерживают 15.2 и 15,2.",
+            "Широта: 0..90° [N/S], Долгота: 0..180° [E/W]. Поддерживаются 15.2 и 15,2.",
             dms_widget,
         )
         dms_hint.setStyleSheet("color: #777777; font-size: 11px;")
@@ -173,15 +279,91 @@ class AddPointDialog(QDialog):
         self.stack_widget.addWidget(dms_widget)
 
         layout.addWidget(self.stack_widget)
-
-        # Переключение форматов
         self.rb_dd.toggled.connect(self._on_format_changed)
+
+        # 3. Блок стиля маркера
+        style_box = QGroupBox("Стиль маркера", self)
+        style_main_layout = QHBoxLayout(style_box)
+
+        # Левая часть: выбор формы, размера, RGB
+        style_form = QFormLayout()
+        style_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        # Выбор формы
+        self.symbol_combo = QComboBox(style_box)
+        self.symbol_combo.setObjectName("pointSymbolCombo")
+        self.symbol_combo.addItem("Круг", "circle")
+        self.symbol_combo.addItem("Квадрат", "square")
+        self.symbol_combo.addItem("Треугольник", "triangle")
+        self.symbol_combo.currentIndexChanged.connect(self._on_style_input_changed)
+        style_form.addRow("Форма:", self.symbol_combo)
+
+        # Выбор размера
+        self.size_spin = QDoubleSpinBox(style_box)
+        self.size_spin.setObjectName("pointSizeSpin")
+        self.size_spin.setRange(4.0, 50.0)
+        self.size_spin.setValue(12.0)
+        self.size_spin.setSingleStep(1.0)
+        self.size_spin.setDecimals(1)
+        self.size_spin.valueChanged.connect(self._on_style_input_changed)
+        style_form.addRow("Размер (px):", self.size_spin)
+
+        # Ввод RGB
+        rgb_layout = QHBoxLayout()
+        rgb_layout.setSpacing(4)
+
+        rgb_layout.addWidget(QLabel("R:"))
+        self.r_edit = QLineEdit(style_box)
+        self.r_edit.setObjectName("pointREdit")
+        self.r_edit.setText("220")
+        self.r_edit.setMaximumWidth(42)
+        self.r_edit.textChanged.connect(self._on_style_input_changed)
+        rgb_layout.addWidget(self.r_edit)
+
+        rgb_layout.addWidget(QLabel("G:"))
+        self.g_edit = QLineEdit(style_box)
+        self.g_edit.setObjectName("pointGEdit")
+        self.g_edit.setText("30")
+        self.g_edit.setMaximumWidth(42)
+        self.g_edit.textChanged.connect(self._on_style_input_changed)
+        rgb_layout.addWidget(self.g_edit)
+
+        rgb_layout.addWidget(QLabel("B:"))
+        self.b_edit = QLineEdit(style_box)
+        self.b_edit.setObjectName("pointBEdit")
+        self.b_edit.setText("30")
+        self.b_edit.setMaximumWidth(42)
+        self.b_edit.textChanged.connect(self._on_style_input_changed)
+        rgb_layout.addWidget(self.b_edit)
+
+        self.btn_pick_color = QPushButton("Выбрать цвет...", style_box)
+        self.btn_pick_color.setObjectName("btnPickColor")
+        self.btn_pick_color.clicked.connect(self._open_color_dialog)
+        rgb_layout.addWidget(self.btn_pick_color)
+
+        style_form.addRow("Цвет (RGB):", rgb_layout)
+        style_main_layout.addLayout(style_form, stretch=1)
+
+        # Правая часть: интерактивное превью маркера
+        preview_box = QVBoxLayout()
+        preview_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        preview_label = QLabel("Превью:")
+        preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        preview_box.addWidget(preview_label)
+
+        self.preview_widget = MarkerPreviewWidget(style_box)
+        self.preview_widget.setObjectName("markerPreviewWidget")
+        preview_box.addWidget(self.preview_widget)
+        style_main_layout.addLayout(preview_box)
+
+        layout.addWidget(style_box)
 
         # Кнопки диалога
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
-        self.btn_add = QPushButton("Добавить", self)
+        submit_text = "Сохранить" if self.mode == "EDIT" else "Добавить"
+        self.btn_add = QPushButton(submit_text, self)
         self.btn_add.setObjectName("btnAddPointSubmit")
         self.btn_add.setDefault(True)
         self.btn_add.clicked.connect(self._validate_and_submit)
@@ -194,6 +376,40 @@ class AddPointDialog(QDialog):
 
         layout.addLayout(btn_layout)
 
+        # Первоначальное обновление превью
+        self._on_style_input_changed()
+
+    def _populate_fields_from_point(self, point: MapPoint) -> None:
+        """Заполнение полей диалога данными существующей точки."""
+        self.name_edit.setText(point.name)
+        self.lat_edit.setText(f"{point.latitude:.6f}")
+        self.lon_edit.setText(f"{point.longitude:.6f}")
+
+        # Заполнение DMS полей
+        lat_deg, lat_min, lat_sec = decimal_to_dms(point.latitude)
+        self.lat_deg_edit.setText(str(lat_deg))
+        self.lat_min_edit.setText(str(lat_min))
+        self.lat_sec_edit.setText(f"{lat_sec:.2f}".rstrip("0").rstrip("."))
+        self.lat_dir_combo.setCurrentText("N" if point.latitude >= 0 else "S")
+
+        lon_deg, lon_min, lon_sec = decimal_to_dms(point.longitude)
+        self.lon_deg_edit.setText(str(lon_deg))
+        self.lon_min_edit.setText(str(lon_min))
+        self.lon_sec_edit.setText(f"{lon_sec:.2f}".rstrip("0").rstrip("."))
+        self.lon_dir_combo.setCurrentText("E" if point.longitude >= 0 else "W")
+
+        # Стиль
+        idx = self.symbol_combo.findData(point.symbol)
+        if idx >= 0:
+            self.symbol_combo.setCurrentIndex(idx)
+
+        self.size_spin.setValue(point.size)
+        self.r_edit.setText(str(point.red))
+        self.g_edit.setText(str(point.green))
+        self.b_edit.setText(str(point.blue))
+
+        self._on_style_input_changed()
+
     def _on_format_changed(self, is_dd_checked: bool) -> None:
         """Переключение отображаемой формы ввода координат (DD или DMS)."""
         if is_dd_checked:
@@ -201,8 +417,41 @@ class AddPointDialog(QDialog):
         else:
             self.stack_widget.setCurrentIndex(1)
 
+    def _on_style_input_changed(self) -> None:
+        """Реактивное обновление виджета превью маркера."""
+        symbol = self.symbol_combo.currentData() or "circle"
+        size = self.size_spin.value()
+
+        try:
+            r = int(self.r_edit.text().strip())
+            g = int(self.g_edit.text().strip())
+            b = int(self.b_edit.text().strip())
+            if 0 <= r <= 255 and 0 <= g <= 255 and 0 <= b <= 255:
+                self.preview_widget.update_style(symbol, size, r, g, b)
+        except Exception:
+            # Пока пользователь в процессе набора текста
+            pass
+
+    def _open_color_dialog(self) -> None:
+        """Открытие диалога выбора цвета QColorDialog."""
+        try:
+            cur_r = int(self.r_edit.text().strip())
+            cur_g = int(self.g_edit.text().strip())
+            cur_b = int(self.b_edit.text().strip())
+            initial_color = QColor(cur_r, cur_g, cur_b)
+        except Exception:
+            initial_color = QColor(220, 30, 30)
+
+        color = QColorDialog.getColor(initial_color, self, "Выбор цвета маркера")
+        if color.isValid():
+            self.r_edit.setText(str(color.red()))
+            self.g_edit.setText(str(color.green()))
+            self.b_edit.setText(str(color.blue()))
+            self._on_style_input_changed()
+
     def _validate_and_submit(self) -> None:
-        """Проверка ввода, валидация координат и проверка выхода за пределы РМЭ."""
+        """Проверка ввода координат, стиля и проверка выхода за пределы РМЭ."""
+        # 1. Валидация координат
         if self.rb_dd.isChecked():
             lat_text = self.lat_edit.text()
             lon_text = self.lon_edit.text()
@@ -210,11 +459,7 @@ class AddPointDialog(QDialog):
                 lat, lon = CoordinateValidator.validate_dd_pair(lat_text, lon_text)
             except ValueError as err:
                 logger.warning("Ошибка валидации координат DD: %s", err)
-                QMessageBox.warning(
-                    self,
-                    "Некорректные координаты",
-                    f"Ошибка в формате координат:\n{err}",
-                )
+                QMessageBox.warning(self, "Некорректные координаты", f"Ошибка в формате координат:\n{err}")
                 return
         else:
             lat_deg = self.lat_deg_edit.text()
@@ -234,16 +479,26 @@ class AddPointDialog(QDialog):
                 )
             except ValueError as err:
                 logger.warning("Ошибка валидации координат DMS: %s", err)
-                QMessageBox.warning(
-                    self,
-                    "Некорректные координаты",
-                    f"Ошибка в формате координат:\n{err}",
-                )
+                QMessageBox.warning(self, "Некорректные координаты", f"Ошибка в формате координат:\n{err}")
                 return
+
+        # 2. Валидация стиля (форма, размер, RGB)
+        symbol = self.symbol_combo.currentData() or "circle"
+        size = self.size_spin.value()
+        r_text = self.r_edit.text()
+        g_text = self.g_edit.text()
+        b_text = self.b_edit.text()
+
+        try:
+            style = StyleValidator.validate_style(symbol, size, r_text, g_text, b_text)
+        except ValueError as err:
+            logger.warning("Ошибка валидации стиля точки: %s", err)
+            QMessageBox.warning(self, "Некорректный стиль маркера", str(err))
+            return
 
         name = self.name_edit.text().strip()
 
-        # Проверка выхода за границу РМЭ
+        # 3. Проверка выхода за границу РМЭ
         if self._boundary_geometry is not None:
             is_inside = CoordinateService.is_point_inside_boundary(
                 longitude=lon,
@@ -251,21 +506,33 @@ class AddPointDialog(QDialog):
                 boundary_geometry=self._boundary_geometry,
             )
             if not is_inside:
-                logger.info("Введенная точка (%s, %s) вне границы РМЭ", lon, lat)
+                logger.info("Точка (%s, %s) вне границы РМЭ", lon, lat)
                 reply = QMessageBox.question(
                     self,
                     "Предупреждение",
-                    "Координата находится за пределами Республики Марий Эл.\nДобавить точку?",
+                    "Координата находится за пределами Республики Марий Эл.\nСохранить точку?",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.No,
                 )
                 if reply != QMessageBox.StandardButton.Yes:
                     return
 
-        self._parsed_data = (name, lat, lon)
+        self._parsed_data = PointDialogData(
+            name=name,
+            latitude=lat,
+            longitude=lon,
+            symbol=style.symbol,
+            size=style.size,
+            red=style.red,
+            green=style.green,
+            blue=style.blue,
+        )
         self.accept()
 
-    def get_point_data(self) -> tuple[str, float, float] | None:
-        """Возвращает кортеж (name, latitude, longitude) после успешного завершения."""
+    def get_point_data(self) -> PointDialogData | None:
+        """Возвращает проверенные данные точки после успешного завершения."""
         return self._parsed_data
 
+
+# Псевдоним для полной обратной совместимости с Этапами 4 и 5
+AddPointDialog = PointDialog

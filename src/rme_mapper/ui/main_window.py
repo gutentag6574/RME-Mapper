@@ -2,16 +2,20 @@
 
 import logging
 from pathlib import Path
+from typing import Any
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QFormLayout,
     QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QMainWindow,
+    QMenu,
     QMenuBar,
     QPushButton,
     QSplitter,
@@ -29,7 +33,13 @@ from rme_mapper.models.map_point import MapPoint
 from rme_mapper.services.geopackage_service import GeoPackageService
 from rme_mapper.services.layer_service import LayerService
 from rme_mapper.services.point_service import PointService
-from rme_mapper.ui.add_point_dialog import AddPointDialog
+from rme_mapper.ui.add_point_dialog import AddPointDialog, PointDialog
+
+SYMBOL_DISPLAY_NAMES = {
+    "circle": "Круг",
+    "square": "Квадрат",
+    "triangle": "Треугольник",
+}
 
 logger = logging.getLogger("rme_mapper.ui.main_window")
 
@@ -167,13 +177,20 @@ class MainWindow(QMainWindow):
         points_header_layout.addStretch()
         layout.addLayout(points_header_layout)
 
-        # Кнопки добавления и удаления точки
+        # Кнопки добавления, редактирования и удаления точки
         btn_row_layout = QHBoxLayout()
         self.btn_add_point = QPushButton("+ Добавить точку", self)
         self.btn_add_point.setObjectName("btnAddPoint")
         self.btn_add_point.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_add_point.clicked.connect(self.show_add_point_dialog)
         btn_row_layout.addWidget(self.btn_add_point)
+
+        self.btn_edit_point = QPushButton("Редактировать", self)
+        self.btn_edit_point.setObjectName("btnEditPoint")
+        self.btn_edit_point.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_edit_point.setEnabled(False)
+        self.btn_edit_point.clicked.connect(self.edit_selected_point)
+        btn_row_layout.addWidget(self.btn_edit_point)
 
         self.btn_delete_point = QPushButton("Удалить", self)
         self.btn_delete_point.setObjectName("btnDeletePoint")
@@ -185,9 +202,9 @@ class MainWindow(QMainWindow):
         layout.addLayout(btn_row_layout)
 
         # Таблица пользовательских точек
-        self.points_table = QTableWidget(0, 4, self)
+        self.points_table = QTableWidget(0, 5, self)
         self.points_table.setObjectName("pointsTable")
-        self.points_table.setHorizontalHeaderLabels(["№", "Название", "Широта", "Долгота"])
+        self.points_table.setHorizontalHeaderLabels(["№", "Название", "Широта", "Долгота", "Форма"])
         self.points_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.points_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.points_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -198,10 +215,13 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
 
         # Сигналы таблицы
         self.points_table.cellDoubleClicked.connect(self._on_table_row_double_clicked)
         self.points_table.itemSelectionChanged.connect(self._on_table_selection_changed)
+        self.points_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.points_table.customContextMenuRequested.connect(self._show_table_context_menu)
 
         # Сохраняем ссылку на points_placeholder для обратной совместимости с тестами
         self.points_placeholder = self.points_table
@@ -233,7 +253,7 @@ class MainWindow(QMainWindow):
         return panel
 
     def _create_right_panel(self) -> QWidget:
-        """Создание правой панели: заголовок 'Свойства' и пустое место под настройки."""
+        """Создание правой панели: заголовок 'Свойства' и карточка свойств выбранной точки."""
         panel = QWidget()
         panel.setObjectName("rightPanel")
         layout = QVBoxLayout(panel)
@@ -253,13 +273,53 @@ class MainWindow(QMainWindow):
         self.properties_placeholder.setFrameShadow(QFrame.Shadow.Sunken)
 
         placeholder_layout = QVBoxLayout(self.properties_placeholder)
-        placeholder_label = QLabel("Место под настройки точки")
-        placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        placeholder_label.setStyleSheet("color: #888888; font-style: italic;")
-        placeholder_layout.addWidget(placeholder_label)
+        placeholder_layout.setContentsMargins(10, 10, 10, 10)
+
+        # Сообщение, если точка не выбрана
+        self.prop_empty_label = QLabel("Выберите точку в таблице для просмотра свойств")
+        self.prop_empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.prop_empty_label.setStyleSheet("color: #888888; font-style: italic;")
+        self.prop_empty_label.setWordWrap(True)
+        placeholder_layout.addWidget(self.prop_empty_label)
+
+        # Контейнер свойств выбранной точки
+        self.prop_container = QWidget()
+        prop_form = QFormLayout(self.prop_container)
+        prop_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        self.prop_name_val = QLabel("—")
+        self.prop_name_val.setWordWrap(True)
+        prop_form.addRow("<b>Название:</b>", self.prop_name_val)
+
+        self.prop_lat_val = QLabel("—")
+        prop_form.addRow("<b>Широта:</b>", self.prop_lat_val)
+
+        self.prop_lon_val = QLabel("—")
+        prop_form.addRow("<b>Долгота:</b>", self.prop_lon_val)
+
+        self.prop_shape_val = QLabel("—")
+        prop_form.addRow("<b>Форма:</b>", self.prop_shape_val)
+
+        self.prop_size_val = QLabel("—")
+        prop_form.addRow("<b>Размер:</b>", self.prop_size_val)
+
+        color_row = QHBoxLayout()
+        self.prop_color_val = QLabel("—")
+        self.prop_color_swatch = QFrame()
+        self.prop_color_swatch.setFixedSize(20, 20)
+        self.prop_color_swatch.setStyleSheet("border: 1px solid #999; border-radius: 3px;")
+        color_row.addWidget(self.prop_color_val)
+        color_row.addWidget(self.prop_color_swatch)
+        color_row.addStretch()
+        prop_form.addRow("<b>Цвет (RGB):</b>", color_row)
+
+        self.prop_container.setVisible(False)
+        placeholder_layout.addWidget(self.prop_container)
+        placeholder_layout.addStretch()
 
         layout.addWidget(self.properties_placeholder, stretch=1)
         return panel
+
 
     def _create_status_bar(self) -> None:
         """Создание нижней строки состояния."""
@@ -356,25 +416,75 @@ class MainWindow(QMainWindow):
         self.map_canvas.set_layer_visibility(layer_id, visible)
 
     # -------------------------------------------------------------------------
-    # Пользовательские точки (Этап 4)
+    # Пользовательские точки (Этапы 4, 5 и 6)
     # -------------------------------------------------------------------------
 
     def show_add_point_dialog(self) -> None:
         """Открытие модального диалога добавления пользовательской точки."""
         auto_name = f"Точка {len(self._point_service) + 1}"
-        dialog = AddPointDialog(
+        dialog = PointDialog(
             parent=self,
             boundary_geometry=self._boundary_geometry,
             default_name=auto_name,
+            mode="CREATE",
         )
         if dialog.exec():
             data = dialog.get_point_data()
             if data:
-                name, lat, lon = data
-                point = self._point_service.add_point(name, lat, lon)
+                point = self._point_service.add_point(
+                    name=data.name,
+                    latitude=data.latitude,
+                    longitude=data.longitude,
+                    symbol=data.symbol,
+                    size=data.size,
+                    red=data.red,
+                    green=data.green,
+                    blue=data.blue,
+                )
                 self.map_canvas.add_user_point(point)
                 self._add_point_to_table(point)
                 self.statusBar().showMessage(f"Добавлена точка: {point.name}", 3000)
+
+    def edit_selected_point(self) -> None:
+        """Открытие диалога редактирования для выбранной в таблице точки."""
+        selected_rows = self.points_table.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+
+        row = selected_rows[0].row()
+        if not (0 <= row < len(self._table_point_ids)):
+            return
+
+        point_id = self._table_point_ids[row]
+        point = self._point_service.get_point(point_id)
+        if not point:
+            return
+
+        dialog = PointDialog(
+            parent=self,
+            boundary_geometry=self._boundary_geometry,
+            point=point,
+            mode="EDIT",
+        )
+        if dialog.exec():
+            data = dialog.get_point_data()
+            if data:
+                updated = self._point_service.update_point(
+                    point_id=point.id,
+                    name=data.name,
+                    latitude=data.latitude,
+                    longitude=data.longitude,
+                    symbol=data.symbol,
+                    size=data.size,
+                    red=data.red,
+                    green=data.green,
+                    blue=data.blue,
+                )
+                self.map_canvas.update_user_point(updated)
+                self._update_point_in_table(row, updated)
+                self._update_properties_panel(updated)
+                self.statusBar().showMessage(f"Точка обновлена: {updated.name}", 3000)
+                logger.info("Точка '%s' (id=%s) успешно обновлена", updated.name, updated.id)
 
     def _add_point_to_table(self, point: MapPoint) -> None:
         """Добавление строки с точкой в таблицу интерфейса."""
@@ -386,13 +496,24 @@ class MainWindow(QMainWindow):
         name_item = QTableWidgetItem(point.name)
         lat_item = QTableWidgetItem(f"{point.latitude:.6f}")
         lon_item = QTableWidgetItem(f"{point.longitude:.6f}")
+        shape_name = SYMBOL_DISPLAY_NAMES.get(point.symbol, point.symbol)
+        shape_item = QTableWidgetItem(shape_name)
 
         self.points_table.setItem(row, 0, num_item)
         self.points_table.setItem(row, 1, name_item)
         self.points_table.setItem(row, 2, lat_item)
         self.points_table.setItem(row, 3, lon_item)
+        self.points_table.setItem(row, 4, shape_item)
 
         self._table_point_ids.append(point.id)
+
+    def _update_point_in_table(self, row: int, point: MapPoint) -> None:
+        """Обновление данных точки в строке таблицы."""
+        self.points_table.item(row, 1).setText(point.name)
+        self.points_table.item(row, 2).setText(f"{point.latitude:.6f}")
+        self.points_table.item(row, 3).setText(f"{point.longitude:.6f}")
+        shape_name = SYMBOL_DISPLAY_NAMES.get(point.symbol, point.symbol)
+        self.points_table.item(row, 4).setText(shape_name)
 
     def delete_selected_point(self) -> None:
         """Удаление выбранной в таблице точки."""
@@ -414,6 +535,8 @@ class MainWindow(QMainWindow):
                     item.setText(str(r + 1))
 
             self.btn_delete_point.setEnabled(False)
+            self.btn_edit_point.setEnabled(False)
+            self._clear_properties_panel()
             self.statusBar().showMessage("Точка удалена", 3000)
             logger.info("Точка с ID %s успешно удалена", point_id)
 
@@ -427,6 +550,62 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(f"Фокус на точке: {point.name}", 2000)
 
     def _on_table_selection_changed(self) -> None:
-        """Активация/деактивация кнопки удаления при смене выбора."""
-        has_selection = bool(self.points_table.selectionModel().selectedRows())
+        """Активация/деактивация кнопок и обновление панели свойств."""
+        selected_rows = self.points_table.selectionModel().selectedRows()
+        has_selection = bool(selected_rows)
         self.btn_delete_point.setEnabled(has_selection)
+        self.btn_edit_point.setEnabled(has_selection)
+
+        if has_selection:
+            row = selected_rows[0].row()
+            if 0 <= row < len(self._table_point_ids):
+                point_id = self._table_point_ids[row]
+                point = self._point_service.get_point(point_id)
+                if point:
+                    self._update_properties_panel(point)
+                    return
+
+        self._clear_properties_panel()
+
+    def _update_properties_panel(self, point: MapPoint) -> None:
+        """Отображение свойств выбранной точки в правой панели."""
+        self.prop_empty_label.setVisible(False)
+        self.prop_container.setVisible(True)
+
+        self.prop_name_val.setText(point.name)
+        self.prop_lat_val.setText(f"{point.latitude:.6f}")
+        self.prop_lon_val.setText(f"{point.longitude:.6f}")
+        self.prop_shape_val.setText(SYMBOL_DISPLAY_NAMES.get(point.symbol, point.symbol))
+        self.prop_size_val.setText(f"{point.size:.1f} px")
+        self.prop_color_val.setText(f"RGB({point.red}, {point.green}, {point.blue})")
+        self.prop_color_swatch.setStyleSheet(
+            f"background-color: rgb({point.red}, {point.green}, {point.blue}); "
+            f"border: 1px solid #777; border-radius: 3px;"
+        )
+
+    def _clear_properties_panel(self) -> None:
+        """Очистка панели свойств при отсутствии выбора."""
+        self.prop_container.setVisible(False)
+        self.prop_empty_label.setVisible(True)
+
+    def _show_table_context_menu(self, pos: Any) -> None:
+        """Контекстное меню таблицы точек."""
+        item = self.points_table.itemAt(pos)
+        if item is None:
+            return
+
+        menu = QMenu(self)
+        act_edit = menu.addAction("Редактировать точку...")
+        act_center = menu.addAction("Центрировать на карте")
+        menu.addSeparator()
+        act_delete = menu.addAction("Удалить точку")
+
+        action = menu.exec(self.points_table.viewport().mapToGlobal(pos))
+        if action == act_edit:
+            self.edit_selected_point()
+        elif action == act_center:
+            row = self.points_table.currentRow()
+            self._on_table_row_double_clicked(row, 0)
+        elif action == act_delete:
+            self.delete_selected_point()
+
