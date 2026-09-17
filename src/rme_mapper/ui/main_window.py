@@ -5,10 +5,11 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QFont
+from PySide6.QtGui import QAction, QFont, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QFileDialog,
     QFormLayout,
     QFrame,
     QHBoxLayout,
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMenuBar,
+    QMessageBox,
     QPushButton,
     QSplitter,
     QStatusBar,
@@ -30,10 +32,12 @@ from rme_mapper.maps.map_canvas import MapCanvas
 from rme_mapper.maps.map_config import get_default_geopackage_path
 from rme_mapper.models.map_layer import LayerRole, MapLayer
 from rme_mapper.models.map_point import MapPoint
+from rme_mapper.models.project_data import ProjectData
 from rme_mapper.services.geodesic_service import GeodesicService
 from rme_mapper.services.geopackage_service import GeoPackageService
 from rme_mapper.services.layer_service import LayerService
 from rme_mapper.services.point_service import PointService
+from rme_mapper.services.project_service import ProjectService
 from rme_mapper.ui.add_point_dialog import AddPointDialog, PointDialog
 
 SYMBOL_DISPLAY_NAMES = {
@@ -57,12 +61,17 @@ class MainWindow(QMainWindow):
         map_path: Path | str | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("RME Mapper — Географическая привязка координат")
         self.resize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
 
         self._map_path = Path(map_path) if map_path else get_default_geopackage_path()
         self._layer_service = LayerService()
         self._point_service = PointService()
+        self._project_service = ProjectService()
+
+        # Текущий проект и отслеживание изменений
+        self._current_project_path: Path | None = None
+        self._is_modified: bool = False
+        self._project_loaded: bool = False
 
         # Геометрия границы РМЭ (для проверки выхода за пределы)
         self._boundary_geometry = None
@@ -75,6 +84,7 @@ class MainWindow(QMainWindow):
         self._table_point_ids: list[str] = []
 
         self._setup_ui()
+        self.setWindowTitle("RME Mapper — Географическая привязка координат")
         self.load_map(self._map_path)
 
     def _setup_ui(self) -> None:
@@ -89,7 +99,31 @@ class MainWindow(QMainWindow):
 
         # Меню: Файл
         self.file_menu = menu_bar.addMenu("Файл")
+
+        self.new_action = QAction("Новый проект", self)
+        self.new_action.setShortcut(QKeySequence.StandardKey.New)
+        self.new_action.triggered.connect(self.new_project)
+        self.file_menu.addAction(self.new_action)
+
+        self.open_action = QAction("Открыть проект...", self)
+        self.open_action.setShortcut(QKeySequence.StandardKey.Open)
+        self.open_action.triggered.connect(self.open_project)
+        self.file_menu.addAction(self.open_action)
+
+        self.save_action = QAction("Сохранить", self)
+        self.save_action.setShortcut(QKeySequence.StandardKey.Save)
+        self.save_action.triggered.connect(self.save_project)
+        self.file_menu.addAction(self.save_action)
+
+        self.save_as_action = QAction("Сохранить как...", self)
+        self.save_as_action.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        self.save_as_action.triggered.connect(self.save_project_as)
+        self.file_menu.addAction(self.save_as_action)
+
+        self.file_menu.addSeparator()
+
         exit_action = QAction("Выход", self)
+        exit_action.setShortcut(QKeySequence("Ctrl+Q"))
         exit_action.triggered.connect(self.close)
         self.file_menu.addAction(exit_action)
 
@@ -434,10 +468,15 @@ class MainWindow(QMainWindow):
 
     def _on_layer_toggled(self, layer_id: str, visible: bool) -> None:
         """Обработка переключения видимости слоя пользователем."""
+        for layer in self.loaded_layers:
+            if layer.id == layer_id:
+                layer.visible = visible
+                break
         self.map_canvas.set_layer_visibility(layer_id, visible)
+        self._set_modified(True)
 
     # -------------------------------------------------------------------------
-    # Пользовательские точки (Этапы 4, 5 и 6)
+    # Пользовательские точки (Этапы 4, 5, 6 и 7)
     # -------------------------------------------------------------------------
 
     def show_add_point_dialog(self) -> None:
@@ -470,6 +509,7 @@ class MainWindow(QMainWindow):
                 )
                 self.map_canvas.add_user_point(point)
                 self._add_point_to_table(point)
+                self._set_modified(True)
                 self.statusBar().showMessage(f"Добавлена точка: {point.name}", 3000)
 
     def edit_selected_point(self) -> None:
@@ -516,6 +556,7 @@ class MainWindow(QMainWindow):
                 self.map_canvas.update_user_point(updated)
                 self._update_point_in_table(row, updated)
                 self._update_properties_panel(updated)
+                self._set_modified(True)
                 self.statusBar().showMessage(f"Точка обновлена: {updated.name}", 3000)
                 logger.info("Точка '%s' (id=%s) успешно обновлена", updated.name, updated.id)
 
@@ -575,6 +616,7 @@ class MainWindow(QMainWindow):
             self.btn_delete_point.setEnabled(False)
             self.btn_edit_point.setEnabled(False)
             self._clear_properties_panel()
+            self._set_modified(True)
             self.statusBar().showMessage("Точка удалена", 3000)
             logger.info("Точка с ID %s успешно удалена", point_id)
 
@@ -661,4 +703,239 @@ class MainWindow(QMainWindow):
             self._on_table_row_double_clicked(row, 0)
         elif action == act_delete:
             self.delete_selected_point()
+
+    # -------------------------------------------------------------------------
+    # Управление проектом (Этап 8: Новый, Открыть, Сохранить, Сохранить как)
+    # -------------------------------------------------------------------------
+
+    @property
+    def is_modified(self) -> bool:
+        """Признак наличия несохраненных изменений в проекте."""
+        return self._is_modified
+
+    @property
+    def current_project_path(self) -> Path | None:
+        """Текущий путь к файлу проекта."""
+        return self._current_project_path
+
+    def _set_modified(self, modified: bool = True) -> None:
+        """Установка флага изменений и обновление заголовка окна."""
+        self._is_modified = modified
+        if modified:
+            self._project_loaded = True
+        self._update_window_title()
+
+    def _update_window_title(self) -> None:
+        """Обновление заголовка окна в формате: RME-Mapper — <Имя>[ *]."""
+        if not self._project_loaded and not self._is_modified and self._current_project_path is None:
+            self.setWindowTitle("RME Mapper — Географическая привязка координат")
+            return
+
+        proj_name = self._current_project_path.name if self._current_project_path else "Без имени"
+        mod_suffix = " *" if self._is_modified else ""
+        self.setWindowTitle(f"RME-Mapper — {proj_name}{mod_suffix}")
+
+    def closeEvent(self, event: Any) -> None:
+        """Обработка события закрытия окна с проверкой несохраненных изменений."""
+        if self._maybe_save_prompt("выходом"):
+            event.accept()
+        else:
+            event.ignore()
+
+    def _maybe_save_prompt(self, action_name: str = "выходом") -> bool:
+        """Запрос сохранения при наличии несохраненных изменений.
+
+        Возвращает:
+            True — продолжить действие (изменения сохранены или не требовались,
+                   либо пользователь выбрал 'Не сохранять').
+            False — отменить действие (пользователь нажал 'Отмена' или отменил диалог сохранения).
+        """
+        if not self._is_modified:
+            return True
+
+        proj_name = self._current_project_path.name if self._current_project_path else "Без имени"
+        reply = QMessageBox.question(
+            self,
+            "Несохраненные изменения",
+            f"Сохранить изменения в проекте '{proj_name}' перед {action_name}?",
+            QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Save,
+        )
+
+        if reply == QMessageBox.StandardButton.Save:
+            return self.save_project()
+        elif reply == QMessageBox.StandardButton.Discard:
+            return True
+        else:  # Cancel
+            return False
+
+    def new_project(self) -> bool:
+        """Создание нового пустого проекта."""
+        if not self._maybe_save_prompt("созданием нового проекта"):
+            return False
+
+        self._clear_all_points()
+        self._reset_layers_visibility()
+        self._current_project_path = None
+        self._project_loaded = True
+        self._set_modified(False)
+        self.statusBar().showMessage("Создан новый проект", 3000)
+        logger.info("Создан новый проект")
+        return True
+
+    def save_project(self) -> bool:
+        """Сохранение проекта. Если путь еще не задан, вызывается save_project_as."""
+        if self._current_project_path is None:
+            return self.save_project_as()
+        return self._do_save(self._current_project_path)
+
+    def save_project_as(self, file_path: Path | str | None = None) -> bool:
+        """Сохранение проекта с выбором пути в QFileDialog или по указанному пути."""
+        if file_path is None:
+            initial_dir = str(self._current_project_path.parent) if self._current_project_path else ""
+            chosen, _ = QFileDialog.getSaveFileName(
+                self,
+                "Сохранить проект",
+                initial_dir,
+                "Проект RME-Mapper (*.rmeproject);;Все файлы (*.*)",
+            )
+            if not chosen:
+                return False
+            path = Path(chosen)
+        else:
+            path = Path(file_path)
+
+        if path.suffix.lower() != ".rmeproject":
+            path = path.with_suffix(".rmeproject")
+
+        return self._do_save(path)
+
+    def _do_save(self, path: Path) -> bool:
+        """Атомарная запись проекта через ProjectService."""
+        try:
+            points = self._point_service.get_points()
+            project_data = self._project_service.build_project_data(
+                map_path=self._map_path,
+                layers=self.loaded_layers,
+                points=points,
+            )
+            saved_path = self._project_service.save_project(project_data, path)
+            self._current_project_path = saved_path
+            self._set_modified(False)
+            self.statusBar().showMessage(f"Проект сохранен: {saved_path.name}", 3000)
+            logger.info("Проект успешно сохранен в %s", saved_path)
+            return True
+        except Exception as e:
+            logger.exception("Ошибка при сохранении проекта в %s: %s", path, e)
+            QMessageBox.critical(
+                self,
+                "Ошибка сохранения",
+                f"Не удалось сохранить проект в файл:\n{path}\n\nОшибка:\n{e}",
+            )
+            return False
+
+    def open_project(self, file_path: Path | str | None = None) -> bool:
+        """Открытие проекта из файла *.rmeproject."""
+        if not self._maybe_save_prompt("открытием другого проекта"):
+            return False
+
+        if not file_path:
+            initial_dir = str(self._current_project_path.parent) if self._current_project_path else ""
+            selected_file, _ = QFileDialog.getOpenFileName(
+                self,
+                "Открыть проект",
+                initial_dir,
+                "Проект RME-Mapper (*.rmeproject);;Все файлы (*.*)",
+            )
+            if not selected_file:
+                return False
+            path = Path(selected_file)
+        else:
+            path = Path(file_path)
+
+        try:
+            project = self._project_service.load_project(path)
+        except Exception as e:
+            logger.exception("Ошибка открытия проекта из %s: %s", path, e)
+            QMessageBox.critical(
+                self,
+                "Ошибка открытия проекта",
+                f"Не удалось открыть файл проекта:\n{path}\n\n{e}",
+            )
+            return False
+
+        self._apply_project_data(project)
+        self._current_project_path = path
+        self._set_modified(False)
+        self.statusBar().showMessage(f"Проект открыт: {path.name}", 3000)
+        logger.info("Проект открыт: %s (%d точек)", path, len(project.points))
+        return True
+
+    def _apply_project_data(self, project: ProjectData) -> None:
+        """Применение десериализованных данных проекта к интерфейсу и сцене."""
+        # 1. Очищаем существующие пользовательские точки
+        self._clear_all_points()
+
+        # 2. Восстанавливаем видимость слоев
+        for layer in self.loaded_layers:
+            vis = None
+            if layer.id in project.layers:
+                vis = project.layers[layer.id]
+            elif hasattr(layer, "role") and hasattr(layer.role, "value") and layer.role.value in project.layers:
+                vis = project.layers[layer.role.value]
+
+            if vis is not None:
+                layer.visible = vis
+                chk = self.layer_checkboxes.get(layer.id)
+                if chk:
+                    chk.blockSignals(True)
+                    chk.setChecked(vis)
+                    chk.blockSignals(False)
+                self.map_canvas.set_layer_visibility(layer.id, vis)
+
+        # 3. Восстанавливаем точки и зоны
+        for pt_data in project.points:
+            pt = pt_data.to_map_point()
+            added_pt = self._point_service.add_point(
+                name=pt.name,
+                latitude=pt.latitude,
+                longitude=pt.longitude,
+                source_crs=pt.source_crs,
+                point_id=pt.id,
+                symbol=pt.symbol,
+                size=pt.size,
+                red=pt.red,
+                green=pt.green,
+                blue=pt.blue,
+                zone_enabled=pt.zone_enabled,
+                radius_m=pt.radius_m,
+                zone_red=pt.zone_red,
+                zone_green=pt.zone_green,
+                zone_blue=pt.zone_blue,
+                zone_opacity=pt.zone_opacity,
+            )
+            self.map_canvas.add_user_point(added_pt)
+            self._add_point_to_table(added_pt)
+
+    def _clear_all_points(self) -> None:
+        """Полная очистка пользовательских точек из сервиса, карты и таблицы."""
+        self._point_service.clear()
+        self.map_canvas.clear_user_points()
+        self.points_table.setRowCount(0)
+        self._table_point_ids.clear()
+        self.btn_delete_point.setEnabled(False)
+        self.btn_edit_point.setEnabled(False)
+        self._clear_properties_panel()
+
+    def _reset_layers_visibility(self) -> None:
+        """Сброс видимости слоев в состояние по умолчанию (все видны)."""
+        for layer in self.loaded_layers:
+            layer.visible = True
+            chk = self.layer_checkboxes.get(layer.id)
+            if chk:
+                chk.blockSignals(True)
+                chk.setChecked(True)
+                chk.blockSignals(False)
+            self.map_canvas.set_layer_visibility(layer.id, True)
+
 

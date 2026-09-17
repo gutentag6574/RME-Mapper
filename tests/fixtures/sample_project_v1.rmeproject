@@ -1,0 +1,71 @@
+{
+  "format": "RME-Mapper Project",
+  "version": 1,
+  "map": {
+    "map_id": "test_map",
+    "relative_path": "maps/test_map/prepared/mari.gpkg"
+  },
+  "layers": {
+    "boundary": true,
+    "roads": true
+  },
+  "points": [
+    {
+      "id": "sample-pt-001-yoshkar-ola",
+      "name": "Йошкар-Ола",
+      "latitude": 56.6344,
+      "longitude": 47.8999,
+      "source_crs": "OGC:CRS84",
+      "visible": true,
+      "symbol": "circle",
+      "size": 14.0,
+      "red": 220,
+      "green": 30,
+      "blue": 30,
+      "zone_enabled": true,
+      "radius_m": 10000.0,
+      "zone_red": 255,
+      "zone_green": 165,
+      "zone_blue": 0,
+      "zone_opacity": 30
+    },
+    {
+      "id": "sample-pt-002-medvedevo",
+      "name": "Медведево",
+      "latitude": 56.627,
+      "longitude": 47.815,
+      "source_crs": "OGC:CRS84",
+      "visible": true,
+      "symbol": "square",
+      "size": 12.0,
+      "red": 30,
+      "green": 140,
+      "blue": 220,
+      "zone_enabled": true,
+      "radius_m": 3000.0,
+      "zone_red": 30,
+      "zone_green": 140,
+      "zone_blue": 220,
+      "zone_opacity": 35
+    },
+    {
+      "id": "sample-pt-003-volzhsk",
+      "name": "Волжск",
+      "latitude": 55.858,
+      "longitude": 48.358,
+      "source_crs": "OGC:CRS84",
+      "visible": true,
+      "symbol": "triangle",
+      "size": 10.0,
+      "red": 40,
+      "green": 180,
+      "blue": 50,
+      "zone_enabled": false,
+      "radius_m": 0.0,
+      "zone_red": 220,
+      "zone_green": 30,
+      "zone_blue": 30,
+      "zone_opacity": 30
+    }
+  ]
+}
