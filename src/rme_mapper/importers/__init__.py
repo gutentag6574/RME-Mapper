@@ -1,7 +1,21 @@
-"""Модуль пакетного импорта координат.
+"""Пакет подсистемы пакетного импорта точек из табличных файлов (XLSX, CSV, TXT)."""
 
-Отвечает за:
-- Чтение файлов XLSX (openpyxl, pandas);
-- Чтение файлов CSV и TXT с различными разделителями;
-- Построчную валидацию и сопоставление столбцов.
-"""
+from rme_mapper.importers.models import (
+    CoordinateFormat,
+    ImportOptions,
+    ImportResult,
+    ImportRow,
+    ImportRowError,
+    ImportRowWarning,
+)
+from rme_mapper.importers.import_service import ImportService
+
+__all__ = [
+    "CoordinateFormat",
+    "ImportOptions",
+    "ImportResult",
+    "ImportRow",
+    "ImportRowError",
+    "ImportRowWarning",
+    "ImportService",
+]

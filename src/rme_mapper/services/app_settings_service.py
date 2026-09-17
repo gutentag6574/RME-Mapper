@@ -29,6 +29,7 @@ class AppSettingsService:
     KEY_RECENT_MAPS = "history/recent_maps"
     KEY_LAST_MAP_DIR = "paths/last_map_directory"
     KEY_LAST_PROJECT_DIR = "paths/last_project_directory"
+    KEY_LAST_IMPORT_DIR = "paths/last_import_directory"
     KEY_WINDOW_GEOMETRY = "ui/window_geometry"
     KEY_WINDOW_MAXIMIZED = "ui/window_maximized"
     KEY_SPLITTER_SIZES = "ui/splitter_sizes"
@@ -223,6 +224,36 @@ class AppSettingsService:
             d = str(p)
         if d:
             self._set_str(self.KEY_LAST_PROJECT_DIR, d)
+
+    def get_last_import_directory(self, check_exists: bool = False, fallback: str = "") -> str:
+        """Получить последний каталог импорта."""
+        import os
+        from pathlib import Path
+
+        val = self._get_str(self.KEY_LAST_IMPORT_DIR, "")
+        if val:
+            if not check_exists or os.path.isdir(val):
+                return val
+        if fallback and (not check_exists or os.path.isdir(fallback)):
+            return fallback
+        # В качестве резерва используем каталог проектов или домашнюю директорию
+        proj_dir = self.get_last_project_directory(check_exists=check_exists)
+        return proj_dir if proj_dir else (str(Path.home()) if check_exists else "")
+
+    def set_last_import_directory(self, path: str) -> None:
+        """Сохранить последний каталог импорта."""
+        import os
+        from pathlib import Path
+
+        if not path:
+            return
+        p = Path(path)
+        if p.suffix or (os.path.exists(path) and not os.path.isdir(path)):
+            d = str(p.parent)
+        else:
+            d = str(p)
+        if d:
+            self._set_str(self.KEY_LAST_IMPORT_DIR, d)
 
     # --- UI State & Geometry ---
     def _get_bool(self, key: str, default: bool = True) -> bool:

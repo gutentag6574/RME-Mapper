@@ -186,6 +186,28 @@ class PointController(QObject):
                 self._properties_panel.update_properties(point)
         self._on_undo_state_changed()
 
+    def _cmd_add_points(self, points: list[MapPoint]) -> None:
+        """Пакетная низкоуровневая вставка точек в модель, таблицу и на холст."""
+        for p in points:
+            self._point_service._points[p.id] = p
+            self.add_point_to_table(p)
+            self._render_point_on_canvas(p)
+        self._on_undo_state_changed()
+
+    def _cmd_remove_points(self, point_ids: list[str]) -> None:
+        """Пакетное низкоуровневое удаление точек из модели, таблицы и с холста."""
+        pid_set = set(point_ids)
+        for row in range(len(self._table_point_ids) - 1, -1, -1):
+            pid = self._table_point_ids[row]
+            if pid in pid_set:
+                self._table_point_ids.pop(row)
+                self._points_panel.remove_row(row)
+
+        for pid in point_ids:
+            self._point_service.remove_point(pid)
+            self._map_canvas.remove_user_point(pid)
+        self._on_undo_state_changed()
+
     # -------------------------------------------------------------------------
     # Сценарии пользователя
     # -------------------------------------------------------------------------

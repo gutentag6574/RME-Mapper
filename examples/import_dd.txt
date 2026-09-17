@@ -1,0 +1,4 @@
+name	latitude	longitude	symbol	size
+Йошкар-Ола	56.632800	47.884400	circle	14
+Волжск	55.869400	48.358900	square	12
+Козьмодемьянск	56.342200	46.565800	triangle	12

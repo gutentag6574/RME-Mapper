@@ -155,6 +155,28 @@ class BulkEditStyleCommand(UndoCommand):
         self._apply_fn([copy.deepcopy(p) for p in self.before_points])
 
 
+class ImportPointsCommand(UndoCommand):
+    """Команда атомарного добавления набора точек из файла импорта."""
+
+    def __init__(
+        self,
+        points: list[MapPoint],
+        add_fn: Callable[[list[MapPoint]], None],
+        remove_fn: Callable[[list[str]], None],
+        description: str = "Импорт точек",
+    ) -> None:
+        super().__init__(description)
+        self.points = [copy.deepcopy(p) for p in points]
+        self._add_fn = add_fn
+        self._remove_fn = remove_fn
+
+    def execute(self) -> None:
+        self._add_fn([copy.deepcopy(p) for p in self.points])
+
+    def undo(self) -> None:
+        self._remove_fn([p.id for p in self.points])
+
+
 class UndoManager:
     """Сервис управления историей действий (Undo / Redo)."""
 

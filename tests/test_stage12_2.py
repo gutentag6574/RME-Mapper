@@ -138,9 +138,9 @@ def test_03_drag_enter_accepts_rmeproject(qapp, tmp_path):
 
 
 def test_04_drag_enter_ignores_unsupported(qapp, tmp_path):
-    """4. DragEnter с неподдерживаемым файлом (.txt) отклоняет действие."""
+    """4. DragEnter с неподдерживаемым файлом (.pdf) отклоняет действие."""
     win = MainWindow()
-    f = tmp_path / "data.txt"
+    f = tmp_path / "data.pdf"
     f.touch()
     ev = _make_drag_enter_event([str(f)])
     win.dragEnterEvent(ev)

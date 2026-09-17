@@ -39,6 +39,7 @@ from rme_mapper.ui.about_dialog import AboutDialog
 from rme_mapper.ui.controllers.map_controller import MapController
 from rme_mapper.ui.controllers.point_controller import PointController
 from rme_mapper.ui.controllers.project_controller import ProjectController
+from rme_mapper.ui.controllers.import_controller import ImportController
 from rme_mapper.ui.panels.layers_panel import LayersPanel
 from rme_mapper.ui.panels.points_panel import PointsPanel
 from rme_mapper.ui.panels.properties_panel import (
@@ -125,6 +126,18 @@ class MainWindow(QMainWindow):
             on_title_changed=self._update_window_title,
             set_status_message=self._show_status_message,
             settings_service=self._settings_service,
+        )
+
+        self.import_controller = ImportController(
+            parent_widget=self,
+            point_controller=self.point_controller,
+            point_service=self._point_service,
+            project_controller=self.project_controller,
+            get_active_profile=lambda: self.map_controller.active_profile,
+            get_map_path=lambda: self.map_controller.map_path,
+            get_boundary_geometry=lambda: self.map_controller.boundary_geometry,
+            settings_service=self._settings_service,
+            set_status_message=self._show_status_message,
         )
 
         # Drag & Drop, сигналы курсора и счетчика точек
@@ -287,8 +300,11 @@ class MainWindow(QMainWindow):
         self.zoom_to_selected_action.setEnabled(False)
         self.coords_menu.addAction(self.zoom_to_selected_action)
 
-        # Меню: Импорт / Экспорт (заглушки)
+        # Меню: Импорт / Экспорт
         self.import_menu = menu_bar.addMenu("")
+        self.import_points_action = QAction(self)
+        self.import_points_action.triggered.connect(lambda: self.import_controller.open_import_dialog())
+        self.import_menu.addAction(self.import_points_action)
         self.export_menu = menu_bar.addMenu("")
 
         # Меню: Вид
@@ -862,6 +878,9 @@ class MainWindow(QMainWindow):
         self.map_menu.setTitle(tr("menu.map"))
         self.coords_menu.setTitle(tr("menu.coordinates"))
         self.import_menu.setTitle(tr("menu.import"))
+        if hasattr(self, "import_points_action"):
+            self.import_points_action.setText(tr("action.import_points"))
+            self.import_points_action.setStatusTip(tr("action.import_points_tip"))
         self.export_menu.setTitle(tr("menu.export"))
         if hasattr(self, "view_menu"):
             self.view_menu.setTitle(tr("menu.view"))
@@ -1136,7 +1155,7 @@ class MainWindow(QMainWindow):
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
             has_supported = any(
-                url.toLocalFile().lower().endswith((".gpkg", ".gpmap", ".rmeproject"))
+                url.toLocalFile().lower().endswith((".gpkg", ".gpmap", ".rmeproject", ".xlsx", ".csv", ".txt"))
                 for url in urls
             )
             if has_supported:
@@ -1181,6 +1200,9 @@ class MainWindow(QMainWindow):
         elif ext in (".gpmap", ".rmeproject"):
             event.acceptProposedAction()
             self.project_controller.open_project_workflow(first_path)
+        elif ext in (".xlsx", ".csv", ".txt"):
+            event.acceptProposedAction()
+            self.import_controller.open_import_dialog(first_path)
         else:
             event.ignore()
             from PySide6.QtWidgets import QMessageBox
