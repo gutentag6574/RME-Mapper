@@ -6,11 +6,35 @@ from typing import Final
 APP_NAME: Final[str] = "GeoPoint Mapper"
 APP_VERSION: Final[str] = "0.11.0"
 
-APP_DESCRIPTION: Final[str] = (
+APP_DESCRIPTION_RU: Final[str] = (
     "Универсальное настольное приложение для работы "
     "с географически привязанными картами, координатами "
     "и геодезическими зонами."
 )
+
+APP_DESCRIPTION_EN: Final[str] = (
+    "Universal desktop application for working "
+    "with georeferenced maps, coordinates, "
+    "and geodesic zones."
+)
+
+APP_DESCRIPTION: Final[str] = APP_DESCRIPTION_RU
+
+
+def get_app_description(lang: str | None = None) -> str:
+    """Получение локализованного описания приложения."""
+    if lang == "en":
+        return APP_DESCRIPTION_EN
+    if lang == "ru":
+        return APP_DESCRIPTION_RU
+    try:
+        from rme_mapper.i18n import get_language
+        if get_language() == "en":
+            return APP_DESCRIPTION_EN
+    except Exception:
+        pass
+    return APP_DESCRIPTION_RU
+
 
 # Сведения об авторе и разработчике
 AUTHOR_NAME: Final[str] = "Кульдеев Вадим Алексеевич"

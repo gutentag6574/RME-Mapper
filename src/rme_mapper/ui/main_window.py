@@ -6,7 +6,7 @@ from typing import Any
 import uuid
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QFont, QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QFont, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -31,12 +31,14 @@ from PySide6.QtWidgets import (
 
 from rme_mapper.app_info import APP_NAME
 from rme_mapper.backends import MapDataBackend, get_backend
+from rme_mapper.i18n import get_language, get_translation_service, set_language, tr
 from rme_mapper.maps.map_canvas import MapCanvas
 from rme_mapper.maps.map_config import get_default_geopackage_path, get_project_root
 from rme_mapper.models.map_layer import LayerRole, MapLayer
 from rme_mapper.models.map_point import MapPoint
 from rme_mapper.models.map_profile import MapProfile
 from rme_mapper.models.project_data import ProjectData
+from rme_mapper.services.app_settings_service import AppSettingsService
 from rme_mapper.services.coordinate_service import CoordinateService
 from rme_mapper.services.geodesic_service import GeodesicService
 from rme_mapper.services.geopackage_service import GeoPackageService
@@ -53,6 +55,16 @@ SYMBOL_DISPLAY_NAMES = {
     "square": "Квадрат",
     "triangle": "Треугольник",
 }
+
+
+def get_symbol_display_name(symbol: str) -> str:
+    """Получение локализованного названия формы маркера."""
+    key = f"shape.{symbol}"
+    ts = get_translation_service()
+    if ts.has_translation(key):
+        return ts.translate(key)
+    return SYMBOL_DISPLAY_NAMES.get(symbol, symbol)
+
 
 logger = logging.getLogger("rme_mapper.ui.main_window")
 
@@ -74,6 +86,10 @@ class MainWindow(QMainWindow):
         self.resize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
 
         self._backend: MapDataBackend = backend or get_backend()
+        self._settings_service = AppSettingsService()
+        init_lang = self._settings_service.get_language()
+        set_language(init_lang)
+
         self._map_catalog_service = MapCatalogService()
         self._layer_service = LayerService(backend=self._backend)
         self._point_service = PointService()
@@ -121,6 +137,7 @@ class MainWindow(QMainWindow):
         self._create_menu_bar()
         self._create_central_layout()
         self._create_status_bar()
+        self.retranslate_ui()
 
     def _create_menu_bar(self) -> None:
         """Создание верхнего меню приложения."""
@@ -151,10 +168,10 @@ class MainWindow(QMainWindow):
 
         self.file_menu.addSeparator()
 
-        exit_action = QAction("Выход", self)
-        exit_action.setShortcut(QKeySequence("Ctrl+Q"))
-        exit_action.triggered.connect(self.close)
-        self.file_menu.addAction(exit_action)
+        self.exit_action = QAction("Выход", self)
+        self.exit_action.setShortcut(QKeySequence("Ctrl+Q"))
+        self.exit_action.triggered.connect(self.close)
+        self.file_menu.addAction(self.exit_action)
 
         # Меню: Карта
         self.map_menu = menu_bar.addMenu("Карта")
@@ -170,15 +187,15 @@ class MainWindow(QMainWindow):
 
         self.map_menu.addSeparator()
 
-        fit_action = QAction("Показать всю карту", self)
-        fit_action.triggered.connect(lambda: self.map_canvas.fit_to_view())
-        self.map_menu.addAction(fit_action)
+        self.fit_action = QAction("Показать всю карту", self)
+        self.fit_action.triggered.connect(lambda: self.map_canvas.fit_to_view())
+        self.map_menu.addAction(self.fit_action)
 
         # Меню: Координаты
         self.coords_menu = menu_bar.addMenu("Координаты")
-        add_pt_action = QAction("Добавить точку", self)
-        add_pt_action.triggered.connect(self.show_add_point_dialog)
-        self.coords_menu.addAction(add_pt_action)
+        self.add_pt_action = QAction("Добавить точку", self)
+        self.add_pt_action.triggered.connect(self.show_add_point_dialog)
+        self.coords_menu.addAction(self.add_pt_action)
 
         # Меню: Импорт
         self.import_menu = menu_bar.addMenu("Импорт")
@@ -188,12 +205,35 @@ class MainWindow(QMainWindow):
 
         # Меню: Настройки
         self.settings_menu = menu_bar.addMenu("Настройки")
+        self.language_menu = self.settings_menu.addMenu("Язык")
+
+        self.lang_action_group = QActionGroup(self)
+        self.lang_action_group.setExclusive(True)
+
+        self.lang_ru_action = QAction("Русский", self)
+        self.lang_ru_action.setCheckable(True)
+        self.lang_action_group.addAction(self.lang_ru_action)
+        self.language_menu.addAction(self.lang_ru_action)
+
+        self.lang_en_action = QAction("English", self)
+        self.lang_en_action.setCheckable(True)
+        self.lang_action_group.addAction(self.lang_en_action)
+        self.language_menu.addAction(self.lang_en_action)
+
+        if get_language() == "en":
+            self.lang_en_action.setChecked(True)
+        else:
+            self.lang_ru_action.setChecked(True)
+
+        self.lang_ru_action.triggered.connect(lambda: self.switch_language("ru"))
+        self.lang_en_action.triggered.connect(lambda: self.switch_language("en"))
 
         # Меню: Справка
         self.help_menu = menu_bar.addMenu("Справка")
         self.about_action = QAction("О программе...", self)
         self.about_action.triggered.connect(self.show_about_dialog)
         self.help_menu.addAction(self.about_action)
+
 
     def _create_central_layout(self) -> None:
         """Создание трехпанельной компоновки: Слои/Точки | Карта | Свойства."""
@@ -228,12 +268,12 @@ class MainWindow(QMainWindow):
         layout.setSpacing(10)
 
         # 1. Блок 'Слои'
-        layers_title = QLabel("Слои")
+        self.layers_title_label = QLabel("Слои")
         layers_font = QFont()
         layers_font.setBold(True)
         layers_font.setPointSize(11)
-        layers_title.setFont(layers_font)
-        layout.addWidget(layers_title)
+        self.layers_title_label.setFont(layers_font)
+        layout.addWidget(self.layers_title_label)
 
         self.layers_container = QWidget()
         self.layers_container.setObjectName("layersContainer")
@@ -250,12 +290,12 @@ class MainWindow(QMainWindow):
 
         # 2. Блок 'Точки'
         points_header_layout = QHBoxLayout()
-        points_title = QLabel("Точки")
+        self.points_title_label = QLabel("Точки")
         points_font = QFont()
         points_font.setBold(True)
         points_font.setPointSize(11)
-        points_title.setFont(points_font)
-        points_header_layout.addWidget(points_title)
+        self.points_title_label.setFont(points_font)
+        points_header_layout.addWidget(self.points_title_label)
         points_header_layout.addStretch()
         layout.addLayout(points_header_layout)
 
@@ -347,12 +387,12 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
-        title_label = QLabel("Свойства")
+        self.properties_title_label = QLabel("Свойства")
         title_font = QFont()
         title_font.setBold(True)
         title_font.setPointSize(11)
-        title_label.setFont(title_font)
-        layout.addWidget(title_label)
+        self.properties_title_label.setFont(title_font)
+        layout.addWidget(self.properties_title_label)
 
         self.properties_placeholder = QFrame()
         self.properties_placeholder.setObjectName("propertiesPlaceholder")
@@ -374,21 +414,26 @@ class MainWindow(QMainWindow):
         prop_form = QFormLayout(self.prop_container)
         prop_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
+        self.prop_name_lbl = QLabel("<b>Название:</b>")
         self.prop_name_val = QLabel("—")
         self.prop_name_val.setWordWrap(True)
-        prop_form.addRow("<b>Название:</b>", self.prop_name_val)
+        prop_form.addRow(self.prop_name_lbl, self.prop_name_val)
 
+        self.prop_lat_lbl = QLabel("<b>Широта:</b>")
         self.prop_lat_val = QLabel("—")
-        prop_form.addRow("<b>Широта:</b>", self.prop_lat_val)
+        prop_form.addRow(self.prop_lat_lbl, self.prop_lat_val)
 
+        self.prop_lon_lbl = QLabel("<b>Долгота:</b>")
         self.prop_lon_val = QLabel("—")
-        prop_form.addRow("<b>Долгота:</b>", self.prop_lon_val)
+        prop_form.addRow(self.prop_lon_lbl, self.prop_lon_val)
 
+        self.prop_shape_lbl = QLabel("<b>Форма:</b>")
         self.prop_shape_val = QLabel("—")
-        prop_form.addRow("<b>Форма:</b>", self.prop_shape_val)
+        prop_form.addRow(self.prop_shape_lbl, self.prop_shape_val)
 
+        self.prop_size_lbl = QLabel("<b>Размер:</b>")
         self.prop_size_val = QLabel("—")
-        prop_form.addRow("<b>Размер:</b>", self.prop_size_val)
+        prop_form.addRow(self.prop_size_lbl, self.prop_size_val)
 
         color_row = QHBoxLayout()
         self.prop_color_val = QLabel("—")
@@ -398,13 +443,16 @@ class MainWindow(QMainWindow):
         color_row.addWidget(self.prop_color_val)
         color_row.addWidget(self.prop_color_swatch)
         color_row.addStretch()
-        prop_form.addRow("<b>Цвет (RGB):</b>", color_row)
+        self.prop_color_lbl = QLabel("<b>Цвет (RGB):</b>")
+        prop_form.addRow(self.prop_color_lbl, color_row)
 
+        self.prop_zone_lbl = QLabel("<b>Зона:</b>")
         self.prop_zone_val = QLabel("—")
-        prop_form.addRow("<b>Зона:</b>", self.prop_zone_val)
+        prop_form.addRow(self.prop_zone_lbl, self.prop_zone_val)
 
+        self.prop_zone_radius_lbl = QLabel("<b>Радиус зоны:</b>")
         self.prop_zone_radius_val = QLabel("—")
-        prop_form.addRow("<b>Радиус зоны:</b>", self.prop_zone_radius_val)
+        prop_form.addRow(self.prop_zone_radius_lbl, self.prop_zone_radius_val)
 
         zone_color_row = QHBoxLayout()
         self.prop_zone_color_val = QLabel("—")
@@ -414,10 +462,12 @@ class MainWindow(QMainWindow):
         zone_color_row.addWidget(self.prop_zone_color_val)
         zone_color_row.addWidget(self.prop_zone_color_swatch)
         zone_color_row.addStretch()
-        prop_form.addRow("<b>Цвет зоны:</b>", zone_color_row)
+        self.prop_zone_color_lbl = QLabel("<b>Цвет зоны:</b>")
+        prop_form.addRow(self.prop_zone_color_lbl, zone_color_row)
 
+        self.prop_zone_opacity_lbl = QLabel("<b>Прозрачность зоны:</b>")
         self.prop_zone_opacity_val = QLabel("—")
-        prop_form.addRow("<b>Прозрачность зоны:</b>", self.prop_zone_opacity_val)
+        prop_form.addRow(self.prop_zone_opacity_lbl, self.prop_zone_opacity_val)
 
         self.prop_container.setVisible(False)
         placeholder_layout.addWidget(self.prop_container)
@@ -427,12 +477,151 @@ class MainWindow(QMainWindow):
         return panel
 
 
+
     def _create_status_bar(self) -> None:
         """Создание нижней строки состояния."""
         status_bar = QStatusBar(self)
         status_bar.setObjectName("statusBar")
-        status_bar.showMessage("Карта не загружена" if not self._active_profile else "Готово")
+        status_bar.showMessage(tr("status.no_map") if not self._active_profile else tr("status.ready"))
         self.setStatusBar(status_bar)
+
+    def switch_language(self, lang_code: str) -> None:
+        """Переключение языка интерфейса без перезапуска приложения."""
+        if get_language() == lang_code:
+            return
+        set_language(lang_code)
+        self._settings_service.set_language(lang_code)
+        self.retranslate_ui()
+
+    def retranslate_ui(self) -> None:
+        """Динамическое обновление всех компонентов интерфейса на активный язык."""
+        cur_lang = get_language()
+        if hasattr(self, "lang_ru_action") and hasattr(self, "lang_en_action"):
+            if cur_lang == "en":
+                self.lang_en_action.setChecked(True)
+            else:
+                self.lang_ru_action.setChecked(True)
+
+        # 1. Меню верхнего уровня
+        if hasattr(self, "file_menu"):
+            self.file_menu.setTitle(tr("menu.file"))
+        if hasattr(self, "map_menu"):
+            self.map_menu.setTitle(tr("menu.map"))
+        if hasattr(self, "coords_menu"):
+            self.coords_menu.setTitle(tr("menu.coordinates"))
+        if hasattr(self, "import_menu"):
+            self.import_menu.setTitle(tr("menu.import"))
+        if hasattr(self, "export_menu"):
+            self.export_menu.setTitle(tr("menu.export"))
+        if hasattr(self, "settings_menu"):
+            self.settings_menu.setTitle(tr("menu.settings"))
+        if hasattr(self, "language_menu"):
+            self.language_menu.setTitle(tr("menu.language"))
+        if hasattr(self, "help_menu"):
+            self.help_menu.setTitle(tr("menu.help"))
+
+        # 2. Действия (Actions)
+        if hasattr(self, "new_action"):
+            self.new_action.setText(tr("action.new_project"))
+        if hasattr(self, "open_action"):
+            self.open_action.setText(tr("action.open_project"))
+        if hasattr(self, "save_action"):
+            self.save_action.setText(tr("action.save"))
+        if hasattr(self, "save_as_action"):
+            self.save_as_action.setText(tr("action.save_as"))
+        if hasattr(self, "exit_action"):
+            self.exit_action.setText(tr("action.exit"))
+        if hasattr(self, "open_map_action"):
+            self.open_map_action.setText(tr("action.open_map"))
+        if hasattr(self, "close_map_action"):
+            self.close_map_action.setText(tr("action.close_map"))
+        if hasattr(self, "fit_action"):
+            self.fit_action.setText(tr("action.fit_map"))
+        if hasattr(self, "add_pt_action"):
+            self.add_pt_action.setText(tr("action.add_point"))
+        if hasattr(self, "about_action"):
+            self.about_action.setText(tr("action.about"))
+
+        # 3. Панели
+        if hasattr(self, "layers_title_label"):
+            self.layers_title_label.setText(tr("panel.layers"))
+        if hasattr(self, "points_title_label"):
+            self.points_title_label.setText(tr("panel.points"))
+        if hasattr(self, "properties_title_label"):
+            self.properties_title_label.setText(tr("panel.properties"))
+
+        # 4. Кнопки панели точек
+        if hasattr(self, "btn_add_point"):
+            self.btn_add_point.setText(tr("btn.add_point"))
+        if hasattr(self, "btn_edit_point"):
+            self.btn_edit_point.setText(tr("btn.edit_point"))
+        if hasattr(self, "btn_delete_point"):
+            self.btn_delete_point.setText(tr("btn.delete_point"))
+
+        # 5. Заголовки таблицы точек
+        if hasattr(self, "points_table"):
+            self.points_table.setHorizontalHeaderLabels([
+                tr("table.col_index"),
+                tr("table.col_name"),
+                tr("table.col_lat"),
+                tr("table.col_lon"),
+                tr("table.col_shape"),
+                tr("table.col_radius"),
+            ])
+            for row, point_id in enumerate(self._table_point_ids):
+                point = self._point_service.get_point(point_id)
+                if point:
+                    self.points_table.item(row, 4).setText(get_symbol_display_name(point.symbol))
+                    self.points_table.item(row, 5).setText(GeodesicService.format_radius(point.radius_m, point.zone_enabled))
+
+        # 6. Панель свойств
+        if hasattr(self, "prop_empty_label"):
+            self.prop_empty_label.setText(tr("properties.empty_hint"))
+        if hasattr(self, "prop_name_lbl"):
+            self.prop_name_lbl.setText(f"<b>{tr('properties.name')}</b>")
+        if hasattr(self, "prop_lat_lbl"):
+            self.prop_lat_lbl.setText(f"<b>{tr('properties.latitude')}</b>")
+        if hasattr(self, "prop_lon_lbl"):
+            self.prop_lon_lbl.setText(f"<b>{tr('properties.longitude')}</b>")
+        if hasattr(self, "prop_shape_lbl"):
+            self.prop_shape_lbl.setText(f"<b>{tr('properties.shape')}</b>")
+        if hasattr(self, "prop_size_lbl"):
+            self.prop_size_lbl.setText(f"<b>{tr('properties.size')}</b>")
+        if hasattr(self, "prop_color_lbl"):
+            self.prop_color_lbl.setText(f"<b>{tr('properties.color')}</b>")
+        if hasattr(self, "prop_zone_lbl"):
+            self.prop_zone_lbl.setText(f"<b>{tr('properties.zone')}</b>")
+        if hasattr(self, "prop_zone_radius_lbl"):
+            self.prop_zone_radius_lbl.setText(f"<b>{tr('properties.radius')}</b>")
+        if hasattr(self, "prop_zone_color_lbl"):
+            self.prop_zone_color_lbl.setText(f"<b>{tr('properties.zone_color')}</b>")
+        if hasattr(self, "prop_zone_opacity_lbl"):
+            self.prop_zone_opacity_lbl.setText(f"<b>{tr('properties.opacity')}</b>")
+
+        selected_rows = self.points_table.selectionModel().selectedRows() if hasattr(self, "points_table") else []
+        if selected_rows and 0 <= selected_rows[0].row() < len(self._table_point_ids):
+            point = self._point_service.get_point(self._table_point_ids[selected_rows[0].row()])
+            if point:
+                self._update_properties_panel(point)
+
+        # 7. Центральная панель и MapCanvas
+        if hasattr(self, "map_title_label"):
+            if not self._active_profile:
+                self.map_title_label.setText(tr("status.no_map"))
+            else:
+                self.map_title_label.setText(f"{tr('menu.map')}: {self._active_profile.name}")
+        if hasattr(self, "map_canvas"):
+            self.map_canvas.retranslate_ui()
+
+        # 8. Строка состояния и заголовок окна
+        if self.statusBar():
+            if not self._active_profile:
+                self.statusBar().showMessage(tr("status.no_map"))
+            else:
+                self.statusBar().showMessage(
+                    tr("status.map_info", name=self._active_profile.name, crs=self._active_crs, count=len(self.loaded_layers))
+                )
+        self._update_window_title()
 
     def _unload_map(self) -> None:
         """Перевод приложения в состояние без активной карты."""
@@ -443,15 +632,16 @@ class MainWindow(QMainWindow):
         self._clear_layer_checkboxes()
         self.map_canvas.clear_map()
         if hasattr(self, "map_title_label"):
-            self.map_title_label.setText("Карта не загружена")
+            self.map_title_label.setText(tr("status.no_map"))
         if self.statusBar():
-            self.statusBar().showMessage("Карта не загружена")
+            self.statusBar().showMessage(tr("status.no_map"))
         if hasattr(self, "btn_add_point"):
             self.btn_add_point.setEnabled(False)
         if hasattr(self, "btn_edit_point"):
             self.btn_edit_point.setEnabled(False)
         if hasattr(self, "btn_delete_point"):
             self.btn_delete_point.setEnabled(False)
+
 
     def open_map(self, map_target: MapProfile | Path | str | None = None) -> bool:
         """Открытие карты через OpenMapDialog или напрямую по объекту/пути."""
@@ -481,9 +671,8 @@ class MainWindow(QMainWindow):
         if prompt and len(self._point_service) > 0:
             reply = QMessageBox.question(
                 self,
-                "Закрыть карту",
-                f"В проекте есть пользовательские точки ({len(self._point_service)}).\n"
-                f"Закрыть карту? Точки проекта останутся в модели и будут скрыты до загрузки новой карты.",
+                tr("dialog.close_map_title"),
+                tr("dialog.close_map_text", count=len(self._point_service)),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
@@ -512,10 +701,10 @@ class MainWindow(QMainWindow):
         logger.info("Загрузка карты '%s' из: %s", map_title, path)
 
         if not self._backend.exists(path):
-            err_msg = f"Не найден файл карты:\n{path}"
+            err_msg = f"{tr('msg.map_file_not_found')}:\n{path}"
             logger.error("Файл карты не найден: %s", path)
             self.map_canvas.set_error(err_msg)
-            self.statusBar().showMessage("Ошибка: файл карты не найден")
+            self.statusBar().showMessage(tr("status.error_map_not_found"))
             return
 
         try:
@@ -527,10 +716,10 @@ class MainWindow(QMainWindow):
             logger.info("Обнаружено поддерживаемых слоев: %d", len(discovered_layers))
 
             if not discovered_layers:
-                err_msg = "В источнике карты не найдено поддерживаемых картографических слоев"
+                err_msg = tr("msg.no_layers_found")
                 logger.error(err_msg)
                 self.map_canvas.set_error(err_msg)
-                self.statusBar().showMessage("Ошибка: поддерживаемые слои не найдены")
+                self.statusBar().showMessage(tr("status.error_no_layers"))
                 return
 
             self._clear_layer_checkboxes()
@@ -647,12 +836,12 @@ class MainWindow(QMainWindow):
         if self._active_profile is None and self._map_path is None:
             QMessageBox.information(
                 self,
-                "Карта не загружена",
-                "Для добавления точек сначала откройте карту.",
+                tr("dialog.no_map_title"),
+                tr("dialog.no_map_text"),
             )
             return
 
-        auto_name = f"Точка {len(self._point_service) + 1}"
+        auto_name = f"{tr('point.default_name_prefix')} {len(self._point_service) + 1}"
         dialog = PointDialog(
             parent=self,
             boundary_geometry=self._boundary_geometry,
@@ -699,7 +888,7 @@ class MainWindow(QMainWindow):
                 self.map_canvas.add_user_point(point, map_x=mx, map_y=my, zone_polygon=zone_poly)
                 self._add_point_to_table(point)
                 self._set_modified(True)
-                self.statusBar().showMessage(f"Добавлена точка: {point.name}", 3000)
+                self.statusBar().showMessage(tr("status.point_added", name=point.name), 3000)
 
     def edit_selected_point(self) -> None:
         """Открытие диалога редактирования для выбранной в таблице точки."""
@@ -764,7 +953,7 @@ class MainWindow(QMainWindow):
                 self._update_point_in_table(row, updated)
                 self._update_properties_panel(updated)
                 self._set_modified(True)
-                self.statusBar().showMessage(f"Точка обновлена: {updated.name}", 3000)
+                self.statusBar().showMessage(tr("status.point_updated", name=updated.name), 3000)
                 logger.info("Точка '%s' (id=%s) успешно обновлена", updated.name, updated.id)
 
     def _add_point_to_table(self, point: MapPoint) -> None:
@@ -777,7 +966,7 @@ class MainWindow(QMainWindow):
         name_item = QTableWidgetItem(point.name)
         lat_item = QTableWidgetItem(f"{point.latitude:.6f}")
         lon_item = QTableWidgetItem(f"{point.longitude:.6f}")
-        shape_name = SYMBOL_DISPLAY_NAMES.get(point.symbol, point.symbol)
+        shape_name = get_symbol_display_name(point.symbol)
         shape_item = QTableWidgetItem(shape_name)
         radius_str = GeodesicService.format_radius(point.radius_m, point.zone_enabled)
         radius_item = QTableWidgetItem(radius_str)
@@ -796,7 +985,7 @@ class MainWindow(QMainWindow):
         self.points_table.item(row, 1).setText(point.name)
         self.points_table.item(row, 2).setText(f"{point.latitude:.6f}")
         self.points_table.item(row, 3).setText(f"{point.longitude:.6f}")
-        shape_name = SYMBOL_DISPLAY_NAMES.get(point.symbol, point.symbol)
+        shape_name = get_symbol_display_name(point.symbol)
         self.points_table.item(row, 4).setText(shape_name)
         radius_str = GeodesicService.format_radius(point.radius_m, point.zone_enabled)
         self.points_table.item(row, 5).setText(radius_str)
@@ -824,7 +1013,7 @@ class MainWindow(QMainWindow):
             self.btn_edit_point.setEnabled(False)
             self._clear_properties_panel()
             self._set_modified(True)
-            self.statusBar().showMessage("Точка удалена", 3000)
+            self.statusBar().showMessage(tr("status.point_deleted"), 3000)
             logger.info("Точка с ID %s успешно удалена", point_id)
 
     def _on_table_row_double_clicked(self, row: int, column: int) -> None:
@@ -839,7 +1028,7 @@ class MainWindow(QMainWindow):
                     target_crs=self._active_crs,
                 )
                 self.map_canvas.center_on_map_coordinates(mx, my)
-                self.statusBar().showMessage(f"Фокус на точке: {point.name}", 2000)
+                self.statusBar().showMessage(tr("status.focus_point", name=point.name), 2000)
 
     def _on_table_selection_changed(self) -> None:
         """Активация/деактивация кнопок и обновление панели свойств."""
@@ -867,7 +1056,7 @@ class MainWindow(QMainWindow):
         self.prop_name_val.setText(point.name)
         self.prop_lat_val.setText(f"{point.latitude:.6f}")
         self.prop_lon_val.setText(f"{point.longitude:.6f}")
-        self.prop_shape_val.setText(SYMBOL_DISPLAY_NAMES.get(point.symbol, point.symbol))
+        self.prop_shape_val.setText(get_symbol_display_name(point.symbol))
         self.prop_size_val.setText(f"{point.size:.1f} px")
         self.prop_color_val.setText(f"RGB({point.red}, {point.green}, {point.blue})")
         self.prop_color_swatch.setStyleSheet(
@@ -875,7 +1064,7 @@ class MainWindow(QMainWindow):
             f"border: 1px solid #777; border-radius: 3px;"
         )
 
-        self.prop_zone_val.setText("Да" if point.zone_enabled else "Нет")
+        self.prop_zone_val.setText(tr("common.yes") if point.zone_enabled else tr("common.no"))
         if point.zone_enabled:
             self.prop_zone_radius_val.setText(GeodesicService.format_radius(point.radius_m, True))
             self.prop_zone_color_val.setText(f"RGB({point.zone_red}, {point.zone_green}, {point.zone_blue})")
@@ -902,10 +1091,10 @@ class MainWindow(QMainWindow):
             return
 
         menu = QMenu(self)
-        act_edit = menu.addAction("Редактировать точку...")
-        act_center = menu.addAction("Центрировать на карте")
+        act_edit = menu.addAction(tr("menu.ctx_edit"))
+        act_center = menu.addAction(tr("menu.ctx_center"))
         menu.addSeparator()
-        act_delete = menu.addAction("Удалить точку")
+        act_delete = menu.addAction(tr("menu.ctx_delete"))
 
         action = menu.exec(self.points_table.viewport().mapToGlobal(pos))
         if action == act_edit:
@@ -939,7 +1128,7 @@ class MainWindow(QMainWindow):
 
     def _update_window_title(self) -> None:
         """Обновление заголовка окна в формате: <APP_NAME> — <Имя>[ *]."""
-        proj_name = self._current_project_path.name if self._current_project_path else "Без имени"
+        proj_name = self._current_project_path.name if self._current_project_path else tr("project.untitled")
         mod_suffix = " *" if self._is_modified else ""
         self.setWindowTitle(f"{APP_NAME} — {proj_name}{mod_suffix}")
 
@@ -950,12 +1139,12 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: Any) -> None:
         """Обработка события закрытия окна с проверкой несохраненных изменений."""
-        if self._maybe_save_prompt("выходом"):
+        if self._maybe_save_prompt(tr("dialog.unsaved_action_exit")):
             event.accept()
         else:
             event.ignore()
 
-    def _maybe_save_prompt(self, action_name: str = "выходом") -> bool:
+    def _maybe_save_prompt(self, action_name: str | None = None) -> bool:
         """Запрос сохранения при наличии несохраненных изменений.
 
         Возвращает:
@@ -966,11 +1155,14 @@ class MainWindow(QMainWindow):
         if not self._is_modified:
             return True
 
-        proj_name = self._current_project_path.name if self._current_project_path else "Без имени"
+        if action_name is None:
+            action_name = tr("dialog.unsaved_action_exit")
+
+        proj_name = self._current_project_path.name if self._current_project_path else tr("project.untitled")
         reply = QMessageBox.question(
             self,
-            "Несохраненные изменения",
-            f"Сохранить изменения в проекте '{proj_name}' перед {action_name}?",
+            tr("dialog.unsaved_title"),
+            tr("dialog.unsaved_text", name=proj_name, action=action_name),
             QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Save,
         )
@@ -984,7 +1176,7 @@ class MainWindow(QMainWindow):
 
     def new_project(self) -> bool:
         """Создание нового пустого проекта."""
-        if not self._maybe_save_prompt("созданием нового проекта"):
+        if not self._maybe_save_prompt(tr("dialog.unsaved_action_new")):
             return False
 
         self._clear_all_points()
@@ -992,7 +1184,7 @@ class MainWindow(QMainWindow):
         self._current_project_path = None
         self._project_loaded = False
         self._set_modified(False)
-        self.statusBar().showMessage("Карта не загружена")
+        self.statusBar().showMessage(tr("status.no_map"))
         logger.info("Создан новый проект")
         return True
 
@@ -1008,9 +1200,9 @@ class MainWindow(QMainWindow):
             initial_dir = str(self._current_project_path.parent) if self._current_project_path else ""
             chosen, _ = QFileDialog.getSaveFileName(
                 self,
-                "Сохранить проект",
+                tr("dialog.save_project_title"),
                 initial_dir,
-                "Проект GeoPoint Mapper (*.gpmap);;Проект RME-Mapper (*.rmeproject);;Все файлы (*.*)",
+                tr("filter.project_files"),
             )
             if not chosen:
                 return False
@@ -1038,30 +1230,30 @@ class MainWindow(QMainWindow):
             self._current_project_path = saved_path
             self._project_loaded = True
             self._set_modified(False)
-            self.statusBar().showMessage(f"Проект сохранен: {saved_path.name}", 3000)
+            self.statusBar().showMessage(tr("status.project_saved", path=saved_path.name), 3000)
             logger.info("Проект успешно сохранен в %s", saved_path)
             return True
         except Exception as e:
             logger.exception("Ошибка при сохранении проекта в %s: %s", path, e)
             QMessageBox.critical(
                 self,
-                "Ошибка сохранения",
-                f"Не удалось сохранить проект в файл:\n{path}\n\nОшибка:\n{e}",
+                tr("dialog.error_title"),
+                tr("msg.save_project_error", err=str(e)),
             )
             return False
 
     def open_project(self, file_path: Path | str | None = None) -> bool:
         """Открытие проекта из файла *.gpmap или *.rmeproject."""
-        if not self._maybe_save_prompt("открытием другого проекта"):
+        if not self._maybe_save_prompt(tr("dialog.unsaved_action_open")):
             return False
 
         if not file_path:
             initial_dir = str(self._current_project_path.parent) if self._current_project_path else ""
             selected_file, _ = QFileDialog.getOpenFileName(
                 self,
-                "Открыть проект",
+                tr("dialog.open_project_title"),
                 initial_dir,
-                "Проекты GeoPoint Mapper (*.gpmap *.rmeproject);;Проект GeoPoint Mapper (*.gpmap);;Проект RME-Mapper (*.rmeproject);;Все файлы (*.*)",
+                tr("filter.project_files_all"),
             )
             if not selected_file:
                 return False
@@ -1075,8 +1267,8 @@ class MainWindow(QMainWindow):
             logger.exception("Ошибка открытия проекта из %s: %s", path, e)
             QMessageBox.critical(
                 self,
-                "Ошибка открытия проекта",
-                f"Не удалось открыть файл проекта:\n{path}\n\n{e}",
+                tr("dialog.open_project_error_title"),
+                tr("msg.open_project_error", path=str(path), err=str(e)),
             )
             return False
 
@@ -1104,13 +1296,13 @@ class MainWindow(QMainWindow):
 
         if has_map_reference and (target_map_path is None or not target_map_path.exists()):
             msg_box = QMessageBox(self)
-            msg_box.setWindowTitle("Файл карты не найден")
+            msg_box.setWindowTitle(tr("dialog.map_not_found_title"))
             msg_box.setIcon(QMessageBox.Icon.Warning)
             map_name_display = project.map.name or project.map.relative_path or project.map.map_id
-            msg_box.setText(f"Файл карты «{map_name_display}» не найден.\nЧто вы хотите сделать?")
-            btn_find = msg_box.addButton("Найти карту...", QMessageBox.ButtonRole.ActionRole)
-            btn_no_map = msg_box.addButton("Открыть проект без карты", QMessageBox.ButtonRole.ActionRole)
-            btn_cancel = msg_box.addButton("Отмена", QMessageBox.ButtonRole.RejectRole)
+            msg_box.setText(tr("dialog.map_not_found_text", name=map_name_display))
+            btn_find = msg_box.addButton(tr("dialog.map_not_found_find"), QMessageBox.ButtonRole.ActionRole)
+            btn_no_map = msg_box.addButton(tr("dialog.map_not_found_open_without"), QMessageBox.ButtonRole.ActionRole)
+            btn_cancel = msg_box.addButton(tr("btn.cancel"), QMessageBox.ButtonRole.RejectRole)
             msg_box.setDefaultButton(btn_find)
             msg_box.exec()
 
@@ -1120,9 +1312,9 @@ class MainWindow(QMainWindow):
             elif clicked == btn_find:
                 chosen, _ = QFileDialog.getOpenFileName(
                     self,
-                    "Укажите файл карты",
+                    tr("dialog.locate_map_title"),
                     str(path.parent),
-                    "Файлы GeoPackage (*.gpkg);;Все файлы (*.*)",
+                    tr("filter.geopackage_files"),
                 )
                 if not chosen:
                     return False
@@ -1156,7 +1348,7 @@ class MainWindow(QMainWindow):
         self._current_project_path = path
         self._project_loaded = True
         self._set_modified(False)
-        self.statusBar().showMessage(f"Проект открыт: {path.name}", 3000)
+        self.statusBar().showMessage(tr("status.project_opened", name=path.name), 3000)
         logger.info("Проект открыт: %s (%d точек)", path, len(project.points))
         return True
 

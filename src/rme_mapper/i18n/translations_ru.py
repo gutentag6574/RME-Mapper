@@ -1,0 +1,301 @@
+"""Словарь переводов на русский язык (ru) для GeoPoint Mapper."""
+
+TRANSLATIONS_RU: dict[str, str] = {
+    # Приложение и общие сведения
+    "app.name": "GeoPoint Mapper",
+    "app.title": "GeoPoint Mapper",
+    "app.version_label": "Версия {version}",
+    "app.description": (
+        "Геоинформационное приложение для работы с точечными объектами "
+        "и географически привязанными картами в формате GeoPackage."
+    ),
+    "app.no_map": "Карта не загружена",
+
+    # Верхнее меню
+    "menu.file": "Файл",
+    "menu.map": "Карта",
+    "menu.coordinates": "Координаты",
+    "menu.import": "Импорт",
+    "menu.export": "Экспорт",
+    "menu.settings": "Настройки",
+    "menu.language": "Язык",
+    "menu.help": "Справка",
+
+    # Действия (Actions)
+    "action.new_project": "Новый проект",
+    "action.open_project": "Открыть проект...",
+    "action.save": "Сохранить",
+    "action.save_as": "Сохранить как...",
+    "action.exit": "Выход",
+    "action.open_map": "Открыть карту...",
+    "action.close_map": "Закрыть карту",
+    "action.fit_map": "Показать всю карту",
+    "action.add_point": "Добавить точку",
+    "action.edit_point": "Редактировать",
+    "action.delete_point": "Удалить",
+    "action.center_on_map": "Центрировать на карте",
+    "action.about": "О программе...",
+
+    # Панели главного окна
+    "panel.layers": "Слои",
+    "panel.points": "Точки",
+    "panel.properties": "Свойства",
+
+    # Кнопки панели точек
+    "btn.add_point": "+ Добавить точку",
+    "btn.edit_point": "Редактировать",
+    "btn.delete_point": "Удалить",
+
+    # Оверлей пустого старта
+    "startup.title": "GeoPoint Mapper",
+    "startup.no_map": "Карта не загружена",
+    "startup.instruction": "Откройте географически привязанную карту,\nчтобы начать работу.",
+    "startup.open_map_btn": "📂  Открыть карту...",
+
+    # Строка состояния (Status Bar)
+    "status.no_map": "Карта не загружена",
+    "status.map_info": "Карта: {name} | {crs} | Слоёв: {count}",
+    "status.ready": "Готово",
+
+    # Таблица точек
+    "table.col_index": "№",
+    "table.col_name": "Название",
+    "table.col_lat": "Широта",
+    "table.col_lon": "Долгота",
+    "table.col_shape": "Форма",
+    "table.col_radius": "Радиус",
+
+    # Панель свойств
+    "properties.empty_hint": "Выберите точку в таблице для просмотра свойств",
+    "properties.name": "Название:",
+    "properties.latitude": "Широта:",
+    "properties.longitude": "Долгота:",
+    "properties.shape": "Форма:",
+    "properties.size": "Размер:",
+    "properties.color": "Цвет (RGB):",
+    "properties.zone": "Зона:",
+    "properties.radius": "Радиус зоны:",
+    "properties.zone_color": "Цвет зоны:",
+    "properties.opacity": "Прозрачность зоны:",
+
+    # Общие фразы и кнопки
+    "common.yes": "Да",
+    "common.no": "Нет",
+    "common.save": "Сохранить",
+    "common.add": "Добавить",
+    "common.cancel": "Отмена",
+    "common.close": "Закрыть",
+    "common.open": "Открыть",
+    "common.warning": "Предупреждение",
+    "common.error": "Ошибка",
+    "common.info": "Информация",
+    "common.select_all": "Выбрать все",
+    "common.deselect_all": "Снять все",
+    "common.browse": "Обзор...",
+
+    # Единицы измерения
+    "unit.m": "м",
+    "unit.km": "км",
+
+    # Формы маркеров
+    "shape.circle": "Круг",
+    "shape.square": "Квадрат",
+    "shape.triangle": "Треугольник",
+
+    # Роли слоев карты
+    "layer_role.boundary": "Граница",
+    "layer_role.roads": "Дороги",
+    "layer_role.places": "Населенные пункты",
+    "layer_role.waterways": "Водотоки",
+    "layer_role.water": "Вода",
+    "layer_role.layer": "Слой",
+
+    # Диалог точки (PointDialog)
+    "dialog.point.title_add": "Добавить точку",
+    "dialog.point.title_edit": "Редактировать точку",
+    "dialog.point.name": "Название:",
+    "dialog.point.name_placeholder": "Название (опционально)",
+    "dialog.point.format": "Формат координат",
+    "dialog.point.format_dd": "Десятичные градусы (DD)",
+    "dialog.point.format_dms": "Градусы / минуты / секунды (DMS)",
+    "dialog.point.lat_dd": "Широта (DD):",
+    "dialog.point.lon_dd": "Долгота (DD):",
+    "dialog.point.dd_hint": "Диапазон: широта [-90; 90], долгота [-180; 180]",
+    "dialog.point.lat_dms": "Широта:",
+    "dialog.point.lon_dms": "Долгота:",
+    "dialog.point.degrees": "Градусы",
+    "dialog.point.minutes": "Минуты",
+    "dialog.point.seconds": "Секунды",
+    "dialog.point.direction": "Напр.",
+    "dialog.point.dms_hint": "Широта: 0..90° [N/S], Долгота: 0..180° [E/W]. Поддерживаются 15.2 и 15,2.",
+    "dialog.point.style_box": "Стиль маркера",
+    "dialog.point.shape": "Форма:",
+    "dialog.point.size": "Размер (px):",
+    "dialog.point.color": "Цвет (RGB):",
+    "dialog.point.choose_color": "Выбрать цвет...",
+    "dialog.point.preview": "Превью:",
+    "dialog.point.zone_box": "Зона вокруг точки",
+    "dialog.point.show_zone": "Показывать зону",
+    "dialog.point.radius": "Радиус:",
+    "dialog.point.radius_placeholder": "Например: 10 или 500",
+    "dialog.point.zone_color": "Цвет зоны:",
+    "dialog.point.opacity": "Непрозрачность:",
+    "dialog.point.btn_save": "Сохранить",
+    "dialog.point.btn_add": "Добавить",
+    "dialog.point.btn_cancel": "Отмена",
+
+    # Диалог открытия карты (OpenMapDialog)
+    "dialog.map.title": "Открыть карту — GeoPoint Mapper",
+    "dialog.map.source_group": "Источник карты",
+    "dialog.map.source_file": "Файл GeoPackage (*.gpkg)",
+    "dialog.map.source_catalog": "Каталог профилей",
+    "dialog.map.file": "Файл:",
+    "dialog.map.file_placeholder": "Укажите путь к файлу *.gpkg...",
+    "dialog.map.browse": "Обзор...",
+    "dialog.map.crs_info": "CRS: {crs}",
+    "dialog.map.layers_box": "Слои GeoPackage для отображения",
+    "dialog.map.col_check": "",
+    "dialog.map.col_name": "Слой",
+    "dialog.map.col_geom": "Тип геометрии",
+    "dialog.map.col_features": "Объектов",
+    "dialog.map.working_boundary": "Рабочая граница (опционально):",
+    "dialog.map.no_boundary": "— Не использовать границу —",
+    "dialog.map.catalog_profiles": "Доступные профили карт:",
+    "dialog.map.btn_open": "Открыть карту",
+    "dialog.map.btn_cancel": "Отмена",
+
+    # Диалог "О программе" (AboutDialog)
+    "dialog.about.title": "О программе — {app_name}",
+    "dialog.about.version": "Версия {version}",
+    "dialog.about.author": "Автор и разработчик:",
+    "dialog.about.telegram": "Telegram:",
+    "dialog.about.email": "Электронная почта:",
+    "dialog.about.close": "Закрыть",
+
+    # Ошибки валидации: Координаты DD
+    "val.coord.expected_str_num": "Ожидается строка или число, получено: {type}",
+    "val.coord.empty_coord": "Значение координаты не может быть пустым",
+    "val.coord.invalid_number_format": "Некорректный формат числа: '{value}'",
+    "val.coord.lat_range": "Широта должна находиться в диапазоне от -90 до 90 градусов. Получено: {value}",
+    "val.coord.lon_range": "Долгота должна находиться в диапазоне от -180 до 180 градусов. Получено: {value}",
+
+    # Ошибки валидации: Координаты DMS
+    "val.dms.enter_component": "Введите {component} {coord_label}. Для нулевого значения укажите 0.",
+    "val.dms.component_must_be_int": "{component} {coord_label} должны быть целым числом.",
+    "val.dms.seconds_must_be_number": "Секунды {coord_label} должны быть числом.",
+    "val.dms.lat_deg_range": "Градусы широты должны быть от 0 до 90. Получено: {value}",
+    "val.dms.lat_min_range": "Минуты широты должны быть от 0 до 59.",
+    "val.dms.lat_sec_negative": "Секунды широты не могут быть отрицательными.",
+    "val.dms.lat_sec_less_60": "Секунды широты должны быть меньше 60.",
+    "val.dms.lat_90_zero": "Для широты 90° минуты и секунды должны быть равны 0.",
+    "val.dms.lat_dir_str": "Направление широты должно быть строкой (N или S).",
+    "val.dms.lat_dir_invalid": "Для широты допустимы только направления N и S. Получено: '{value}'",
+    "val.dms.lon_deg_range": "Градусы долготы должны быть от 0 до 180. Получено: {value}",
+    "val.dms.lon_min_range": "Минуты долготы должны быть от 0 до 59.",
+    "val.dms.lon_sec_negative": "Секунды долготы не могут быть отрицательными.",
+    "val.dms.lon_sec_less_60": "Секунды долготы должны быть меньше 60.",
+    "val.dms.lon_180_zero": "Для долготы 180° минуты и секунды должны быть равны 0.",
+    "val.dms.lon_dir_str": "Направление долготы должно быть строкой (E или W).",
+    "val.dms.lon_dir_invalid": "Для долготы допустимы только направления E и W. Получено: '{value}'",
+
+    # Ошибки валидации: Стиль точки
+    "val.style.symbol_str": "Форма маркера должна быть строкой. Получено: {type}",
+    "val.style.symbol_unknown": "Недопустимая форма маркера: '{value}'. Разрешены: {allowed}",
+    "val.style.size_empty": "Размер маркера не может быть пустым.",
+    "val.style.size_format": "Размер маркера должен быть числом от {min} до {max} px.",
+    "val.style.size_number": "Размер маркера должен быть числом.",
+    "val.style.size_range": "Размер маркера должен быть в диапазоне от {min} до {max} px. Получено: {value}",
+    "val.style.rgb_empty": "Компонента цвета {component} не может быть пустой.",
+    "val.style.rgb_format": "Компонента цвета {component} должна быть целым числом от 0 до 255.",
+    "val.style.rgb_int": "Компонента цвета {component} должна быть целым числом.",
+    "val.style.rgb_range": "Компонента цвета {component} должна быть в диапазоне от 0 до 255. Получено: {value}",
+
+    # Ошибки валидации: Зона радиуса
+    "val.zone.radius_empty": "Радиус зоны не может быть пустым.",
+    "val.zone.radius_format": "Некорректный формат радиуса: '{value}'. Ожидается число.",
+    "val.zone.radius_type": "Некорректный тип радиуса: {type}",
+    "val.zone.radius_positive": "Радиус зоны должен быть больше 0. Получено: {value}",
+    "val.zone.radius_range": "Радиус зоны должен находиться в диапазоне от 1 м до 1 000 000 м (1000 км). Получено: {value}",
+    "val.zone.opacity_empty": "Прозрачность зоны не может быть пустой.",
+    "val.zone.opacity_number": "Прозрачность зоны должна быть числом от 0 до 100.",
+    "val.zone.opacity_range": "Прозрачность зоны должна быть в диапазоне от 0% до 100%. Получено: {value}",
+
+    # Системные сообщения, предупреждения и подтверждения
+    "msg.outside_map_warning": "Координата находится за пределами рабочей области карты «{name}». Сохранить точку?",
+    "msg.point_outside_title": "Точка вне рабочей области",
+    "msg.unsaved_changes": "Сохранить изменения перед выходом?",
+    "msg.unsaved_title": "Несохраненные изменения",
+    "msg.delete_point_confirm": "Вы уверены, что хотите удалить точку «{name}»?",
+    "msg.delete_point_title": "Удаление точки",
+    "msg.close_map_confirm": (
+        "В проекте есть пользовательские точки ({count}).\n"
+        "Закрыть карту? Точки проекта останутся в модели и будут скрыты до загрузки новой карты."
+    ),
+    "msg.close_map_title": "Закрыть карту",
+    "msg.project_not_found": "Файл проекта не найден: {path}",
+    "msg.corrupt_json": "Поврежден JSON файл проекта.",
+    "msg.unsupported_format": "Неподдерживаемый формат проекта.",
+    "msg.newer_version": "Файл проекта создан в более новой версии программы.",
+    "msg.map_not_found": "Файл карты не найден: {path}",
+    "msg.save_failed": "Не удалось сохранить проект: {error}",
+    "msg.open_failed": "Не удалось открыть проект: {error}",
+    "msg.cannot_open_gpkg": "Невозможно открыть GeoPackage: {path}",
+    "msg.layer_not_found": "Слой не найден: {layer}",
+    "msg.crs_undefined": "CRS карты не определен.",
+    "msg.no_layers_selected": "Не выбрано ни одного слоя для открытия.",
+    "msg.unsupported_source": "Неподдерживаемый источник карты.",
+    "msg.new_project_unsaved": "Текущий проект содержит несохраненные изменения.\nСохранить перед созданием нового проекта?",
+    "msg.open_project_unsaved": "Текущий проект содержит несохраненные изменения.\nСохранить перед открытием другого проекта?",
+    "msg.save_filter_gpmap": "Проекты GeoPoint Mapper (*.gpmap);;Все файлы (*.*)",
+    "msg.open_filter_projects": "Проекты GeoPoint Mapper (*.gpmap *.rmeproject);;Все файлы (*.*)",
+    "msg.open_filter_gpkg": "Файлы GeoPackage (*.gpkg);;Все файлы (*.*)",
+
+    # Проект и состояние
+    "project.untitled": "Без имени",
+    "point.default_name_prefix": "Точка",
+
+    # Диалоги и фильтры файлов
+    "dialog.no_map_title": "Карта не загружена",
+    "dialog.no_map_text": "Для добавления точек сначала откройте карту.",
+    "dialog.close_map_title": "Закрыть карту",
+    "dialog.close_map_text": (
+        "В проекте есть пользовательские точки ({count}).\n"
+        "Закрыть карту? Точки проекта останутся в модели и будут скрыты до загрузки новой карты."
+    ),
+    "dialog.unsaved_title": "Несохраненные изменения",
+    "dialog.unsaved_text": "Сохранить изменения в проекте '{name}' перед {action}?",
+    "dialog.unsaved_action_exit": "выходом",
+    "dialog.unsaved_action_new": "созданием нового проекта",
+    "dialog.unsaved_action_open": "открытием другого проекта",
+    "dialog.save_project_title": "Сохранить проект",
+    "dialog.open_project_title": "Открыть проект",
+    "dialog.open_project_error_title": "Ошибка открытия проекта",
+    "dialog.error_title": "Ошибка",
+    "dialog.map_not_found_title": "Файл карты не найден",
+    "dialog.map_not_found_text": "Файл карты «{name}» не найден.\nЧто вы хотите сделать?",
+    "dialog.map_not_found_find": "Найти карту...",
+    "dialog.map_not_found_open_without": "Открыть проект без карты",
+    "dialog.locate_map_title": "Укажите файл карты",
+    "btn.cancel": "Отмена",
+
+    "filter.project_files": "Проект GeoPoint Mapper (*.gpmap);;Проект RME-Mapper (*.rmeproject);;Все файлы (*.*)",
+    "filter.project_files_all": "Проекты GeoPoint Mapper (*.gpmap *.rmeproject);;Проект GeoPoint Mapper (*.gpmap);;Проект RME-Mapper (*.rmeproject);;Все файлы (*.*)",
+    "filter.geopackage_files": "Файлы GeoPackage (*.gpkg);;Все файлы (*.*)",
+
+    # Сообщения статуса
+    "status.point_added": "Добавлена точка: {name}",
+    "status.point_updated": "Точка обновлена: {name}",
+    "status.point_deleted": "Точка удалена",
+    "status.focus_point": "Фокус на точке: {name}",
+    "status.project_saved": "Проект сохранен: {path}",
+    "status.project_opened": "Проект открыт: {name}",
+    "status.error_map_not_found": "Ошибка: файл карты не найден",
+    "status.error_no_layers": "Ошибка: поддерживаемые слои не найдены",
+
+    # Дополнительные сообщения об ошибках
+    "msg.save_project_error": "Не удалось сохранить проект:\n{err}",
+    "msg.open_project_error": "Не удалось открыть файл проекта:\n{path}\n\n{err}",
+    "msg.map_file_not_found": "Не найден файл карты",
+    "msg.no_layers_found": "В источнике карты не найдено поддерживаемых картографических слоев",
+}
+

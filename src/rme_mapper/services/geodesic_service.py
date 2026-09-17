@@ -129,17 +129,27 @@ class GeodesicService:
         return radius_m
 
     @classmethod
-    def format_radius(cls, radius_m: float, zone_enabled: bool = True) -> str:
+    def format_radius(cls, radius_m: float, zone_enabled: bool = True, lang: str | None = None) -> str:
         """Форматирование радиуса для отображения в интерфейсе (таблица, свойства)."""
         if not zone_enabled or radius_m <= 0:
             return "—"
 
+        try:
+            from rme_mapper.i18n import get_language
+            active_lang = lang or get_language()
+        except Exception:
+            active_lang = "ru"
+
+        unit_km = "km" if active_lang == "en" else "км"
+        unit_m = "m" if active_lang == "en" else "м"
+
         if radius_m >= 1000.0:
             km = radius_m / 1000.0
             if km.is_integer():
-                return f"{int(km)} км"
-            return f"{km:.2f}".rstrip("0").rstrip(".") + " км"
+                return f"{int(km)} {unit_km}"
+            return f"{km:.2f}".rstrip("0").rstrip(".") + f" {unit_km}"
         else:
             if radius_m.is_integer():
-                return f"{int(radius_m)} м"
-            return f"{radius_m:.1f}".rstrip("0").rstrip(".") + " м"
+                return f"{int(radius_m)} {unit_m}"
+            return f"{radius_m:.1f}".rstrip("0").rstrip(".") + f" {unit_m}"
+

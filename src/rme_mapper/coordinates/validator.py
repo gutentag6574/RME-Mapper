@@ -1,10 +1,41 @@
-"""Валидатор географических координат в формате десятичных градусов (DD)."""
+"""Валидатор географических координат в формате десятичных градусов (DD) и DMS."""
 
+from typing import Any
 import logging
 
 from rme_mapper.coordinates.converter import dms_to_decimal
 
 logger = logging.getLogger("rme_mapper.coordinates.validator")
+
+
+class ValidationError(ValueError):
+    """Исключение валидации с поддержкой стабильного кода ошибки и двуязычного перевода."""
+
+    def __init__(self, code: str, **params: Any) -> None:
+        self.code = code
+        self.params = params
+        super().__init__(self._format())
+
+    def _format(self) -> str:
+        try:
+            from rme_mapper.i18n import tr
+            return tr(self.code, **self.params)
+        except Exception:
+            return self.code
+
+    def localized_message(self, lang: str | None = None) -> str:
+        """Получить локализованное сообщение на указанном или активном языке."""
+        try:
+            from rme_mapper.i18n import get_translation_service
+            ts = get_translation_service()
+            if lang:
+                return ts.translate_in_language(lang, self.code, **self.params)
+            return ts.translate(self.code, **self.params)
+        except Exception:
+            return self.code
+
+    def __str__(self) -> str:
+        return self._format()
 
 
 class CoordinateValidator:
@@ -21,11 +52,11 @@ class CoordinateValidator:
             return float(value)
 
         if not isinstance(value, str):
-            raise ValueError(f"Ожидается строка или число, получено: {type(value).__name__}")
+            raise ValidationError("val.coord.expected_str_num", type=type(value).__name__)
 
         cleaned = value.strip()
         if not cleaned:
-            raise ValueError("Значение координаты не может быть пустым")
+            raise ValidationError("val.coord.empty_coord")
 
         # Заменяем запятую на точку для парсинга дробной части
         normalized = cleaned.replace(",", ".")
@@ -34,23 +65,19 @@ class CoordinateValidator:
             return float(normalized)
         except ValueError:
             logger.debug("Не удалось преобразовать строку '%s' в число", value)
-            raise ValueError(f"Некорректный формат числа: '{value}'")
+            raise ValidationError("val.coord.invalid_number_format", value=value)
 
     @classmethod
     def validate_latitude(cls, latitude: float) -> None:
         """Проверка допустимого диапазона широты [-90, 90]."""
         if not (-90.0 <= latitude <= 90.0):
-            raise ValueError(
-                f"Широта должна находиться в диапазоне от -90 до 90 градусов. Получено: {latitude}"
-            )
+            raise ValidationError("val.coord.lat_range", value=latitude)
 
     @classmethod
     def validate_longitude(cls, longitude: float) -> None:
         """Проверка допустимого диапазона долготы [-180, 180]."""
         if not (-180.0 <= longitude <= 180.0):
-            raise ValueError(
-                f"Долгота должна находиться в диапазоне от -180 до 180 градусов. Получено: {longitude}"
-            )
+            raise ValidationError("val.coord.lon_range", value=longitude)
 
     @classmethod
     def validate_dd_pair(
@@ -80,23 +107,23 @@ class CoordinateValidator:
     ) -> int:
         """Вспомогательный метод парсинга целых компонентов DMS (градусы, минуты)."""
         if value is None:
-            raise ValueError(f"Введите {component_name} {coord_label}. Для нулевого значения укажите 0.")
+            raise ValidationError("val.dms.enter_component", component=component_name, coord_label=coord_label)
 
         if isinstance(value, str):
             cleaned = value.strip().replace(",", ".")
             if not cleaned:
-                raise ValueError(f"Введите {component_name} {coord_label}. Для нулевого значения укажите 0.")
+                raise ValidationError("val.dms.enter_component", component=component_name, coord_label=coord_label)
             try:
                 num = float(cleaned)
             except ValueError:
-                raise ValueError(f"{component_name.capitalize()} {coord_label} должны быть целым числом.")
+                raise ValidationError("val.dms.component_must_be_int", component=component_name.capitalize(), coord_label=coord_label)
         elif isinstance(value, (int, float)):
             num = float(value)
         else:
-            raise ValueError(f"Введите {component_name} {coord_label}. Для нулевого значения укажите 0.")
+            raise ValidationError("val.dms.enter_component", component=component_name, coord_label=coord_label)
 
         if not num.is_integer():
-            raise ValueError(f"{component_name.capitalize()} {coord_label} должны быть целым числом.")
+            raise ValidationError("val.dms.component_must_be_int", component=component_name.capitalize(), coord_label=coord_label)
 
         return int(num)
 
@@ -108,20 +135,20 @@ class CoordinateValidator:
     ) -> float:
         """Вспомогательный метод парсинга секунд DMS (поддерживает точку и запятую)."""
         if value is None:
-            raise ValueError(f"Введите секунды {coord_label}. Для нулевого значения укажите 0.")
+            raise ValidationError("val.dms.enter_component", component="секунды", coord_label=coord_label)
 
         if isinstance(value, str):
             cleaned = value.strip().replace(",", ".")
             if not cleaned:
-                raise ValueError(f"Введите секунды {coord_label}. Для нулевого значения укажите 0.")
+                raise ValidationError("val.dms.enter_component", component="секунды", coord_label=coord_label)
             try:
                 sec = float(cleaned)
             except ValueError:
-                raise ValueError(f"Секунды {coord_label} должны быть числом.")
+                raise ValidationError("val.dms.seconds_must_be_number", coord_label=coord_label)
         elif isinstance(value, (int, float)):
             sec = float(value)
         else:
-            raise ValueError(f"Введите секунды {coord_label}. Для нулевого значения укажите 0.")
+            raise ValidationError("val.dms.enter_component", component="секунды", coord_label=coord_label)
 
         return sec
 
@@ -147,25 +174,25 @@ class CoordinateValidator:
         sec = cls._parse_dms_seconds(seconds, "широты")
 
         if deg < 0 or deg > 90:
-            raise ValueError(f"Градусы широты должны быть от 0 до 90. Получено: {deg}")
+            raise ValidationError("val.dms.lat_deg_range", value=deg)
 
         if not (0 <= mn < 60):
-            raise ValueError("Минуты широты должны быть от 0 до 59.")
+            raise ValidationError("val.dms.lat_min_range")
 
         if sec < 0:
-            raise ValueError("Секунды широты не могут быть отрицательными.")
+            raise ValidationError("val.dms.lat_sec_negative")
         if sec >= 60.0:
-            raise ValueError("Секунды широты должны быть меньше 60.")
+            raise ValidationError("val.dms.lat_sec_less_60")
 
         if deg == 90 and (mn != 0 or sec != 0.0):
-            raise ValueError("Для широты 90° минуты и секунды должны быть равны 0.")
+            raise ValidationError("val.dms.lat_90_zero")
 
         if not isinstance(direction, str):
-            raise ValueError("Направление широты должно быть строкой (N или S).")
+            raise ValidationError("val.dms.lat_dir_str")
 
         dir_clean = direction.strip().upper()
         if dir_clean not in {"N", "S"}:
-            raise ValueError(f"Для широты допустимы только направления N и S. Получено: '{direction}'")
+            raise ValidationError("val.dms.lat_dir_invalid", value=direction)
 
         return dms_to_decimal(deg, mn, sec, dir_clean)
 
@@ -191,25 +218,25 @@ class CoordinateValidator:
         sec = cls._parse_dms_seconds(seconds, "долготы")
 
         if deg < 0 or deg > 180:
-            raise ValueError(f"Градусы долготы должны быть от 0 до 180. Получено: {deg}")
+            raise ValidationError("val.dms.lon_deg_range", value=deg)
 
         if not (0 <= mn < 60):
-            raise ValueError("Минуты долготы должны быть от 0 до 59.")
+            raise ValidationError("val.dms.lon_min_range")
 
         if sec < 0:
-            raise ValueError("Секунды долготы не могут быть отрицательными.")
+            raise ValidationError("val.dms.lon_sec_negative")
         if sec >= 60.0:
-            raise ValueError("Секунды долготы должны быть меньше 60.")
+            raise ValidationError("val.dms.lon_sec_less_60")
 
         if deg == 180 and (mn != 0 or sec != 0.0):
-            raise ValueError("Для долготы 180° минуты и секунды должны быть равны 0.")
+            raise ValidationError("val.dms.lon_180_zero")
 
         if not isinstance(direction, str):
-            raise ValueError("Направление долготы должно быть строкой (E или W).")
+            raise ValidationError("val.dms.lon_dir_str")
 
         dir_clean = direction.strip().upper()
         if dir_clean not in {"E", "W"}:
-            raise ValueError(f"Для долготы допустимы только направления E и W. Получено: '{direction}'")
+            raise ValidationError("val.dms.lon_dir_invalid", value=direction)
 
         return dms_to_decimal(deg, mn, sec, dir_clean)
 
@@ -231,4 +258,3 @@ class CoordinateValidator:
         lat = cls.validate_dms_latitude(*lat_parts)
         lon = cls.validate_dms_longitude(*lon_parts)
         return lat, lon
-

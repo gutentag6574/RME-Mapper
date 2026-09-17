@@ -138,24 +138,26 @@ class MapCanvas(QGraphicsView):
         card_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         card_layout.setSpacing(10)
 
-        title_lbl = QLabel("GeoPoint Mapper", card)
-        title_lbl.setStyleSheet("font-size: 20px; font-weight: bold; color: #1E293B;")
-        title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        card_layout.addWidget(title_lbl)
+        self.empty_title_lbl = QLabel("GeoPoint Mapper", card)
+        self.empty_title_lbl.setStyleSheet("font-size: 20px; font-weight: bold; color: #1E293B;")
+        self.empty_title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(self.empty_title_lbl)
 
-        status_lbl = QLabel("Карта не загружена", card)
-        status_lbl.setStyleSheet("font-size: 14px; font-weight: 600; color: #475569;")
-        status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        card_layout.addWidget(status_lbl)
+        self.empty_status_lbl = QLabel("Карта не загружена", card)
+        self.empty_status_lbl.setStyleSheet("font-size: 14px; font-weight: 600; color: #475569;")
+        self.empty_status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(self.empty_status_lbl)
 
-        hint_lbl = QLabel("Откройте географически привязанную карту,\nчтобы начать работу.", card)
-        hint_lbl.setStyleSheet("font-size: 12px; color: #64748B;")
-        hint_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        card_layout.addWidget(hint_lbl)
+        self.empty_hint_lbl = QLabel("Откройте географически привязанную карту,\nчтобы начать работу.", card)
+        self.empty_hint_lbl.setStyleSheet("font-size: 12px; color: #64748B;")
+        self.empty_hint_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(self.empty_hint_lbl)
 
         self.btn_open_map = QPushButton("📂  Открыть карту...", card)
         self.btn_open_map.setObjectName("btnOpenMapCanvas")
         self.btn_open_map.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.retranslate_ui()
+
         self.btn_open_map.setStyleSheet(
             """
             QPushButton#btnOpenMapCanvas {
@@ -178,9 +180,26 @@ class MapCanvas(QGraphicsView):
         card_layout.addWidget(self.btn_open_map, alignment=Qt.AlignmentFlag.AlignCenter)
 
         overlay_layout.addWidget(card, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.retranslate_ui()
         self.show_empty_state()
 
+    def retranslate_ui(self) -> None:
+        """Обновление локализованных текстов элементов холста."""
+        from rme_mapper.i18n import tr
+
+        if hasattr(self, "btn_fit"):
+            self.btn_fit.setText("⛶ " + tr("action.fit_map"))
+        if hasattr(self, "empty_title_lbl"):
+            self.empty_title_lbl.setText(tr("startup.title"))
+        if hasattr(self, "empty_status_lbl"):
+            self.empty_status_lbl.setText(tr("startup.no_map"))
+        if hasattr(self, "empty_hint_lbl"):
+            self.empty_hint_lbl.setText(tr("startup.instruction"))
+        if hasattr(self, "btn_open_map"):
+            self.btn_open_map.setText(tr("startup.open_map_btn"))
+
     def show_empty_state(self) -> None:
+
         """Показ экрана пустого состояния холста."""
         if hasattr(self, "empty_overlay"):
             self.empty_overlay.setVisible(True)

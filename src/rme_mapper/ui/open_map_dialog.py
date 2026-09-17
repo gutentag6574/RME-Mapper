@@ -122,6 +122,7 @@ class OpenMapDialog(QDialog):
         self._current_gpkg_path: Path | None = None
 
         self._setup_ui()
+        self.retranslate_ui()
 
         # Если был передан начальный файл, сразу исследуем его
         if self._initial_file_path and self._initial_file_path.exists():
@@ -132,20 +133,20 @@ class OpenMapDialog(QDialog):
         main_layout.setSpacing(12)
 
         # 1. Переключатель источника
-        mode_group = QGroupBox("Источник карты", self)
-        mode_layout = QHBoxLayout(mode_group)
-        self.rb_file = QRadioButton("Файл GeoPackage (*.gpkg)", mode_group)
+        self.mode_group = QGroupBox("Источник карты", self)
+        mode_layout = QHBoxLayout(self.mode_group)
+        self.rb_file = QRadioButton("Файл GeoPackage (*.gpkg)", self.mode_group)
         self.rb_file.setObjectName("rbModeFile")
         self.rb_file.setChecked(True)
         self.rb_file.toggled.connect(self._on_mode_changed)
 
-        self.rb_catalog = QRadioButton("Каталог профилей", mode_group)
+        self.rb_catalog = QRadioButton("Каталог профилей", self.mode_group)
         self.rb_catalog.setObjectName("rbModeCatalog")
         self.rb_catalog.toggled.connect(self._on_mode_changed)
 
         mode_layout.addWidget(self.rb_file)
         mode_layout.addWidget(self.rb_catalog)
-        main_layout.addWidget(mode_group)
+        main_layout.addWidget(self.mode_group)
 
         # 2. Стек страниц: 0 = Файл, 1 = Каталог
         self.stack = QStackedWidget(self)
@@ -158,7 +159,7 @@ class OpenMapDialog(QDialog):
 
         # Выбор файла
         file_row = QHBoxLayout()
-        file_lbl = QLabel("Файл:", page_file)
+        self.file_lbl = QLabel("Файл:", page_file)
         self.file_path_edit = QLineEdit(page_file)
         self.file_path_edit.setObjectName("filePathEdit")
         self.file_path_edit.setPlaceholderText("Укажите путь к файлу *.gpkg...")
@@ -169,7 +170,7 @@ class OpenMapDialog(QDialog):
         self.btn_browse.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_browse.clicked.connect(self._on_browse_clicked)
 
-        file_row.addWidget(file_lbl)
+        file_row.addWidget(self.file_lbl)
         file_row.addWidget(self.file_path_edit, stretch=1)
         file_row.addWidget(self.btn_browse)
         page_file_layout.addLayout(file_row)
@@ -181,21 +182,21 @@ class OpenMapDialog(QDialog):
         page_file_layout.addWidget(self.crs_info_label)
 
         # Таблица слоев
-        layers_box = QGroupBox("Слои GeoPackage для отображения", page_file)
-        layers_layout = QVBoxLayout(layers_box)
+        self.layers_box = QGroupBox("Слои GeoPackage для отображения", page_file)
+        layers_layout = QVBoxLayout(self.layers_box)
 
         # Панель кнопок "Выбрать все" / "Снять все"
         tbl_btn_row = QHBoxLayout()
-        btn_sel_all = QPushButton("Выбрать все", layers_box)
-        btn_sel_all.clicked.connect(self._select_all_layers)
-        btn_desel_all = QPushButton("Снять все", layers_box)
-        btn_desel_all.clicked.connect(self._deselect_all_layers)
-        tbl_btn_row.addWidget(btn_sel_all)
-        tbl_btn_row.addWidget(btn_desel_all)
+        self.btn_sel_all = QPushButton("Выбрать все", self.layers_box)
+        self.btn_sel_all.clicked.connect(self._select_all_layers)
+        self.btn_desel_all = QPushButton("Снять все", self.layers_box)
+        self.btn_desel_all.clicked.connect(self._deselect_all_layers)
+        tbl_btn_row.addWidget(self.btn_sel_all)
+        tbl_btn_row.addWidget(self.btn_desel_all)
         tbl_btn_row.addStretch()
         layers_layout.addLayout(tbl_btn_row)
 
-        self.layers_table = QTableWidget(0, 4, layers_box)
+        self.layers_table = QTableWidget(0, 4, self.layers_box)
         self.layers_table.setObjectName("layersTable")
         self.layers_table.setHorizontalHeaderLabels(["", "Слой", "Тип геометрии", "Объектов"])
         self.layers_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -208,15 +209,15 @@ class OpenMapDialog(QDialog):
 
         # Выбор рабочей границы
         boundary_row = QHBoxLayout()
-        boundary_lbl = QLabel("Рабочая граница (опционально):", layers_box)
-        self.boundary_combo = QComboBox(layers_box)
+        self.boundary_lbl = QLabel("Рабочая граница (опционально):", self.layers_box)
+        self.boundary_combo = QComboBox(self.layers_box)
         self.boundary_combo.setObjectName("boundaryCombo")
         self.boundary_combo.addItem("— Не использовать границу —", None)
-        boundary_row.addWidget(boundary_lbl)
+        boundary_row.addWidget(self.boundary_lbl)
         boundary_row.addWidget(self.boundary_combo, stretch=1)
         layers_layout.addLayout(boundary_row)
 
-        page_file_layout.addWidget(layers_box, stretch=1)
+        page_file_layout.addWidget(self.layers_box, stretch=1)
         self.stack.addWidget(page_file)
 
         # --- Страница 1: Каталог профилей ---
@@ -225,8 +226,9 @@ class OpenMapDialog(QDialog):
         page_cat_layout.setContentsMargins(0, 0, 0, 0)
         page_cat_layout.setSpacing(10)
 
-        cat_lbl = QLabel("Доступные профили карт:", page_catalog)
-        page_cat_layout.addWidget(cat_lbl)
+        self.cat_lbl = QLabel("Доступные профили карт:", page_catalog)
+        page_cat_layout.addWidget(self.cat_lbl)
+
 
         self.catalog_combo = QComboBox(page_catalog)
         self.catalog_combo.setObjectName("catalogCombo")
@@ -275,7 +277,52 @@ class OpenMapDialog(QDialog):
         # Заполняем профили каталога
         self._populate_catalog_profiles()
 
+    def retranslate_ui(self) -> None:
+        """Обновление локализованных текстов диалога открытия карты."""
+        from rme_mapper.i18n import tr
+
+        self.setWindowTitle(tr("dialog.map.title"))
+        if hasattr(self, "mode_group"):
+            self.mode_group.setTitle(tr("dialog.map.source_group"))
+        if hasattr(self, "rb_file"):
+            self.rb_file.setText(tr("dialog.map.source_file"))
+        if hasattr(self, "rb_catalog"):
+            self.rb_catalog.setText(tr("dialog.map.source_catalog"))
+        if hasattr(self, "file_lbl"):
+            self.file_lbl.setText(tr("dialog.map.file"))
+        if hasattr(self, "file_path_edit"):
+            self.file_path_edit.setPlaceholderText(tr("dialog.map.file_placeholder"))
+        if hasattr(self, "btn_browse"):
+            self.btn_browse.setText(tr("dialog.map.browse"))
+        if hasattr(self, "crs_info_label"):
+            crs_disp = getattr(self, "_inspected_crs_str", "—")
+            self.crs_info_label.setText(tr("dialog.map.crs_info", crs=crs_disp))
+        if hasattr(self, "layers_box"):
+            self.layers_box.setTitle(tr("dialog.map.layers_box"))
+        if hasattr(self, "btn_sel_all"):
+            self.btn_sel_all.setText(tr("common.select_all"))
+        if hasattr(self, "btn_desel_all"):
+            self.btn_desel_all.setText(tr("common.deselect_all"))
+        if hasattr(self, "layers_table"):
+            self.layers_table.setHorizontalHeaderLabels([
+                "",
+                tr("dialog.map.col_name"),
+                tr("dialog.map.col_geom"),
+                tr("dialog.map.col_features"),
+            ])
+        if hasattr(self, "boundary_lbl"):
+            self.boundary_lbl.setText(tr("dialog.map.working_boundary"))
+        if hasattr(self, "boundary_combo") and self.boundary_combo.count() > 0:
+            self.boundary_combo.setItemText(0, tr("dialog.map.no_boundary"))
+        if hasattr(self, "cat_lbl"):
+            self.cat_lbl.setText(tr("dialog.map.catalog_profiles"))
+        if hasattr(self, "btn_cancel"):
+            self.btn_cancel.setText(tr("common.cancel"))
+        if hasattr(self, "btn_open"):
+            self.btn_open.setText(tr("dialog.map.btn_open"))
+
     def _on_mode_changed(self) -> None:
+
         """Переключение между выбором файла и каталогом."""
         if self.rb_file.isChecked():
             self.stack.setCurrentIndex(0)

@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
 )
 
 from rme_mapper.app_info import (
-    APP_DESCRIPTION,
     APP_NAME,
     APP_VERSION,
     AUTHOR_EMAIL,
@@ -23,7 +22,9 @@ from rme_mapper.app_info import (
     AUTHOR_TELEGRAM,
     COPYRIGHT_TEXT,
     format_telegram_url,
+    get_app_description,
 )
+from rme_mapper.i18n import tr
 
 logger = logging.getLogger("rme_mapper.ui.about")
 
@@ -37,11 +38,11 @@ class AboutDialog(QDialog):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle(f"О программе — {APP_NAME}")
         self.resize(520, 380)
         self.setModal(True)
 
         self._setup_ui()
+        self.retranslate_ui()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -78,7 +79,7 @@ class AboutDialog(QDialog):
         layout.addWidget(sep1)
 
         # 2. Описание программы
-        self.desc_label = QLabel(APP_DESCRIPTION, self)
+        self.desc_label = QLabel("", self)
         self.desc_label.setWordWrap(True)
         self.desc_label.setAlignment(Qt.AlignmentFlag.AlignJustify)
         layout.addWidget(self.desc_label)
@@ -95,19 +96,19 @@ class AboutDialog(QDialog):
 
         # Автор и разработчик
         author_box = QHBoxLayout()
-        author_title = QLabel("Автор и разработчик:", self)
-        author_title.setStyleSheet("font-weight: bold;")
+        self.author_title_label = QLabel("Автор и разработчик:", self)
+        self.author_title_label.setStyleSheet("font-weight: bold;")
         self.author_val_label = QLabel(AUTHOR_NAME, self)
-        author_box.addWidget(author_title)
+        author_box.addWidget(self.author_title_label)
         author_box.addWidget(self.author_val_label)
         author_box.addStretch()
         author_layout.addLayout(author_box)
 
         # Telegram
         tg_box = QHBoxLayout()
-        tg_title = QLabel("Telegram:", self)
-        tg_title.setStyleSheet("font-weight: bold;")
-        tg_box.addWidget(tg_title)
+        self.tg_title_label = QLabel("Telegram:", self)
+        self.tg_title_label.setStyleSheet("font-weight: bold;")
+        tg_box.addWidget(self.tg_title_label)
 
         tg_url = format_telegram_url(AUTHOR_TELEGRAM)
         if tg_url:
@@ -123,9 +124,9 @@ class AboutDialog(QDialog):
 
         # Email
         email_box = QHBoxLayout()
-        email_title = QLabel("Электронная почта:", self)
-        email_title.setStyleSheet("font-weight: bold;")
-        email_box.addWidget(email_title)
+        self.email_title_label = QLabel("Электронная почта:", self)
+        self.email_title_label.setStyleSheet("font-weight: bold;")
+        email_box.addWidget(self.email_title_label)
         self.email_label = QLabel(f'<a href="mailto:{AUTHOR_EMAIL}">{AUTHOR_EMAIL}</a>', self)
         self.email_label.setOpenExternalLinks(True)
         email_box.addWidget(self.email_label)
@@ -143,11 +144,27 @@ class AboutDialog(QDialog):
 
         # 4. Кнопка закрытия
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, self)
-        close_btn = button_box.button(QDialogButtonBox.StandardButton.Close)
-        if close_btn:
-            close_btn.setText("Закрыть")
+        self.close_btn = button_box.button(QDialogButtonBox.StandardButton.Close)
+        if self.close_btn:
+            self.close_btn.setText("Закрыть")
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
+
+    def retranslate_ui(self) -> None:
+        """Обновление локализованных надписей диалога при переключении языка."""
+        self.setWindowTitle(tr("dialog.about.title", app_name=APP_NAME))
+        if hasattr(self, "version_label"):
+            self.version_label.setText(tr("dialog.about.version", version=APP_VERSION))
+        if hasattr(self, "desc_label"):
+            self.desc_label.setText(get_app_description())
+        if hasattr(self, "author_title_label"):
+            self.author_title_label.setText(tr("dialog.about.author"))
+        if hasattr(self, "tg_title_label"):
+            self.tg_title_label.setText(tr("dialog.about.telegram"))
+        if hasattr(self, "email_title_label"):
+            self.email_title_label.setText(tr("dialog.about.email"))
+        if hasattr(self, "close_btn") and self.close_btn is not None:
+            self.close_btn.setText(tr("dialog.about.close"))
 
     def _open_telegram_url(self, url_str: str) -> None:
         """Безопасное открытие Telegram ссылки во внешнем браузере."""

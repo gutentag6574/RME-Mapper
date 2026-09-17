@@ -4,6 +4,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from rme_mapper.coordinates.validator import ValidationError
+
 logger = logging.getLogger("rme_mapper.models.point_style")
 
 ALLOWED_SYMBOLS: set[str] = {"circle", "square", "triangle"}
@@ -31,13 +33,14 @@ class StyleValidator:
     def validate_symbol(cls, symbol: str) -> str:
         """Проверка допустимой формы маркера ('circle', 'square', 'triangle')."""
         if not isinstance(symbol, str):
-            raise ValueError(f"Форма маркера должна быть строкой. Получено: {type(symbol).__name__}")
+            raise ValidationError("val.style.symbol_str", type=type(symbol).__name__)
 
         sym = symbol.strip().lower()
         if sym not in ALLOWED_SYMBOLS:
-            raise ValueError(
-                f"Недопустимая форма маркера: '{symbol}'. "
-                f"Разрешены: {', '.join(sorted(ALLOWED_SYMBOLS))}"
+            raise ValidationError(
+                "val.style.symbol_unknown",
+                value=symbol,
+                allowed=", ".join(sorted(ALLOWED_SYMBOLS)),
             )
         return sym
 
@@ -45,56 +48,52 @@ class StyleValidator:
     def validate_size(cls, size: Any) -> float:
         """Проверка допустимого размера маркера (от 4.0 до 50.0 px)."""
         if size is None:
-            raise ValueError("Размер маркера не может быть пустым.")
+            raise ValidationError("val.style.size_empty")
 
         if isinstance(size, str):
             cleaned = size.strip().replace(",", ".")
             if not cleaned:
-                raise ValueError("Размер маркера не может быть пустым.")
+                raise ValidationError("val.style.size_empty")
             try:
                 val = float(cleaned)
             except ValueError:
-                raise ValueError(f"Размер маркера должен быть числом от {MIN_SIZE} до {MAX_SIZE} px.")
+                raise ValidationError("val.style.size_format", min=MIN_SIZE, max=MAX_SIZE)
         elif isinstance(size, (int, float)):
             val = float(size)
         else:
-            raise ValueError("Размер маркера должен быть числом.")
+            raise ValidationError("val.style.size_number")
 
         if val < MIN_SIZE or val > MAX_SIZE:
-            raise ValueError(
-                f"Размер маркера должен быть в диапазоне от {MIN_SIZE} до {MAX_SIZE} px. "
-                f"Получено: {val}"
-            )
+            raise ValidationError("val.style.size_range", min=MIN_SIZE, max=MAX_SIZE, value=val)
         return val
 
     @classmethod
     def validate_rgb_component(cls, value: Any, component_name: str) -> int:
         """Проверка отдельной цветовой компоненты (0..255)."""
         if value is None:
-            raise ValueError(f"Компонента цвета {component_name} не может быть пустой.")
+            raise ValidationError("val.style.rgb_empty", component=component_name)
 
         if isinstance(value, str):
             cleaned = value.strip()
             if not cleaned:
-                raise ValueError(f"Компонента цвета {component_name} не может быть пустой.")
+                raise ValidationError("val.style.rgb_empty", component=component_name)
             try:
                 val = float(cleaned.replace(",", "."))
             except ValueError:
-                raise ValueError(f"Компонента цвета {component_name} должна быть целым числом от 0 до 255.")
+                raise ValidationError("val.style.rgb_format", component=component_name)
             if not val.is_integer():
-                raise ValueError(f"Компонента цвета {component_name} должна быть целым числом.")
+                raise ValidationError("val.style.rgb_int", component=component_name)
             int_val = int(val)
         elif isinstance(value, (int, float)):
             if isinstance(value, float) and not value.is_integer():
-                raise ValueError(f"Компонента цвета {component_name} должна быть целым числом.")
+                raise ValidationError("val.style.rgb_int", component=component_name)
             int_val = int(value)
         else:
-            raise ValueError(f"Компонента цвета {component_name} должна быть целым числом от 0 до 255.")
+            raise ValidationError("val.style.rgb_format", component=component_name)
 
         if int_val < MIN_RGB or int_val > MAX_RGB:
-            raise ValueError(
-                f"Компонента цвета {component_name} должна быть в диапазоне от 0 до 255. "
-                f"Получено: {int_val}"
+            raise ValidationError(
+                "val.style.rgb_range", component=component_name, value=int_val
             )
         return int_val
 
@@ -138,34 +137,31 @@ class StyleValidator:
                 return 0.0
 
         if radius is None:
-            raise ValueError("Радиус зоны не может быть пустым.")
+            raise ValidationError("val.zone.radius_empty")
 
         if isinstance(radius, str):
             cleaned = radius.strip().replace(",", ".")
             if not cleaned:
                 if not enabled:
                     return 0.0
-                raise ValueError("Радиус зоны не может быть пустым.")
+                raise ValidationError("val.zone.radius_empty")
             try:
                 val = float(cleaned)
             except ValueError:
-                raise ValueError(f"Некорректный формат радиуса: '{radius}'. Ожидается число.")
+                raise ValidationError("val.zone.radius_format", value=radius)
         elif isinstance(radius, (int, float)):
             val = float(radius)
         else:
-            raise ValueError(f"Некорректный тип радиуса: {type(radius).__name__}")
+            raise ValidationError("val.zone.radius_type", type=type(radius).__name__)
 
         if not enabled and val == 0.0:
             return 0.0
 
         if val <= 0:
-            raise ValueError(f"Радиус зоны должен быть больше 0. Получено: {val}")
+            raise ValidationError("val.zone.radius_positive", value=val)
 
         if val < 1.0 or val > 1_000_000.0:
-            raise ValueError(
-                f"Радиус зоны должен находиться в диапазоне от 1 м до 1 000 000 м (1000 км). "
-                f"Получено: {val}"
-            )
+            raise ValidationError("val.zone.radius_range", value=val)
 
         return val
 
@@ -173,29 +169,27 @@ class StyleValidator:
     def validate_opacity(cls, opacity: Any) -> int:
         """Валидация непрозрачности зоны (в процентах от 0 до 100)."""
         if opacity is None:
-            raise ValueError("Прозрачность зоны не может быть пустой.")
+            raise ValidationError("val.zone.opacity_empty")
 
         if isinstance(opacity, str):
             cleaned = opacity.strip().replace(",", ".")
             if not cleaned:
-                raise ValueError("Прозрачность зоны не может быть пустой.")
+                raise ValidationError("val.zone.opacity_empty")
             try:
                 num = float(cleaned)
             except ValueError:
-                raise ValueError("Прозрачность зоны должна быть числом от 0 до 100.")
+                raise ValidationError("val.zone.opacity_number")
         elif isinstance(opacity, (int, float)):
             num = float(opacity)
         else:
-            raise ValueError("Прозрачность зоны должна быть числом от 0 до 100.")
+            raise ValidationError("val.zone.opacity_number")
 
         if not num.is_integer():
             num = round(num)
 
         int_val = int(num)
         if int_val < 0 or int_val > 100:
-            raise ValueError(
-                f"Прозрачность зоны должна быть в диапазоне от 0% до 100%. Получено: {int_val}"
-            )
+            raise ValidationError("val.zone.opacity_range", value=int_val)
 
         return int_val
 

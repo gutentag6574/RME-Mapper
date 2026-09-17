@@ -7,6 +7,7 @@
 """
 
 from rme_mapper.coordinates.converter import dms_to_decimal
-from rme_mapper.coordinates.validator import CoordinateValidator
+from rme_mapper.coordinates.validator import CoordinateValidator, ValidationError
 
-__all__ = ["CoordinateValidator", "dms_to_decimal"]
+__all__ = ["CoordinateValidator", "ValidationError", "dms_to_decimal"]
+

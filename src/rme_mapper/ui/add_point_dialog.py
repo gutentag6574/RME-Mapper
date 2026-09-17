@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from rme_mapper.coordinates.validator import CoordinateValidator
+from rme_mapper.i18n import tr
 from rme_mapper.maps.map_canvas import MapCanvas
 from rme_mapper.models.map_point import MapPoint
 from rme_mapper.models.point_style import PointStyle, PointZoneStyle, StyleValidator
@@ -163,11 +164,7 @@ class PointDialog(QDialog):
         self._map_name = map_name
         self._map_extent = map_extent
         self._map_crs = map_crs
-
-        if self.mode == "EDIT":
-            self.setWindowTitle("Редактировать точку")
-        else:
-            self.setWindowTitle("Добавить точку")
+        self._default_name = default_name
 
         self.setModal(True)
         self.resize(500, 540)
@@ -176,33 +173,35 @@ class PointDialog(QDialog):
         if self._point:
             self._populate_fields_from_point(self._point)
 
+        self.retranslate_ui()
+
     def _setup_ui(self, default_name: str) -> None:
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
 
         # 1. Поле названия точки
         name_layout = QHBoxLayout()
-        name_label = QLabel("Название:", self)
+        self.name_label = QLabel("Название:", self)
         self.name_edit = QLineEdit(self)
         self.name_edit.setObjectName("pointNameEdit")
         self.name_edit.setPlaceholderText(default_name or "Название (опционально)")
-        name_layout.addWidget(name_label)
+        name_layout.addWidget(self.name_label)
         name_layout.addWidget(self.name_edit)
         layout.addLayout(name_layout)
 
         # 2. Выбор формата координат
-        format_group_box = QGroupBox("Формат координат", self)
-        format_layout = QHBoxLayout(format_group_box)
-        self.rb_dd = QRadioButton("Десятичные градусы (DD)", format_group_box)
+        self.format_group_box = QGroupBox("Формат координат", self)
+        format_layout = QHBoxLayout(self.format_group_box)
+        self.rb_dd = QRadioButton("Десятичные градусы (DD)", self.format_group_box)
         self.rb_dd.setObjectName("rbFormatDD")
         self.rb_dd.setChecked(True)
 
-        self.rb_dms = QRadioButton("Градусы / минуты / секунды (DMS)", format_group_box)
+        self.rb_dms = QRadioButton("Градусы / минуты / секунды (DMS)", self.format_group_box)
         self.rb_dms.setObjectName("rbFormatDMS")
 
         format_layout.addWidget(self.rb_dd)
         format_layout.addWidget(self.rb_dms)
-        layout.addWidget(format_group_box)
+        layout.addWidget(self.format_group_box)
 
         # QStackedWidget для страниц DD и DMS
         self.stack_widget = QStackedWidget(self)
@@ -217,18 +216,20 @@ class PointDialog(QDialog):
         self.lat_edit = QLineEdit(dd_widget)
         self.lat_edit.setObjectName("pointLatEdit")
         self.lat_edit.setPlaceholderText("Пример: 56.637 или 56,637")
-        dd_form.addRow("Широта (DD):", self.lat_edit)
+        self.lat_dd_label = QLabel("Широта (DD):")
+        dd_form.addRow(self.lat_dd_label, self.lat_edit)
 
         self.lon_edit = QLineEdit(dd_widget)
         self.lon_edit.setObjectName("pointLonEdit")
         self.lon_edit.setPlaceholderText("Пример: 47.886 или 47,886")
-        dd_form.addRow("Долгота (DD):", self.lon_edit)
+        self.lon_dd_label = QLabel("Долгота (DD):")
+        dd_form.addRow(self.lon_dd_label, self.lon_edit)
 
-        dd_hint = QLabel("Диапазон: широта [-90; 90], долгота [-180; 180]", dd_widget)
-        dd_hint.setStyleSheet("color: #777777; font-size: 11px;")
+        self.dd_hint = QLabel("Диапазон: широта [-90; 90], долгота [-180; 180]", dd_widget)
+        self.dd_hint.setStyleSheet("color: #777777; font-size: 11px;")
 
         dd_layout.addLayout(dd_form)
-        dd_layout.addWidget(dd_hint)
+        dd_layout.addWidget(self.dd_hint)
         self.stack_widget.addWidget(dd_widget)
 
         # --- Страница 1: Режим DMS ---
@@ -240,13 +241,18 @@ class PointDialog(QDialog):
         dms_grid.setSpacing(6)
 
         dms_grid.addWidget(QLabel(""), 0, 0)
-        dms_grid.addWidget(QLabel("Градусы"), 0, 1)
-        dms_grid.addWidget(QLabel("Минуты"), 0, 2)
-        dms_grid.addWidget(QLabel("Секунды"), 0, 3)
-        dms_grid.addWidget(QLabel("Напр."), 0, 4)
+        self.dms_deg_hdr = QLabel("Градусы")
+        self.dms_min_hdr = QLabel("Минуты")
+        self.dms_sec_hdr = QLabel("Секунды")
+        self.dms_dir_hdr = QLabel("Напр.")
+        dms_grid.addWidget(self.dms_deg_hdr, 0, 1)
+        dms_grid.addWidget(self.dms_min_hdr, 0, 2)
+        dms_grid.addWidget(self.dms_sec_hdr, 0, 3)
+        dms_grid.addWidget(self.dms_dir_hdr, 0, 4)
 
         # Широта (DMS)
-        dms_grid.addWidget(QLabel("Широта:"), 1, 0)
+        self.dms_lat_hdr = QLabel("Широта:")
+        dms_grid.addWidget(self.dms_lat_hdr, 1, 0)
         self.lat_deg_edit = QLineEdit(dms_widget)
         self.lat_deg_edit.setObjectName("pointLatDegEdit")
         self.lat_deg_edit.setPlaceholderText("0..90")
@@ -268,7 +274,8 @@ class PointDialog(QDialog):
         dms_grid.addWidget(self.lat_dir_combo, 1, 4)
 
         # Долгота (DMS)
-        dms_grid.addWidget(QLabel("Долгота:"), 2, 0)
+        self.dms_lon_hdr = QLabel("Долгота:")
+        dms_grid.addWidget(self.dms_lon_hdr, 2, 0)
         self.lon_deg_edit = QLineEdit(dms_widget)
         self.lon_deg_edit.setObjectName("pointLonDegEdit")
         self.lon_deg_edit.setPlaceholderText("0..180")
@@ -289,48 +296,50 @@ class PointDialog(QDialog):
         self.lon_dir_combo.addItems(["E", "W"])
         dms_grid.addWidget(self.lon_dir_combo, 2, 4)
 
-        dms_hint = QLabel(
+        self.dms_hint = QLabel(
             "Широта: 0..90° [N/S], Долгота: 0..180° [E/W]. Поддерживаются 15.2 и 15,2.",
             dms_widget,
         )
-        dms_hint.setStyleSheet("color: #777777; font-size: 11px;")
+        self.dms_hint.setStyleSheet("color: #777777; font-size: 11px;")
 
         dms_layout.addLayout(dms_grid)
-        dms_layout.addWidget(dms_hint)
+        dms_layout.addWidget(self.dms_hint)
         self.stack_widget.addWidget(dms_widget)
 
         layout.addWidget(self.stack_widget)
         self.rb_dd.toggled.connect(self._on_format_changed)
 
         # 3. Блок стиля маркера
-        style_box = QGroupBox("Стиль маркера", self)
-        style_main_layout = QHBoxLayout(style_box)
+        self.style_box = QGroupBox("Стиль маркера", self)
+        style_main_layout = QHBoxLayout(self.style_box)
 
         style_form = QFormLayout()
         style_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
-        self.symbol_combo = QComboBox(style_box)
+        self.symbol_combo = QComboBox(self.style_box)
         self.symbol_combo.setObjectName("pointSymbolCombo")
         self.symbol_combo.addItem("Круг", "circle")
         self.symbol_combo.addItem("Квадрат", "square")
         self.symbol_combo.addItem("Треугольник", "triangle")
         self.symbol_combo.currentIndexChanged.connect(self._on_style_input_changed)
-        style_form.addRow("Форма:", self.symbol_combo)
+        self.shape_label = QLabel("Форма:")
+        style_form.addRow(self.shape_label, self.symbol_combo)
 
-        self.size_spin = QDoubleSpinBox(style_box)
+        self.size_spin = QDoubleSpinBox(self.style_box)
         self.size_spin.setObjectName("pointSizeSpin")
         self.size_spin.setRange(4.0, 50.0)
         self.size_spin.setValue(12.0)
         self.size_spin.setSingleStep(1.0)
         self.size_spin.setDecimals(1)
         self.size_spin.valueChanged.connect(self._on_style_input_changed)
-        style_form.addRow("Размер (px):", self.size_spin)
+        self.size_label = QLabel("Размер (px):")
+        style_form.addRow(self.size_label, self.size_spin)
 
         rgb_layout = QHBoxLayout()
         rgb_layout.setSpacing(4)
 
         rgb_layout.addWidget(QLabel("R:"))
-        self.r_edit = QLineEdit(style_box)
+        self.r_edit = QLineEdit(self.style_box)
         self.r_edit.setObjectName("pointREdit")
         self.r_edit.setText("220")
         self.r_edit.setMaximumWidth(42)
@@ -338,7 +347,7 @@ class PointDialog(QDialog):
         rgb_layout.addWidget(self.r_edit)
 
         rgb_layout.addWidget(QLabel("G:"))
-        self.g_edit = QLineEdit(style_box)
+        self.g_edit = QLineEdit(self.style_box)
         self.g_edit.setObjectName("pointGEdit")
         self.g_edit.setText("30")
         self.g_edit.setMaximumWidth(42)
@@ -346,46 +355,47 @@ class PointDialog(QDialog):
         rgb_layout.addWidget(self.g_edit)
 
         rgb_layout.addWidget(QLabel("B:"))
-        self.b_edit = QLineEdit(style_box)
+        self.b_edit = QLineEdit(self.style_box)
         self.b_edit.setObjectName("pointBEdit")
         self.b_edit.setText("30")
         self.b_edit.setMaximumWidth(42)
         self.b_edit.textChanged.connect(self._on_style_input_changed)
         rgb_layout.addWidget(self.b_edit)
 
-        self.btn_pick_color = QPushButton("Выбрать цвет...", style_box)
+        self.btn_pick_color = QPushButton("Выбрать цвет...", self.style_box)
         self.btn_pick_color.setObjectName("btnPickColor")
         self.btn_pick_color.clicked.connect(self._open_color_dialog)
         rgb_layout.addWidget(self.btn_pick_color)
 
-        style_form.addRow("Цвет (RGB):", rgb_layout)
+        self.color_label = QLabel("Цвет (RGB):")
+        style_form.addRow(self.color_label, rgb_layout)
         style_main_layout.addLayout(style_form, stretch=1)
 
         preview_box = QVBoxLayout()
         preview_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        preview_label = QLabel("Превью:")
-        preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        preview_box.addWidget(preview_label)
+        self.preview_label = QLabel("Превью:")
+        self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        preview_box.addWidget(self.preview_label)
 
-        self.preview_widget = MarkerPreviewWidget(style_box)
+        self.preview_widget = MarkerPreviewWidget(self.style_box)
         self.preview_widget.setObjectName("markerPreviewWidget")
         preview_box.addWidget(self.preview_widget)
         style_main_layout.addLayout(preview_box)
 
-        layout.addWidget(style_box)
+        layout.addWidget(self.style_box)
 
         # 4. Блок географической зоны радиуса (Этап 7)
-        zone_box = QGroupBox("Зона вокруг точки", self)
-        zone_box_layout = QVBoxLayout(zone_box)
+        self.zone_group = QGroupBox("Зона вокруг точки", self)
+        zone_box_layout = QVBoxLayout(self.zone_group)
         zone_box_layout.setSpacing(6)
 
         # Чекбокс включения зоны
-        self.zone_chk = QCheckBox("Показывать зону", zone_box)
+        self.zone_chk = QCheckBox("Показывать зону", self.zone_group)
         self.zone_chk.setObjectName("pointZoneEnableChk")
         zone_box_layout.addWidget(self.zone_chk)
 
         # Контейнер настроек параметров зоны
-        self.zone_container = QWidget(zone_box)
+        self.zone_container = QWidget(self.zone_group)
         zone_form = QFormLayout(self.zone_container)
         zone_form.setContentsMargins(0, 0, 0, 0)
         zone_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
@@ -399,9 +409,11 @@ class PointDialog(QDialog):
 
         self.zone_unit_combo = QComboBox(self.zone_container)
         self.zone_unit_combo.setObjectName("pointZoneRadiusUnitCombo")
-        self.zone_unit_combo.addItems(["км", "м"])
+        self.zone_unit_combo.addItem("км", "km")
+        self.zone_unit_combo.addItem("м", "m")
         radius_layout.addWidget(self.zone_unit_combo)
-        zone_form.addRow("Радиус:", radius_layout)
+        self.radius_label = QLabel("Радиус:")
+        zone_form.addRow(self.radius_label, radius_layout)
 
         # Цвет зоны
         zone_rgb_layout = QHBoxLayout()
@@ -432,7 +444,8 @@ class PointDialog(QDialog):
         self.btn_pick_zone_color.setObjectName("btnPickZoneColor")
         self.btn_pick_zone_color.clicked.connect(self._open_zone_color_dialog)
         zone_rgb_layout.addWidget(self.btn_pick_zone_color)
-        zone_form.addRow("Цвет зоны:", zone_rgb_layout)
+        self.zone_color_label = QLabel("Цвет зоны:")
+        zone_form.addRow(self.zone_color_label, zone_rgb_layout)
 
         # Прозрачность зоны (0..100%)
         opacity_layout = QHBoxLayout()
@@ -453,17 +466,17 @@ class PointDialog(QDialog):
         self.zone_opacity_slider.valueChanged.connect(self.zone_opacity_spin.setValue)
         self.zone_opacity_spin.valueChanged.connect(self.zone_opacity_slider.setValue)
 
-        zone_form.addRow("Непрозрачность:", opacity_layout)
+        self.zone_opacity_label = QLabel("Непрозрачность:")
+        zone_form.addRow(self.zone_opacity_label, opacity_layout)
 
         zone_box_layout.addWidget(self.zone_container)
-        layout.addWidget(zone_box)
+        layout.addWidget(self.zone_group)
 
         # Управление доступностью полей зоны по чекбоксу
         self.zone_container.setEnabled(False)
         self.zone_chk.toggled.connect(self.zone_container.setEnabled)
 
         # Псевдонимы атрибутов для тестов и обратной совместимости
-        self.zone_group = zone_box
         self.zone_enabled_chk = self.zone_chk
         self.radius_edit = self.zone_radius_edit
         self.unit_combo = self.zone_unit_combo
@@ -474,8 +487,7 @@ class PointDialog(QDialog):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
-        submit_text = "Сохранить" if self.mode == "EDIT" else "Добавить"
-        self.btn_add = QPushButton(submit_text, self)
+        self.btn_add = QPushButton("Сохранить" if self.mode == "EDIT" else "Добавить", self)
         self.btn_add.setObjectName("btnAddPointSubmit")
         self.btn_add.setDefault(True)
         self.btn_add.clicked.connect(self._validate_and_submit)
@@ -488,14 +500,97 @@ class PointDialog(QDialog):
 
         layout.addLayout(btn_layout)
 
-        # Первоначальное обновление превью
-        self._on_style_input_changed()
+    def retranslate_ui(self) -> None:
+        """Обновление локализованных текстов диалога."""
+        if self.mode == "EDIT":
+            self.setWindowTitle(tr("dialog.point.title_edit"))
+        else:
+            self.setWindowTitle(tr("dialog.point.title_add"))
+
+        if hasattr(self, "name_label"):
+            self.name_label.setText(tr("dialog.point.name"))
+        if hasattr(self, "name_edit"):
+            self.name_edit.setPlaceholderText(self._default_name or tr("dialog.point.name_placeholder"))
+        if hasattr(self, "format_group_box"):
+            self.format_group_box.setTitle(tr("dialog.point.format"))
+        if hasattr(self, "rb_dd"):
+            self.rb_dd.setText(tr("dialog.point.format_dd"))
+        if hasattr(self, "rb_dms"):
+            self.rb_dms.setText(tr("dialog.point.format_dms"))
+        if hasattr(self, "lat_dd_label"):
+            self.lat_dd_label.setText(tr("dialog.point.lat_dd"))
+        if hasattr(self, "lon_dd_label"):
+            self.lon_dd_label.setText(tr("dialog.point.lon_dd"))
+        if hasattr(self, "dd_hint"):
+            self.dd_hint.setText(tr("dialog.point.dd_hint"))
+        if hasattr(self, "dms_deg_hdr"):
+            self.dms_deg_hdr.setText(tr("dialog.point.degrees"))
+        if hasattr(self, "dms_min_hdr"):
+            self.dms_min_hdr.setText(tr("dialog.point.minutes"))
+        if hasattr(self, "dms_sec_hdr"):
+            self.dms_sec_hdr.setText(tr("dialog.point.seconds"))
+        if hasattr(self, "dms_dir_hdr"):
+            self.dms_dir_hdr.setText(tr("dialog.point.direction"))
+        if hasattr(self, "dms_lat_hdr"):
+            self.dms_lat_hdr.setText(tr("dialog.point.lat_dms"))
+        if hasattr(self, "dms_lon_hdr"):
+            self.dms_lon_hdr.setText(tr("dialog.point.lon_dms"))
+        if hasattr(self, "dms_hint"):
+            self.dms_hint.setText(tr("dialog.point.dms_hint"))
+        if hasattr(self, "style_box"):
+            self.style_box.setTitle(tr("dialog.point.style_box"))
+        if hasattr(self, "shape_label"):
+            self.shape_label.setText(tr("dialog.point.shape"))
+
+        if hasattr(self, "symbol_combo"):
+            cur_idx = self.symbol_combo.currentIndex()
+            self.symbol_combo.setItemText(0, tr("shape.circle"))
+            self.symbol_combo.setItemText(1, tr("shape.square"))
+            self.symbol_combo.setItemText(2, tr("shape.triangle"))
+            self.symbol_combo.setCurrentIndex(cur_idx)
+
+        if hasattr(self, "size_label"):
+            self.size_label.setText(tr("dialog.point.size"))
+        if hasattr(self, "color_label"):
+            self.color_label.setText(tr("dialog.point.color"))
+        if hasattr(self, "btn_pick_color"):
+            self.btn_pick_color.setText(tr("dialog.point.choose_color"))
+        if hasattr(self, "preview_label"):
+            self.preview_label.setText(tr("dialog.point.preview"))
+        if hasattr(self, "zone_group"):
+            self.zone_group.setTitle(tr("dialog.point.zone_box"))
+        if hasattr(self, "zone_chk"):
+            self.zone_chk.setText(tr("dialog.point.show_zone"))
+        if hasattr(self, "radius_label"):
+            self.radius_label.setText(tr("dialog.point.radius"))
+        if hasattr(self, "zone_radius_edit"):
+            self.zone_radius_edit.setPlaceholderText(tr("dialog.point.radius_placeholder"))
+
+        if hasattr(self, "zone_unit_combo"):
+            cur_u_idx = self.zone_unit_combo.currentIndex()
+            self.zone_unit_combo.setItemText(0, tr("unit.km"))
+            self.zone_unit_combo.setItemText(1, tr("unit.m"))
+            self.zone_unit_combo.setCurrentIndex(cur_u_idx)
+
+        if hasattr(self, "zone_color_label"):
+            self.zone_color_label.setText(tr("dialog.point.zone_color"))
+        if hasattr(self, "btn_pick_zone_color"):
+            self.btn_pick_zone_color.setText(tr("dialog.point.choose_color"))
+        if hasattr(self, "zone_opacity_label"):
+            self.zone_opacity_label.setText(tr("dialog.point.opacity"))
+
+        if hasattr(self, "btn_add"):
+            self.btn_add.setText(tr("dialog.point.btn_save") if self.mode == "EDIT" else tr("dialog.point.btn_add"))
+        if hasattr(self, "btn_cancel"):
+            self.btn_cancel.setText(tr("dialog.point.btn_cancel"))
 
     def _populate_fields_from_point(self, point: MapPoint) -> None:
-        """Заполнение полей диалога данными существующей точки."""
+        """Предзаполнение полей диалога при редактировании существующей точки."""
         self.name_edit.setText(point.name)
-        self.lat_edit.setText(f"{point.latitude:.6f}")
-        self.lon_edit.setText(f"{point.longitude:.6f}")
+
+        # Заполнение DD полей
+        self.lat_edit.setText(f"{point.latitude:.6f}".rstrip("0").rstrip("."))
+        self.lon_edit.setText(f"{point.longitude:.6f}".rstrip("0").rstrip("."))
 
         # Заполнение DMS полей
         lat_deg, lat_min, lat_sec = decimal_to_dms(point.latitude)
@@ -525,14 +620,14 @@ class PointDialog(QDialog):
         self.zone_container.setEnabled(point.zone_enabled)
 
         if point.radius_m >= 1000.0:
-            self.zone_unit_combo.setCurrentText("км")
+            self.zone_unit_combo.setCurrentIndex(0)  # km
             km_val = point.radius_m / 1000.0
             if km_val.is_integer():
                 self.zone_radius_edit.setText(str(int(km_val)))
             else:
                 self.zone_radius_edit.setText(f"{km_val:.2f}".rstrip("0").rstrip("."))
         elif point.radius_m > 0:
-            self.zone_unit_combo.setCurrentText("м")
+            self.zone_unit_combo.setCurrentIndex(1)  # m
             if point.radius_m.is_integer():
                 self.zone_radius_edit.setText(str(int(point.radius_m)))
             else:
@@ -577,7 +672,7 @@ class PointDialog(QDialog):
         except Exception:
             initial_color = QColor(220, 30, 30)
 
-        color = QColorDialog.getColor(initial_color, self, "Выбор цвета маркера")
+        color = QColorDialog.getColor(initial_color, self, tr("dialog.point.choose_color"))
         if color.isValid():
             self.r_edit.setText(str(color.red()))
             self.g_edit.setText(str(color.green()))
@@ -594,7 +689,7 @@ class PointDialog(QDialog):
         except Exception:
             initial_color = QColor(220, 30, 30)
 
-        color = QColorDialog.getColor(initial_color, self, "Выбор цвета зоны")
+        color = QColorDialog.getColor(initial_color, self, tr("dialog.point.choose_color"))
         if color.isValid():
             self.zone_r_edit.setText(str(color.red()))
             self.zone_g_edit.setText(str(color.green()))
@@ -610,7 +705,7 @@ class PointDialog(QDialog):
                 lat, lon = CoordinateValidator.validate_dd_pair(lat_text, lon_text)
             except ValueError as err:
                 logger.warning("Ошибка валидации координат DD: %s", err)
-                QMessageBox.warning(self, "Некорректные координаты", f"Ошибка в формате координат:\n{err}")
+                QMessageBox.warning(self, tr("common.warning"), str(err))
                 return
         else:
             lat_deg = self.lat_deg_edit.text()
@@ -630,7 +725,7 @@ class PointDialog(QDialog):
                 )
             except ValueError as err:
                 logger.warning("Ошибка валидации координат DMS: %s", err)
-                QMessageBox.warning(self, "Некорректные координаты", f"Ошибка в формате координат:\n{err}")
+                QMessageBox.warning(self, tr("common.warning"), str(err))
                 return
 
         # 2. Валидация стиля маркера
@@ -644,20 +739,21 @@ class PointDialog(QDialog):
             style = StyleValidator.validate_style(symbol, size, r_text, g_text, b_text)
         except ValueError as err:
             logger.warning("Ошибка валидации стиля маркера: %s", err)
-            QMessageBox.warning(self, "Некорректный стиль маркера", str(err))
+            QMessageBox.warning(self, tr("common.warning"), str(err))
             return
 
         # 3. Валидация зоны радиуса (Этап 7)
         zone_enabled = self.zone_chk.isChecked()
         if zone_enabled:
             raw_radius = self.zone_radius_edit.text()
-            unit = self.zone_unit_combo.currentText()
+            # Единица измерения: определяем по текущему индексу или тексту
+            unit = self.zone_unit_combo.currentData() or self.zone_unit_combo.currentText()
             try:
                 parsed_radius = GeodesicService.parse_radius(raw_radius, unit)
                 radius_m = StyleValidator.validate_radius(parsed_radius, enabled=True)
             except ValueError as err:
                 logger.warning("Ошибка валидации радиуса зоны: %s", err)
-                QMessageBox.warning(self, "Некорректный радиус", str(err))
+                QMessageBox.warning(self, tr("common.warning"), str(err))
                 return
 
             try:
@@ -668,14 +764,14 @@ class PointDialog(QDialog):
                 )
             except ValueError as err:
                 logger.warning("Ошибка валидации цвета зоны: %s", err)
-                QMessageBox.warning(self, "Некорректный цвет зоны", str(err))
+                QMessageBox.warning(self, tr("common.warning"), str(err))
                 return
 
             try:
                 opacity = StyleValidator.validate_opacity(self.zone_opacity_spin.value())
             except ValueError as err:
                 logger.warning("Ошибка валидации прозрачности зоны: %s", err)
-                QMessageBox.warning(self, "Некорректная прозрачность", str(err))
+                QMessageBox.warning(self, tr("common.warning"), str(err))
                 return
         else:
             radius_m = 0.0
@@ -699,11 +795,12 @@ class PointDialog(QDialog):
 
         if not is_inside:
             logger.info("Точка (%s, %s) вне рабочей области карты", lon, lat)
-            map_name_str = f"карты «{self._map_name}»" if self._map_name else "выбранной карты"
+            map_name_str = self._map_name or "—"
+            warn_msg = tr("msg.outside_map_warning", name=map_name_str)
             reply = QMessageBox.question(
                 self,
-                "Предупреждение",
-                f"Координата находится за пределами рабочей области {map_name_str}.\nСохранить точку?",
+                tr("msg.point_outside_title"),
+                warn_msg,
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
