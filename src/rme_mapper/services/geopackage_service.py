@@ -52,10 +52,14 @@ class GeoPackageService:
 
         try:
             info = pyogrio.read_info(str(p), layer=layer_name)
+            features_cnt = info.get("features")
+            if features_cnt is None:
+                features_cnt = info.get("features_count", 0)
+
             meta = {
                 "layer_name": layer_name,
                 "geometry_type": info.get("geometry_type"),
-                "features_count": info.get("features_count"),
+                "features_count": features_cnt,
                 "crs": info.get("crs"),
                 "total_bounds": info.get("total_bounds"),
                 "fields": info.get("fields"),
