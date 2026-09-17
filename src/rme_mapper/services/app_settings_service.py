@@ -30,6 +30,13 @@ class AppSettingsService:
     KEY_LAST_MAP_DIR = "paths/last_map_directory"
     KEY_LAST_PROJECT_DIR = "paths/last_project_directory"
     KEY_LAST_IMPORT_DIR = "paths/last_import_directory"
+    KEY_LAST_EXPORT_DIR = "paths/last_export_directory"
+    KEY_LAST_EXPORT_FORMAT = "export/last_format"
+    KEY_LAST_EXPORT_WIDTH = "export/last_width"
+    KEY_LAST_EXPORT_HEIGHT = "export/last_height"
+    KEY_LAST_EXPORT_EXTENT_MODE = "export/last_extent_mode"
+    KEY_LAST_EXPORT_JPEG_QUALITY = "export/last_jpeg_quality"
+    KEY_LAST_EXPORT_LOCK_ASPECT = "export/last_lock_aspect"
     KEY_IMPORT_PRESETS = "import/mapping_presets"
     KEY_WINDOW_GEOMETRY = "ui/window_geometry"
     KEY_WINDOW_MAXIMIZED = "ui/window_maximized"
@@ -255,6 +262,107 @@ class AppSettingsService:
             d = str(p)
         if d:
             self._set_str(self.KEY_LAST_IMPORT_DIR, d)
+
+    def get_last_export_directory(self, check_exists: bool = False, fallback: str = "") -> str:
+        """Получить последний каталог экспорта."""
+        import os
+        from pathlib import Path
+
+        val = self._get_str(self.KEY_LAST_EXPORT_DIR, "")
+        if val:
+            if not check_exists or os.path.isdir(val):
+                return val
+        if fallback and (not check_exists or os.path.isdir(fallback)):
+            return fallback
+        proj_dir = self.get_last_project_directory(check_exists=check_exists)
+        return proj_dir if proj_dir else (str(Path.home()) if check_exists else "")
+
+    def set_last_export_directory(self, path: str) -> None:
+        """Сохранить последний каталог экспорта."""
+        import os
+        from pathlib import Path
+
+        if not path:
+            return
+        p = Path(path)
+        if p.suffix or (os.path.exists(path) and not os.path.isdir(path)):
+            d = str(p.parent)
+        else:
+            d = str(p)
+        if d:
+            self._set_str(self.KEY_LAST_EXPORT_DIR, d)
+
+    def get_export_format(self, default: str = "PNG") -> str:
+        """Получить сохраненный формат экспорта ('PNG' или 'JPEG')."""
+        val = self._get_str(self.KEY_LAST_EXPORT_FORMAT, default).upper()
+        return val if val in ("PNG", "JPEG", "JPG") else default
+
+    def set_export_format(self, fmt: str) -> None:
+        """Сохранить формат экспорта."""
+        clean = fmt.strip().upper()
+        if clean in ("PNG", "JPEG", "JPG"):
+            self._set_str(self.KEY_LAST_EXPORT_FORMAT, clean)
+
+    def get_export_width(self, default: int = 1920) -> int:
+        """Получить сохраненную ширину экспорта в пикселях."""
+        raw = self._get_str(self.KEY_LAST_EXPORT_WIDTH, str(default))
+        try:
+            val = int(raw)
+            return val if 256 <= val <= 16384 else default
+        except (ValueError, TypeError):
+            return default
+
+    def set_export_width(self, width: int) -> None:
+        """Сохранить ширину экспорта."""
+        if 256 <= width <= 16384:
+            self._set_str(self.KEY_LAST_EXPORT_WIDTH, str(width))
+
+    def get_export_height(self, default: int = 1080) -> int:
+        """Получить сохраненную высоту экспорта в пикселях."""
+        raw = self._get_str(self.KEY_LAST_EXPORT_HEIGHT, str(default))
+        try:
+            val = int(raw)
+            return val if 256 <= val <= 16384 else default
+        except (ValueError, TypeError):
+            return default
+
+    def set_export_height(self, height: int) -> None:
+        """Сохранить высоту экспорта."""
+        if 256 <= height <= 16384:
+            self._set_str(self.KEY_LAST_EXPORT_HEIGHT, str(height))
+
+    def get_export_extent_mode(self, default: str = "current_view") -> str:
+        """Получить сохраненный режим охвата экспорта."""
+        val = self._get_str(self.KEY_LAST_EXPORT_EXTENT_MODE, default)
+        valid = {"current_view", "full_map", "all_points", "selected_points"}
+        return val if val in valid else default
+
+    def set_export_extent_mode(self, mode: str) -> None:
+        """Сохранить режим охвата экспорта."""
+        if mode in {"current_view", "full_map", "all_points", "selected_points"}:
+            self._set_str(self.KEY_LAST_EXPORT_EXTENT_MODE, mode)
+
+    def get_export_jpeg_quality(self, default: int = 92) -> int:
+        """Получить сохраненное качество JPEG (1-100)."""
+        raw = self._get_str(self.KEY_LAST_EXPORT_JPEG_QUALITY, str(default))
+        try:
+            val = int(raw)
+            return val if 1 <= val <= 100 else default
+        except (ValueError, TypeError):
+            return default
+
+    def set_export_jpeg_quality(self, quality: int) -> None:
+        """Сохранить качество JPEG."""
+        if 1 <= quality <= 100:
+            self._set_str(self.KEY_LAST_EXPORT_JPEG_QUALITY, str(quality))
+
+    def get_export_lock_aspect(self, default: bool = True) -> bool:
+        """Получить настройку фиксации пропорций области."""
+        return self._get_bool(self.KEY_LAST_EXPORT_LOCK_ASPECT, default=default)
+
+    def set_export_lock_aspect(self, locked: bool) -> None:
+        """Сохранить настройку фиксации пропорций области."""
+        self._set_bool(self.KEY_LAST_EXPORT_LOCK_ASPECT, locked)
 
     # --- UI State & Geometry ---
     def _get_bool(self, key: str, default: bool = True) -> bool:

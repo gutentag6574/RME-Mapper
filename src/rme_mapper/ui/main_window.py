@@ -40,6 +40,7 @@ from rme_mapper.ui.controllers.map_controller import MapController
 from rme_mapper.ui.controllers.point_controller import PointController
 from rme_mapper.ui.controllers.project_controller import ProjectController
 from rme_mapper.ui.controllers.import_controller import ImportController
+from rme_mapper.ui.controllers.export_controller import ExportController
 from rme_mapper.ui.panels.layers_panel import LayersPanel
 from rme_mapper.ui.panels.points_panel import PointsPanel
 from rme_mapper.ui.panels.properties_panel import (
@@ -136,6 +137,20 @@ class MainWindow(QMainWindow):
             get_active_profile=lambda: self.map_controller.active_profile,
             get_map_path=lambda: self.map_controller.map_path,
             get_boundary_geometry=lambda: self.map_controller.boundary_geometry,
+            settings_service=self._settings_service,
+            set_status_message=self._show_status_message,
+        )
+
+        self.export_controller = ExportController(
+            parent_widget=self,
+            get_active_profile=lambda: self.map_controller.active_profile,
+            get_active_crs=lambda: self.map_controller.active_crs,
+            get_map_path=lambda: self.map_controller.map_path,
+            get_boundary_geometry=lambda: self.map_controller.boundary_geometry,
+            map_canvas=self.map_canvas,
+            point_service=self._point_service,
+            points_panel=self.points_panel,
+            layers_panel=self.layers_panel,
             settings_service=self._settings_service,
             set_status_message=self._show_status_message,
         )
@@ -306,6 +321,12 @@ class MainWindow(QMainWindow):
         self.import_points_action.triggered.connect(lambda: self.import_controller.open_import_wizard())
         self.import_menu.addAction(self.import_points_action)
         self.export_menu = menu_bar.addMenu("")
+
+        self.export_map_image_action = QAction(self)
+        self.export_map_image_action.setShortcut(QKeySequence("Ctrl+Shift+E"))
+        self.export_map_image_action.triggered.connect(lambda: self.export_controller.open_export_dialog())
+        self.export_map_image_action.setEnabled(False)
+        self.export_menu.addAction(self.export_map_image_action)
 
         # Меню: Вид
         self.view_menu = menu_bar.addMenu("")
@@ -644,6 +665,8 @@ class MainWindow(QMainWindow):
             self.close_map_action.setEnabled(enabled)
         if hasattr(self, "btn_add_point"):
             self.btn_add_point.setEnabled(enabled)
+        if hasattr(self, "export_map_image_action"):
+            self.export_map_image_action.setEnabled(enabled)
         if hasattr(self, "map_canvas") and hasattr(self.map_canvas, "btn_fit"):
             self.map_canvas.btn_fit.setEnabled(enabled)
         if hasattr(self, "show_all_points_action"):
@@ -882,6 +905,10 @@ class MainWindow(QMainWindow):
             self.import_points_action.setText(tr("action.import_points"))
             self.import_points_action.setStatusTip(tr("action.import_points_tip"))
         self.export_menu.setTitle(tr("menu.export"))
+        if hasattr(self, "export_map_image_action"):
+            self.export_map_image_action.setText(tr("action.export_map_image"))
+            self.export_map_image_action.setToolTip(tr("tooltip.export_map_image"))
+            self.export_map_image_action.setStatusTip(tr("action.export_map_image_tip"))
         if hasattr(self, "view_menu"):
             self.view_menu.setTitle(tr("menu.view"))
         self.settings_menu.setTitle(tr("menu.settings"))
