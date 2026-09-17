@@ -36,6 +36,9 @@ class AppSettingsService:
     KEY_RIGHT_PANEL_VISIBLE = "ui/right_panel_visible"
     KEY_TOOLBAR_VISIBLE = "ui/toolbar_visible"
     KEY_STATUSBAR_VISIBLE = "ui/statusbar_visible"
+    KEY_POINT_LABELS_MODE = "ui/point_labels_mode"
+    KEY_SHOW_POINTS_VISIBLE = "ui/show_points_visible"
+    KEY_SHOW_ZONES_VISIBLE = "ui/show_zones_visible"
     MAX_RECENT_ITEMS = 10
 
     def __init__(self, settings: Any = _AUTO) -> None:
@@ -320,6 +323,42 @@ class AppSettingsService:
     def set_statusbar_visible(self, visible: bool) -> None:
         """Сохранить видимость нижней строки состояния."""
         self._set_bool(self.KEY_STATUSBAR_VISIBLE, visible)
+
+    def get_point_labels_mode(self) -> str:
+        """Режим отображения подписей точек: 'hidden', 'selected', 'all'."""
+        if self._settings is not None:
+            val = self._settings.value(self.KEY_POINT_LABELS_MODE, "hidden")
+        else:
+            val = self._memory_fallback.get(self.KEY_POINT_LABELS_MODE, "hidden")
+        if isinstance(val, str) and val.lower() in {"hidden", "selected", "all"}:
+            return val.lower()
+        return "hidden"
+
+    def set_point_labels_mode(self, mode: str) -> None:
+        """Сохранить режим отображения подписей точек."""
+        val = mode.lower() if mode.lower() in {"hidden", "selected", "all"} else "hidden"
+        if self._settings is not None:
+            self._settings.setValue(self.KEY_POINT_LABELS_MODE, val)
+            if hasattr(self._settings, "sync"):
+                self._settings.sync()
+        else:
+            self._memory_fallback[self.KEY_POINT_LABELS_MODE] = val
+
+    def get_show_points_visible(self) -> bool:
+        """Глобальная видимость точек на холсте."""
+        return self._get_bool(self.KEY_SHOW_POINTS_VISIBLE, default=True)
+
+    def set_show_points_visible(self, visible: bool) -> None:
+        """Сохранить глобальную видимость точек на холсте."""
+        self._set_bool(self.KEY_SHOW_POINTS_VISIBLE, visible)
+
+    def get_show_zones_visible(self) -> bool:
+        """Глобальная видимость геодезических зон на холсте."""
+        return self._get_bool(self.KEY_SHOW_ZONES_VISIBLE, default=True)
+
+    def set_show_zones_visible(self, visible: bool) -> None:
+        """Сохранить глобальную видимость геодезических зон на холсте."""
+        self._set_bool(self.KEY_SHOW_ZONES_VISIBLE, visible)
 
     def clear(self) -> None:
         """Очистить сохраненные настройки (для изолированного тестирования)."""

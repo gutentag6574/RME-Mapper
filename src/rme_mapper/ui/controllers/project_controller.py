@@ -218,6 +218,8 @@ class ProjectController(QObject):
             self._current_project_path = saved_path
             self._project_loaded = True
             self.set_modified(False)
+            if hasattr(self._point_controller, "undo_manager"):
+                self._point_controller.undo_manager.mark_clean()
             self._project_service.clear_recovery_snapshot()
             if self._settings_service:
                 self._settings_service.add_recent_project(str(saved_path))
@@ -274,6 +276,9 @@ class ProjectController(QObject):
         self._current_project_path = path
         self._project_loaded = True
         self.set_modified(False)
+        if hasattr(self._point_controller, "undo_manager"):
+            self._point_controller.undo_manager.clear()
+            self._point_controller.undo_manager.mark_clean()
         self._project_service.clear_recovery_snapshot()
         if self._settings_service:
             self._settings_service.add_recent_project(str(path))

@@ -8,6 +8,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QBrush,
     QColor,
+    QFont,
     QPainter,
     QPainterPath,
     QPen,
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
     QGraphicsItem,
     QGraphicsPathItem,
     QGraphicsScene,
+    QGraphicsSimpleTextItem,
     QGraphicsTextItem,
     QGraphicsView,
     QLabel,
@@ -54,6 +56,8 @@ class MapCanvas(QGraphicsView):
 
     cursor_position_changed = Signal(float, float)
     cursor_left = Signal()
+    map_point_clicked = Signal(float, float)
+    add_point_mode_cancelled = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -64,6 +68,7 @@ class MapCanvas(QGraphicsView):
 
         self._current_zoom = 1.0
         self._initial_fit_done = False
+        self._interaction_mode = "navigation"
 
         # Охват административной границы РМЭ (базовый охват для fit_to_view)
         self._boundary_bounds: QRectF | None = None
@@ -73,6 +78,14 @@ class MapCanvas(QGraphicsView):
         self._user_point_items: dict[str, QGraphicsItem] = {}
         # Словарь графических элементов зон радиуса: point_id -> QGraphicsItem
         self._user_zone_items: dict[str, QGraphicsItem] = {}
+        # Словарь графических элементов текстовых подписей: point_id -> QGraphicsSimpleTextItem
+        self._user_label_items: dict[str, QGraphicsSimpleTextItem] = {}
+        # Режим отображения подписей: 'hidden', 'selected', 'all'
+        self._labels_mode = "hidden"
+        self._selected_point_ids: set[str] = set()
+        # Глобальные флаги видимости точек и зон
+        self._show_points_visible = True
+        self._show_zones_visible = True
 
         self._setup_view_properties()
         self._create_controls()
@@ -101,10 +114,47 @@ class MapCanvas(QGraphicsView):
         map_y = -scene_pt.y()
         self.cursor_position_changed.emit(map_x, map_y)
 
+    def mousePressEvent(self, event: Any) -> None:
+        """Обработка клика мыши: выбор точки или создание точки кликом по карте."""
+        if self._interaction_mode == "add_point" and event.button() == Qt.MouseButton.LeftButton:
+            pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            scene_pt = self.mapToScene(pos)
+            map_x = scene_pt.x()
+            map_y = -scene_pt.y()
+            self.map_point_clicked.emit(map_x, map_y)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event: Any) -> None:
+        """Обработка клавиш холста: отмена режима добавления точки по Esc."""
+        if self._interaction_mode == "add_point" and event.key() == Qt.Key.Key_Escape:
+            self.set_interaction_mode("navigation")
+            self.add_point_mode_cancelled.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
     def leaveEvent(self, event: Any) -> None:
         """Курсор покинул область холста."""
         super().leaveEvent(event)
         self.cursor_left.emit()
+
+    def set_interaction_mode(self, mode: str) -> None:
+        """Установка режима взаимодействия с холстом: 'navigation' или 'add_point'."""
+        self._interaction_mode = mode
+        if mode == "add_point":
+            self.setDragMode(QGraphicsView.DragMode.NoDrag)
+            if self.viewport():
+                self.viewport().setCursor(Qt.CursorShape.CrossCursor)
+        else:
+            self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+            if self.viewport():
+                self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+
+    @property
+    def interaction_mode(self) -> str:
+        return self._interaction_mode
 
 
     def _create_controls(self) -> None:
@@ -415,8 +465,9 @@ class MapCanvas(QGraphicsView):
             "Пользовательская точка '%s' добавлена на карту: pos=(%s, %s), shape=%s, size=%s",
             point.name, px, -py, point.symbol, point.size,
         )
-        # Синхронно добавляем/обновляем зону радиуса
+        # Синхронно добавляем/обновляем зону радиуса и подпись
         self.update_point_zone(point, zone_polygon=zone_polygon, map_coords=(px, py))
+        self.update_point_label(point, px, -py)
 
     def update_user_point(
         self,
@@ -438,7 +489,7 @@ class MapCanvas(QGraphicsView):
             item.setBrush(brush)
 
             item.setPos(px, -py)
-            item.setVisible(point.visible)
+            item.setVisible(point.visible and self._show_points_visible)
             logger.info(
                 "Маркер точки '%s' обновлен: pos=(%s, %s), shape=%s, size=%s",
                 point.name, px, -py, point.symbol, point.size,
@@ -447,8 +498,9 @@ class MapCanvas(QGraphicsView):
             self.add_user_point(point, map_x=px, map_y=py, zone_polygon=zone_polygon)
             return
 
-        # Синхронно обновляем зону радиуса
+        # Синхронно обновляем зону радиуса и подпись
         self.update_point_zone(point, zone_polygon=zone_polygon, map_coords=(px, py))
+        self.update_point_label(point, px, -py)
 
     # -------------------------------------------------------------------------
     # Географические зоны радиуса (Этапы 7 и 9)
@@ -547,7 +599,7 @@ class MapCanvas(QGraphicsView):
         return point_id in self._user_zone_items
 
     def remove_user_point(self, point_id: str) -> None:
-        """Удаление пользовательской точки и ее зоны с карты."""
+        """Удаление пользовательской точки, ее зоны и подписи с карты."""
         if point_id in self._user_point_items:
             item = self._user_point_items.pop(point_id)
             self._scene.removeItem(item)
@@ -555,20 +607,140 @@ class MapCanvas(QGraphicsView):
 
         self.remove_point_zone(point_id)
 
+        if point_id in self._user_label_items:
+            lbl_item = self._user_label_items.pop(point_id)
+            self._scene.removeItem(lbl_item)
+
     def clear_user_points(self) -> None:
-        """Удаление всех пользовательских точек и зон с карты."""
+        """Удаление всех пользовательских точек, зон и подписей с карты."""
         for item in self._user_zone_items.values():
             self._scene.removeItem(item)
         self._user_zone_items.clear()
 
+        for item in self._user_label_items.values():
+            self._scene.removeItem(item)
+        self._user_label_items.clear()
+
         for item in self._user_point_items.values():
             self._scene.removeItem(item)
         self._user_point_items.clear()
-        logger.info("Все пользовательские точки и зоны очищены с карты")
+        logger.info("Все пользовательские точки, зоны и подписи очищены с карты")
 
     def has_user_point(self, point_id: str) -> bool:
         """Проверка наличия маркера точки на холсте."""
         return point_id in self._user_point_items
+
+    # -------------------------------------------------------------------------
+    # Подписи точек (Point Labels)
+    # -------------------------------------------------------------------------
+
+    def update_point_label(self, point: MapPoint, scene_x: float, scene_y: float) -> None:
+        """Создание или обновление текстовой подписи точки на холсте."""
+        item = self._user_label_items.get(point.id)
+        if item is None:
+            item = QGraphicsSimpleTextItem()
+            item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+            item.setBrush(QBrush(QColor("#1E293B")))
+            item.setPen(QPen(QColor("#FFFFFF"), 0.5))
+            item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+            item.setZValue(110.0)
+            self._scene.addItem(item)
+            self._user_label_items[point.id] = item
+
+        item.setText(point.name)
+        offset_x = (point.size / 2.0) + 4.0
+        offset_y = -(point.size / 2.0)
+        item.setPos(scene_x + offset_x, scene_y + offset_y)
+        self._update_single_label_visibility(point.id, point.visible)
+
+    def _update_single_label_visibility(self, point_id: str, point_visible: bool = True) -> None:
+        item = self._user_label_items.get(point_id)
+        if not item:
+            return
+        if not self._show_points_visible or not point_visible:
+            item.setVisible(False)
+            return
+        if self._labels_mode == "hidden":
+            item.setVisible(False)
+        elif self._labels_mode == "all":
+            item.setVisible(True)
+        elif self._labels_mode == "selected":
+            item.setVisible(point_id in self._selected_point_ids)
+
+    def set_labels_mode(self, mode: str) -> None:
+        """Установка режима отображения подписей: 'hidden', 'selected', 'all'."""
+        self._labels_mode = mode.lower() if mode.lower() in {"hidden", "selected", "all"} else "hidden"
+        for pid in self._user_label_items:
+            pt_item = self._user_point_items.get(pid)
+            pt_vis = pt_item.isVisible() if pt_item else True
+            self._update_single_label_visibility(pid, pt_vis)
+
+    @property
+    def labels_mode(self) -> str:
+        return self._labels_mode
+
+    def update_selected_label_ids(self, selected_ids: set[str]) -> None:
+        """Обновление набора выделенных ID для режима 'selected'."""
+        self._selected_point_ids = set(selected_ids)
+        if self._labels_mode == "selected":
+            for pid in self._user_label_items:
+                pt_item = self._user_point_items.get(pid)
+                pt_vis = pt_item.isVisible() if pt_item else True
+                self._update_single_label_visibility(pid, pt_vis)
+
+    # -------------------------------------------------------------------------
+    # Глобальная видимость точек и зон
+    # -------------------------------------------------------------------------
+
+    def set_all_points_visible(self, visible: bool) -> None:
+        """Глобальное переключение видимости пользовательских точек и подписей."""
+        self._show_points_visible = visible
+        for pid, item in self._user_point_items.items():
+            item.setVisible(visible)
+            self._update_single_label_visibility(pid, visible)
+
+    def set_all_zones_visible(self, visible: bool) -> None:
+        """Глобальное переключение видимости геодезических зон."""
+        self._show_zones_visible = visible
+        for item in self._user_zone_items.values():
+            item.setVisible(visible)
+
+    @property
+    def show_points_visible(self) -> bool:
+        return self._show_points_visible
+
+    @property
+    def show_zones_visible(self) -> bool:
+        return self._show_zones_visible
+
+    # -------------------------------------------------------------------------
+    # Центрирование и масштабирование
+    # -------------------------------------------------------------------------
+
+    def zoom_to_extent(self, rect: QRectF, margin_ratio: float = 0.15) -> None:
+        """Масштабирование холста для отображения прямоугольного экстента."""
+        if not rect.isValid() or rect.isEmpty():
+            return
+        pad_x = max(rect.width() * margin_ratio, 20.0)
+        pad_y = max(rect.height() * margin_ratio, 20.0)
+        padded = rect.adjusted(-pad_x, -pad_y, pad_x, pad_y)
+        self.fitInView(padded, Qt.AspectRatioMode.KeepAspectRatio)
+
+    def zoom_to_points(self, points: list[tuple[float, float]]) -> None:
+        """Приближение и центрирование к списку координат (map_x, map_y)."""
+        if not points:
+            return
+        if len(points) == 1:
+            self.center_on_map_coordinates(points[0][0], points[0][1])
+            return
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        w = max(max_x - min_x, 10.0)
+        h = max(max_y - min_y, 10.0)
+        rect = QRectF(min_x, -max_y, w, h)
+        self.zoom_to_extent(rect)
 
     def center_on_map_coordinates(
         self,

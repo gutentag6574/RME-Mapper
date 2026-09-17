@@ -104,7 +104,7 @@ class PointsPanel(QWidget):
         self.points_table = QTableWidget(0, 6, self)
         self.points_table.setObjectName("pointsTable")
         self.points_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.points_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.points_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.points_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.points_table.verticalHeader().setVisible(False)
 
@@ -247,6 +247,7 @@ class PointsPanel(QWidget):
         lon: str,
         shape: str,
         radius: str,
+        point_id: str | None = None,
     ) -> int:
         """Добавление строки в таблицу."""
         row = self.points_table.rowCount()
@@ -254,6 +255,9 @@ class PointsPanel(QWidget):
 
         num_item = QTableWidgetItem(num)
         num_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        if point_id is not None:
+            num_item.setData(Qt.ItemDataRole.UserRole, point_id)
+
         name_item = QTableWidgetItem(name)
         lat_item = QTableWidgetItem(lat)
         lon_item = QTableWidgetItem(lon)
@@ -269,6 +273,49 @@ class PointsPanel(QWidget):
         self._apply_filter_to_row(row)
         self._update_counter()
         return row
+
+    def insert_row(
+        self,
+        row: int,
+        num: str,
+        name: str,
+        lat: str,
+        lon: str,
+        shape: str,
+        radius: str,
+        point_id: str | None = None,
+    ) -> int:
+        """Вставка строки по заданному индексу (для восстановления в Undo)."""
+        target_row = max(0, min(row, self.points_table.rowCount()))
+        self.points_table.insertRow(target_row)
+
+        num_item = QTableWidgetItem(num)
+        num_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        if point_id is not None:
+            num_item.setData(Qt.ItemDataRole.UserRole, point_id)
+
+        name_item = QTableWidgetItem(name)
+        lat_item = QTableWidgetItem(lat)
+        lon_item = QTableWidgetItem(lon)
+        shape_item = QTableWidgetItem(shape)
+        radius_item = QTableWidgetItem(radius)
+
+        self.points_table.setItem(target_row, 0, num_item)
+        self.points_table.setItem(target_row, 1, name_item)
+        self.points_table.setItem(target_row, 2, lat_item)
+        self.points_table.setItem(target_row, 3, lon_item)
+        self.points_table.setItem(target_row, 4, shape_item)
+        self.points_table.setItem(target_row, 5, radius_item)
+
+        # Пересчет номеров строк
+        for r in range(self.points_table.rowCount()):
+            it = self.points_table.item(r, 0)
+            if it:
+                it.setText(str(r + 1))
+
+        self._apply_filter_to_row(target_row)
+        self._update_counter()
+        return target_row
 
     def update_row(
         self,
@@ -304,7 +351,45 @@ class PointsPanel(QWidget):
         self.points_table.setRowCount(0)
         self._update_counter()
 
+    def selected_rows(self) -> list[int]:
+        """Список всех выбранных строк таблицы."""
+        model = self.points_table.selectionModel()
+        if not model:
+            return []
+        rows = model.selectedRows()
+        return sorted([r.row() for r in rows])
+
     def selected_row(self) -> int | None:
-        """Индекс первой выбранной строки или None."""
-        rows = self.points_table.selectionModel().selectedRows()
-        return rows[0].row() if rows else None
+        """Индекс первой выбранной строки или None (обратная совместимость)."""
+        rows = self.selected_rows()
+        return rows[0] if rows else None
+
+    def selected_point_ids(self) -> list[str]:
+        """Стабильные идентификаторы всех выбранных точек таблицы."""
+        result: list[str] = []
+        for r in self.selected_rows():
+            item = self.points_table.item(r, 0)
+            if item:
+                pid = item.data(Qt.ItemDataRole.UserRole)
+                if pid:
+                    result.append(str(pid))
+        return result
+
+    def clear_selection(self) -> None:
+        """Снятие выделения со всех строк таблицы."""
+        self.points_table.clearSelection()
+
+    def select_point_ids(self, point_ids: list[str]) -> None:
+        """Программное выделение строк по списку идентификаторов точек."""
+        from PySide6.QtCore import QItemSelectionModel
+        target_ids = set(point_ids)
+        self.points_table.clearSelection()
+        model = self.points_table.selectionModel()
+        if not model:
+            return
+        flags = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
+        for r in range(self.points_table.rowCount()):
+            item = self.points_table.item(r, 0)
+            if item and str(item.data(Qt.ItemDataRole.UserRole)) in target_ids:
+                idx = self.points_table.model().index(r, 0)
+                model.select(idx, flags)

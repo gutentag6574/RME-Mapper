@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QSplitter,
     QStatusBar,
     QStyle,
@@ -92,6 +93,7 @@ class MainWindow(QMainWindow):
             get_map_path=lambda: self.map_controller.map_path,
             get_boundary_geometry=lambda: self.map_controller.boundary_geometry,
             on_modified=lambda: self.project_controller.set_modified(True),
+            set_modified=lambda m: self.project_controller.set_modified(m),
             set_status_message=self._show_status_message,
         )
 
@@ -130,6 +132,12 @@ class MainWindow(QMainWindow):
         self.map_canvas.cursor_position_changed.connect(self._on_canvas_cursor_moved)
         self.map_canvas.cursor_left.connect(self._on_canvas_cursor_left)
         self.points_panel.count_changed.connect(self._on_points_count_changed)
+
+        # Сигналы отмены/повтора, интерактивного добавления и выделения точек
+        self.point_controller.undo_manager.add_on_state_changed(self._update_undo_redo_actions)
+        self.map_canvas.add_point_mode_cancelled.connect(lambda: self.add_pt_map_action.setChecked(False))
+        self.map_canvas.map_point_clicked.connect(lambda mx, my: self.add_pt_map_action.setChecked(False))
+        self.points_panel.selection_changed.connect(self._on_selection_changed_for_actions)
 
         # Тема оформления
         self._theme_manager = get_theme_manager()
@@ -196,6 +204,34 @@ class MainWindow(QMainWindow):
         self.exit_action.triggered.connect(self.close)
         self.file_menu.addAction(self.exit_action)
 
+        # Меню: Правка
+        self.edit_menu = menu_bar.addMenu("")
+
+        self.undo_action = QAction(self)
+        self.undo_action.setShortcut(QKeySequence.StandardKey.Undo)
+        self.undo_action.triggered.connect(self.undo)
+        self.undo_action.setEnabled(False)
+        self.edit_menu.addAction(self.undo_action)
+
+        self.redo_action = QAction(self)
+        self.redo_action.setShortcut(QKeySequence("Ctrl+Y"))
+        self.redo_action.triggered.connect(self.redo)
+        self.redo_action.setEnabled(False)
+        self.edit_menu.addAction(self.redo_action)
+
+        self.edit_menu.addSeparator()
+
+        self.delete_selected_action = QAction(self)
+        self.delete_selected_action.setShortcut(QKeySequence.StandardKey.Delete)
+        self.delete_selected_action.triggered.connect(lambda: self.point_controller.delete_point_workflow(confirm=True))
+        self.delete_selected_action.setEnabled(False)
+        self.edit_menu.addAction(self.delete_selected_action)
+
+        self.bulk_edit_style_action = QAction(self)
+        self.bulk_edit_style_action.triggered.connect(lambda: self.point_controller.bulk_edit_style_workflow())
+        self.bulk_edit_style_action.setEnabled(False)
+        self.edit_menu.addAction(self.bulk_edit_style_action)
+
         # Меню: Карта
         self.map_menu = menu_bar.addMenu("")
         self.open_map_action = QAction(self)
@@ -223,6 +259,33 @@ class MainWindow(QMainWindow):
         self.add_pt_action.setShortcut(QKeySequence("Ctrl+P"))
         self.add_pt_action.triggered.connect(self.show_add_point_dialog)
         self.coords_menu.addAction(self.add_pt_action)
+
+        self.add_pt_map_action = QAction(self)
+        self.add_pt_map_action.setShortcut(QKeySequence("Ctrl+Shift+A"))
+        self.add_pt_map_action.setCheckable(True)
+        self.add_pt_map_action.toggled.connect(self._toggle_add_point_on_map)
+        self.coords_menu.addAction(self.add_pt_map_action)
+
+        self.coords_menu.addSeparator()
+
+        self.copy_selected_coords_action = QAction(self)
+        self.copy_selected_coords_action.triggered.connect(lambda: self.point_controller.copy_selected_coordinates())
+        self.copy_selected_coords_action.setEnabled(False)
+        self.coords_menu.addAction(self.copy_selected_coords_action)
+
+        self.coords_menu.addSeparator()
+
+        self.show_all_points_action = QAction(self)
+        self.show_all_points_action.setShortcut(QKeySequence("Ctrl+Shift+0"))
+        self.show_all_points_action.triggered.connect(lambda: self.point_controller.show_all_points())
+        self.show_all_points_action.setEnabled(False)
+        self.coords_menu.addAction(self.show_all_points_action)
+
+        self.zoom_to_selected_action = QAction(self)
+        self.zoom_to_selected_action.setShortcut(QKeySequence("Ctrl+Shift+Z"))
+        self.zoom_to_selected_action.triggered.connect(lambda: self.point_controller.zoom_to_selected())
+        self.zoom_to_selected_action.setEnabled(False)
+        self.coords_menu.addAction(self.zoom_to_selected_action)
 
         # Меню: Импорт / Экспорт (заглушки)
         self.import_menu = menu_bar.addMenu("")
@@ -254,6 +317,49 @@ class MainWindow(QMainWindow):
         self.toggle_statusbar_action.setChecked(True)
         self.toggle_statusbar_action.triggered.connect(self.set_statusbar_visible)
         self.view_menu.addAction(self.toggle_statusbar_action)
+
+        self.view_menu.addSeparator()
+
+        # Подменю: Подписи точек
+        self.point_labels_menu = self.view_menu.addMenu("")
+        self.labels_group = QActionGroup(self)
+        self.labels_group.setExclusive(True)
+
+        self.labels_hidden_action = QAction(self)
+        self.labels_hidden_action.setCheckable(True)
+        self.labels_hidden_action.triggered.connect(lambda: self._set_labels_mode("hidden"))
+        self.labels_group.addAction(self.labels_hidden_action)
+        self.point_labels_menu.addAction(self.labels_hidden_action)
+
+        self.labels_selected_action = QAction(self)
+        self.labels_selected_action.setCheckable(True)
+        self.labels_selected_action.triggered.connect(lambda: self._set_labels_mode("selected"))
+        self.labels_group.addAction(self.labels_selected_action)
+        self.point_labels_menu.addAction(self.labels_selected_action)
+
+        self.labels_all_action = QAction(self)
+        self.labels_all_action.setCheckable(True)
+        self.labels_all_action.triggered.connect(lambda: self._set_labels_mode("all"))
+        self.labels_group.addAction(self.labels_all_action)
+        self.point_labels_menu.addAction(self.labels_all_action)
+
+        self.view_menu.addSeparator()
+
+        self.show_points_action = QAction(self)
+        self.show_points_action.setCheckable(True)
+        self.show_points_action.setChecked(True)
+        self.show_points_action.triggered.connect(self._toggle_show_points)
+        self.view_menu.addAction(self.show_points_action)
+
+        self.show_zones_action = QAction(self)
+        self.show_zones_action.setCheckable(True)
+        self.show_zones_action.setChecked(True)
+        self.show_zones_action.triggered.connect(self._toggle_show_zones)
+        self.view_menu.addAction(self.show_zones_action)
+
+        self.view_menu.addSeparator()
+        self.view_menu.addAction(self.show_all_points_action)
+        self.view_menu.addAction(self.zoom_to_selected_action)
 
         # Меню: Настройки
         self.settings_menu = menu_bar.addMenu("")
@@ -301,7 +407,10 @@ class MainWindow(QMainWindow):
             self.open_map_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
             self.open_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton))
             self.save_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton))
+            self.undo_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_ArrowBack))
+            self.redo_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_ArrowForward))
             self.add_pt_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_FileDialogNewFolder))
+            self.add_pt_map_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView))
             self.fit_map_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_TitleBarMaxButton))
 
         # Добавление существующих действий в тулбар (без создания дубликатов)
@@ -309,7 +418,11 @@ class MainWindow(QMainWindow):
         self.main_toolbar.addAction(self.open_action)
         self.main_toolbar.addAction(self.save_action)
         self.main_toolbar.addSeparator()
+        self.main_toolbar.addAction(self.undo_action)
+        self.main_toolbar.addAction(self.redo_action)
+        self.main_toolbar.addSeparator()
         self.main_toolbar.addAction(self.add_pt_action)
+        self.main_toolbar.addAction(self.add_pt_map_action)
         self.main_toolbar.addAction(self.fit_map_action)
 
     def _create_central_layout(self) -> None:
@@ -485,7 +598,13 @@ class MainWindow(QMainWindow):
         if self.map_controller.active_profile is None and self.map_controller.map_path is None:
             if hasattr(self, "status_points_label"):
                 self.status_points_label.setVisible(False)
+            if hasattr(self, "show_all_points_action"):
+                self.show_all_points_action.setEnabled(False)
             return
+
+        has_map = True
+        if hasattr(self, "show_all_points_action"):
+            self.show_all_points_action.setEnabled(has_map and total > 0)
 
         query = self.points_panel.search_input.text().strip() if hasattr(self, "points_panel") else ""
         if hasattr(self, "status_points_label"):
@@ -499,6 +618,10 @@ class MainWindow(QMainWindow):
         """Включение/выключение действий, зависящих от наличия активной карты."""
         if hasattr(self, "add_pt_action"):
             self.add_pt_action.setEnabled(enabled)
+        if hasattr(self, "add_pt_map_action"):
+            self.add_pt_map_action.setEnabled(enabled)
+            if not enabled and self.add_pt_map_action.isChecked():
+                self.add_pt_map_action.setChecked(False)
         if hasattr(self, "fit_map_action"):
             self.fit_map_action.setEnabled(enabled)
         if hasattr(self, "close_map_action"):
@@ -507,6 +630,114 @@ class MainWindow(QMainWindow):
             self.btn_add_point.setEnabled(enabled)
         if hasattr(self, "map_canvas") and hasattr(self.map_canvas, "btn_fit"):
             self.map_canvas.btn_fit.setEnabled(enabled)
+        if hasattr(self, "show_all_points_action"):
+            has_pts = self.points_panel.total_count > 0 if hasattr(self, "points_panel") else False
+            self.show_all_points_action.setEnabled(enabled and has_pts)
+        if hasattr(self, "zoom_to_selected_action"):
+            has_sel = len(self.points_panel.selected_point_ids()) > 0 if hasattr(self, "points_panel") else False
+            self.zoom_to_selected_action.setEnabled(enabled and has_sel)
+
+    def _on_selection_changed_for_actions(self) -> None:
+        """Обновление доступности действий меню Правка и Координаты при изменении выделения."""
+        selected_ids = self.points_panel.selected_point_ids() if hasattr(self, "points_panel") else []
+        has_sel = len(selected_ids) > 0
+        has_multi = len(selected_ids) > 1
+        has_map = self.map_controller.active_profile is not None or self.map_controller.map_path is not None
+
+        if hasattr(self, "delete_selected_action"):
+            self.delete_selected_action.setEnabled(has_sel)
+        if hasattr(self, "bulk_edit_style_action"):
+            self.bulk_edit_style_action.setEnabled(has_multi)
+        if hasattr(self, "copy_selected_coords_action"):
+            self.copy_selected_coords_action.setEnabled(has_sel)
+        if hasattr(self, "zoom_to_selected_action"):
+            self.zoom_to_selected_action.setEnabled(has_sel and has_map)
+
+    def undo(self) -> bool:
+        """Отмена последнего действия через PointController."""
+        return self.point_controller.undo()
+
+    def redo(self) -> bool:
+        """Повтор отмененного действия через PointController."""
+        return self.point_controller.redo()
+
+    def _update_undo_redo_actions(self) -> None:
+        """Синхронизация состояния и текста действий Undo/Redo."""
+        can_undo = self.point_controller.undo_manager.can_undo
+        can_redo = self.point_controller.undo_manager.can_redo
+        if hasattr(self, "undo_action"):
+            self.undo_action.setEnabled(can_undo)
+            if can_undo:
+                desc = self.point_controller.undo_manager.undo_description
+                self.undo_action.setText(f"{tr('action.undo')}: {desc}" if desc else tr("action.undo"))
+                self.undo_action.setToolTip(f"{tr('tooltip.undo')}: {desc}" if desc else tr("tooltip.undo"))
+            else:
+                self.undo_action.setText(tr("action.undo"))
+                self.undo_action.setToolTip(tr("tooltip.undo"))
+        if hasattr(self, "redo_action"):
+            self.redo_action.setEnabled(can_redo)
+            if can_redo:
+                desc = self.point_controller.undo_manager.redo_description
+                self.redo_action.setText(f"{tr('action.redo')}: {desc}" if desc else tr("action.redo"))
+                self.redo_action.setToolTip(f"{tr('tooltip.redo')}: {desc}" if desc else tr("tooltip.redo"))
+            else:
+                self.redo_action.setText(tr("action.redo"))
+                self.redo_action.setToolTip(tr("tooltip.redo"))
+
+    def _toggle_add_point_on_map(self, checked: bool) -> None:
+        """Переключение режима интерактивного создания точки кликом по карте."""
+        if checked:
+            if self.map_controller.active_profile is None and self.map_controller.map_path is None:
+                self.add_pt_map_action.setChecked(False)
+                QMessageBox.information(
+                    self,
+                    tr("dialog.no_map_title"),
+                    tr("dialog.no_map_text"),
+                )
+                return
+            self.point_controller.start_add_point_on_map_mode()
+        else:
+            self.point_controller.cancel_add_point_on_map_mode()
+
+    def _set_labels_mode(self, mode: str) -> None:
+        """Переключение режима отображения подписей точек с проверкой порога производительности."""
+        if mode == "all":
+            total = len(self.point_controller.table_point_ids)
+            if total > 5000:
+                reply = QMessageBox.question(
+                    self,
+                    tr("dialog.labels_limit_title"),
+                    tr("dialog.labels_limit_text"),
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    prev = self._settings_service.get_point_labels_mode()
+                    self._update_labels_action_checked(prev)
+                    return
+
+        self._settings_service.set_point_labels_mode(mode)
+        self.map_canvas.set_labels_mode(mode)
+        self._update_labels_action_checked(mode)
+
+    def _update_labels_action_checked(self, mode: str) -> None:
+        """Синхронизация радио-кнопок меню подписей точек."""
+        if mode == "hidden" and hasattr(self, "labels_hidden_action"):
+            self.labels_hidden_action.setChecked(True)
+        elif mode == "selected" and hasattr(self, "labels_selected_action"):
+            self.labels_selected_action.setChecked(True)
+        elif mode == "all" and hasattr(self, "labels_all_action"):
+            self.labels_all_action.setChecked(True)
+
+    def _toggle_show_points(self, checked: bool) -> None:
+        """Глобальное переключение видимости маркеров точек."""
+        self._settings_service.set_show_points_visible(checked)
+        self.map_canvas.set_all_points_visible(checked)
+
+    def _toggle_show_zones(self, checked: bool) -> None:
+        """Глобальное переключение видимости геодезических зон."""
+        self._settings_service.set_show_zones_visible(checked)
+        self.map_canvas.set_all_zones_visible(checked)
 
     def set_left_panel_visible(self, visible: bool) -> None:
         """Переключение видимости левой панели (Слои и Точки)."""
@@ -579,6 +810,21 @@ class MainWindow(QMainWindow):
         self.set_toolbar_visible(self._settings_service.get_toolbar_visible())
         self.set_statusbar_visible(self._settings_service.get_statusbar_visible())
 
+        # Настройки подписей точек и глобальной видимости
+        labels_mode = self._settings_service.get_point_labels_mode()
+        self._update_labels_action_checked(labels_mode)
+        self.map_canvas.set_labels_mode(labels_mode)
+
+        show_pts = self._settings_service.get_show_points_visible()
+        if hasattr(self, "show_points_action"):
+            self.show_points_action.setChecked(show_pts)
+        self.map_canvas.set_all_points_visible(show_pts)
+
+        show_zn = self._settings_service.get_show_zones_visible()
+        if hasattr(self, "show_zones_action"):
+            self.show_zones_action.setChecked(show_zn)
+        self.map_canvas.set_all_zones_visible(show_zn)
+
     def save_ui_state(self, force: bool = False) -> None:
         """Сохранение геометрии, состояния сплиттера и видимости панелей."""
         is_max = self.isMaximized()
@@ -611,6 +857,8 @@ class MainWindow(QMainWindow):
     def retranslate_ui(self) -> None:
         """Динамическое обновление всех локализованных строк интерфейса."""
         self.file_menu.setTitle(tr("menu.file"))
+        if hasattr(self, "edit_menu"):
+            self.edit_menu.setTitle(tr("menu.edit"))
         self.map_menu.setTitle(tr("menu.map"))
         self.coords_menu.setTitle(tr("menu.coordinates"))
         self.import_menu.setTitle(tr("menu.import"))
@@ -631,6 +879,13 @@ class MainWindow(QMainWindow):
         self.save_as_action.setText(tr("action.save_as"))
         self.exit_action.setText(tr("action.exit"))
 
+        # Меню Правка
+        self._update_undo_redo_actions()
+        if hasattr(self, "delete_selected_action"):
+            self.delete_selected_action.setText(tr("action.delete_selected"))
+        if hasattr(self, "bulk_edit_style_action"):
+            self.bulk_edit_style_action.setText(tr("action.bulk_edit_style"))
+
         self.open_map_action.setText(tr("action.open_map"))
         self.open_map_action.setToolTip(tr("tooltip.open_map"))
         if hasattr(self, "recent_maps_menu"):
@@ -641,6 +896,17 @@ class MainWindow(QMainWindow):
             self.fit_map_action.setToolTip(tr("tooltip.fit_map"))
         self.add_pt_action.setText(tr("action.add_point"))
         self.add_pt_action.setToolTip(tr("tooltip.add_point"))
+        if hasattr(self, "add_pt_map_action"):
+            self.add_pt_map_action.setText(tr("action.add_point_on_map"))
+            self.add_pt_map_action.setToolTip(tr("tooltip.add_point_on_map"))
+        if hasattr(self, "copy_selected_coords_action"):
+            self.copy_selected_coords_action.setText(tr("action.copy_selected_coords"))
+        if hasattr(self, "show_all_points_action"):
+            self.show_all_points_action.setText(tr("action.show_all_points"))
+            self.show_all_points_action.setToolTip(tr("tooltip.show_all_points"))
+        if hasattr(self, "zoom_to_selected_action"):
+            self.zoom_to_selected_action.setText(tr("action.zoom_to_selected"))
+            self.zoom_to_selected_action.setToolTip(tr("tooltip.zoom_to_selected"))
         self.about_action.setText(tr("action.about"))
 
         if hasattr(self, "toggle_toolbar_action"):
@@ -651,6 +917,19 @@ class MainWindow(QMainWindow):
             self.toggle_properties_action.setText(tr("action.view_properties"))
         if hasattr(self, "toggle_statusbar_action"):
             self.toggle_statusbar_action.setText(tr("action.view_statusbar"))
+
+        if hasattr(self, "point_labels_menu"):
+            self.point_labels_menu.setTitle(tr("menu.point_labels"))
+        if hasattr(self, "labels_hidden_action"):
+            self.labels_hidden_action.setText(tr("action.labels_hidden"))
+        if hasattr(self, "labels_selected_action"):
+            self.labels_selected_action.setText(tr("action.labels_selected"))
+        if hasattr(self, "labels_all_action"):
+            self.labels_all_action.setText(tr("action.labels_all"))
+        if hasattr(self, "show_points_action"):
+            self.show_points_action.setText(tr("action.show_points"))
+        if hasattr(self, "show_zones_action"):
+            self.show_zones_action.setText(tr("action.show_zones"))
 
         self.layers_panel.retranslate_ui()
         self.points_panel.retranslate_ui()

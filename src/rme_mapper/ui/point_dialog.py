@@ -155,6 +155,8 @@ class PointDialog(QDialog):
         map_name: str | None = None,
         map_extent: dict[str, float] | tuple[float, float, float, float] | list[float] | None = None,
         map_crs: str = "OGC:CRS84",
+        initial_lat: float | None = None,
+        initial_lon: float | None = None,
     ) -> None:
         super().__init__(parent)
         self._boundary_geometry = boundary_geometry
@@ -172,6 +174,8 @@ class PointDialog(QDialog):
         self._setup_ui(default_name)
         if self._point:
             self._populate_fields_from_point(self._point)
+        elif initial_lat is not None and initial_lon is not None:
+            self._populate_initial_coordinates(initial_lat, initial_lon)
 
         self.retranslate_ui()
 
@@ -641,11 +645,47 @@ class PointDialog(QDialog):
 
         self._on_style_input_changed()
 
+    def _populate_initial_coordinates(self, lat: float, lon: float) -> None:
+        """Предзаполнение полей координат (DD и DMS) при создании точки кликом по карте."""
+        self.lat_edit.setText(f"{lat:.6f}")
+        self.lon_edit.setText(f"{lon:.6f}")
+
+        lat_deg, lat_min, lat_sec = decimal_to_dms(lat)
+        self.lat_deg_edit.setText(str(lat_deg))
+        self.lat_min_edit.setText(str(lat_min))
+        self.lat_sec_edit.setText(f"{lat_sec:.2f}".rstrip("0").rstrip("."))
+        self.lat_dir_combo.setCurrentText("N" if lat >= 0 else "S")
+
+        lon_deg, lon_min, lon_sec = decimal_to_dms(lon)
+        self.lon_deg_edit.setText(str(lon_deg))
+        self.lon_min_edit.setText(str(lon_min))
+        self.lon_sec_edit.setText(f"{lon_sec:.2f}".rstrip("0").rstrip("."))
+        self.lon_dir_combo.setCurrentText("E" if lon >= 0 else "W")
+
     def _on_format_changed(self, is_dd_checked: bool) -> None:
         """Переключение отображаемой формы ввода координат (DD или DMS)."""
         if is_dd_checked:
             self.stack_widget.setCurrentIndex(0)
         else:
+            try:
+                lat_str = self.lat_edit.text().strip().replace(",", ".")
+                lon_str = self.lon_edit.text().strip().replace(",", ".")
+                if lat_str and lon_str:
+                    lat_val = float(lat_str)
+                    lon_val = float(lon_str)
+                    lat_deg, lat_min, lat_sec = decimal_to_dms(lat_val)
+                    self.lat_deg_edit.setText(str(lat_deg))
+                    self.lat_min_edit.setText(str(lat_min))
+                    self.lat_sec_edit.setText(f"{lat_sec:.2f}".rstrip("0").rstrip("."))
+                    self.lat_dir_combo.setCurrentText("N" if lat_val >= 0 else "S")
+
+                    lon_deg, lon_min, lon_sec = decimal_to_dms(lon_val)
+                    self.lon_deg_edit.setText(str(lon_deg))
+                    self.lon_min_edit.setText(str(lon_min))
+                    self.lon_sec_edit.setText(f"{lon_sec:.2f}".rstrip("0").rstrip("."))
+                    self.lon_dir_combo.setCurrentText("E" if lon_val >= 0 else "W")
+            except (ValueError, TypeError):
+                pass
             self.stack_widget.setCurrentIndex(1)
 
     def _on_style_input_changed(self) -> None:
