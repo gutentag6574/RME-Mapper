@@ -63,73 +63,121 @@ class PropertiesPanel(QWidget):
 
         placeholder_layout = QVBoxLayout(self.placeholder)
         placeholder_layout.setContentsMargins(10, 10, 10, 10)
+        placeholder_layout.setSpacing(8)
 
         # Сообщение, если точка не выбрана
         self.prop_empty_label = QLabel()
+        self.prop_empty_label.setObjectName("propEmptyLabel")
         self.prop_empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.prop_empty_label.setStyleSheet("color: #888888; font-style: italic;")
+        self.prop_empty_label.setStyleSheet("color: #6B7280; font-size: 12px; padding: 20px 8px;")
         self.prop_empty_label.setWordWrap(True)
         placeholder_layout.addWidget(self.prop_empty_label)
 
         # Контейнер свойств выбранной точки
         self.prop_container = QWidget()
-        prop_form = QFormLayout(self.prop_container)
-        prop_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        self.prop_container.setObjectName("propContainer")
+        prop_vbox = QVBoxLayout(self.prop_container)
+        prop_vbox.setContentsMargins(0, 0, 0, 0)
+        prop_vbox.setSpacing(8)
 
+        # 0. Название точки
+        name_form = QFormLayout()
+        name_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         self.prop_name_lbl = QLabel()
         self.prop_name_val = QLabel("—")
         self.prop_name_val.setWordWrap(True)
-        prop_form.addRow(self.prop_name_lbl, self.prop_name_val)
+        self.prop_name_val.setStyleSheet("font-weight: 600; color: #1E293B;")
+        name_form.addRow(self.prop_name_lbl, self.prop_name_val)
+        prop_vbox.addLayout(name_form)
 
+        # 1. Раздел: Координаты
+        self.sec_coords_lbl = QLabel()
+        self.sec_coords_lbl.setObjectName("secCoordsLabel")
+        self.sec_coords_lbl.setStyleSheet(
+            "font-weight: 700; color: #475569; font-size: 11px; "
+            "border-bottom: 1px solid #E2E8F0; padding-bottom: 2px;"
+        )
+        prop_vbox.addWidget(self.sec_coords_lbl)
+
+        coords_form = QFormLayout()
+        coords_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        coords_form.setSpacing(4)
         self.prop_lat_lbl = QLabel()
         self.prop_lat_val = QLabel("—")
-        prop_form.addRow(self.prop_lat_lbl, self.prop_lat_val)
+        coords_form.addRow(self.prop_lat_lbl, self.prop_lat_val)
 
         self.prop_lon_lbl = QLabel()
         self.prop_lon_val = QLabel("—")
-        prop_form.addRow(self.prop_lon_lbl, self.prop_lon_val)
+        coords_form.addRow(self.prop_lon_lbl, self.prop_lon_val)
+        prop_vbox.addLayout(coords_form)
 
+        # 2. Раздел: Маркер
+        self.sec_marker_lbl = QLabel()
+        self.sec_marker_lbl.setObjectName("secMarkerLabel")
+        self.sec_marker_lbl.setStyleSheet(
+            "font-weight: 700; color: #475569; font-size: 11px; "
+            "border-bottom: 1px solid #E2E8F0; padding-bottom: 2px;"
+        )
+        prop_vbox.addWidget(self.sec_marker_lbl)
+
+        marker_form = QFormLayout()
+        marker_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        marker_form.setSpacing(4)
         self.prop_shape_lbl = QLabel()
         self.prop_shape_val = QLabel("—")
-        prop_form.addRow(self.prop_shape_lbl, self.prop_shape_val)
+        marker_form.addRow(self.prop_shape_lbl, self.prop_shape_val)
 
         self.prop_size_lbl = QLabel()
         self.prop_size_val = QLabel("—")
-        prop_form.addRow(self.prop_size_lbl, self.prop_size_val)
+        marker_form.addRow(self.prop_size_lbl, self.prop_size_val)
 
         color_row = QHBoxLayout()
         self.prop_color_val = QLabel("—")
         self.prop_color_swatch = QFrame()
-        self.prop_color_swatch.setFixedSize(20, 20)
+        self.prop_color_swatch.setFixedSize(18, 18)
         self.prop_color_swatch.setStyleSheet("border: 1px solid #999; border-radius: 3px;")
         color_row.addWidget(self.prop_color_val)
         color_row.addWidget(self.prop_color_swatch)
         color_row.addStretch()
         self.prop_color_lbl = QLabel()
-        prop_form.addRow(self.prop_color_lbl, color_row)
+        marker_form.addRow(self.prop_color_lbl, color_row)
+        prop_vbox.addLayout(marker_form)
 
+        # 3. Раздел: Зона
+        self.sec_zone_lbl = QLabel()
+        self.sec_zone_lbl.setObjectName("secZoneLabel")
+        self.sec_zone_lbl.setStyleSheet(
+            "font-weight: 700; color: #475569; font-size: 11px; "
+            "border-bottom: 1px solid #E2E8F0; padding-bottom: 2px;"
+        )
+        prop_vbox.addWidget(self.sec_zone_lbl)
+
+        zone_form = QFormLayout()
+        zone_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        zone_form.setSpacing(4)
         self.prop_zone_lbl = QLabel()
         self.prop_zone_val = QLabel("—")
-        prop_form.addRow(self.prop_zone_lbl, self.prop_zone_val)
+        zone_form.addRow(self.prop_zone_lbl, self.prop_zone_val)
 
         self.prop_zone_radius_lbl = QLabel()
         self.prop_zone_radius_val = QLabel("—")
-        prop_form.addRow(self.prop_zone_radius_lbl, self.prop_zone_radius_val)
+        zone_form.addRow(self.prop_zone_radius_lbl, self.prop_zone_radius_val)
 
         zone_color_row = QHBoxLayout()
         self.prop_zone_color_val = QLabel("—")
         self.prop_zone_color_swatch = QFrame()
-        self.prop_zone_color_swatch.setFixedSize(20, 20)
+        self.prop_zone_color_swatch.setFixedSize(18, 18)
         self.prop_zone_color_swatch.setStyleSheet("border: 1px solid #999; border-radius: 3px;")
         zone_color_row.addWidget(self.prop_zone_color_val)
         zone_color_row.addWidget(self.prop_zone_color_swatch)
         zone_color_row.addStretch()
         self.prop_zone_color_lbl = QLabel()
-        prop_form.addRow(self.prop_zone_color_lbl, zone_color_row)
+        zone_form.addRow(self.prop_zone_color_lbl, zone_color_row)
 
         self.prop_zone_opacity_lbl = QLabel()
         self.prop_zone_opacity_val = QLabel("—")
-        prop_form.addRow(self.prop_zone_opacity_lbl, self.prop_zone_opacity_val)
+        zone_form.addRow(self.prop_zone_opacity_lbl, self.prop_zone_opacity_val)
+        prop_vbox.addLayout(zone_form)
 
         self.prop_container.setVisible(False)
         placeholder_layout.addWidget(self.prop_container)
@@ -142,6 +190,10 @@ class PropertiesPanel(QWidget):
         """Обновление локализованных меток и динамических значений."""
         self.title_label.setText(tr("panel.properties"))
         self.prop_empty_label.setText(tr("properties.empty_hint"))
+
+        self.sec_coords_lbl.setText(tr("properties.section_coords"))
+        self.sec_marker_lbl.setText(tr("properties.section_marker"))
+        self.sec_zone_lbl.setText(tr("properties.section_zone"))
 
         self.prop_name_lbl.setText(f"<b>{tr('properties.name')}</b>")
         self.prop_lat_lbl.setText(f"<b>{tr('properties.latitude')}</b>")

@@ -95,7 +95,8 @@ class MapCanvas(QGraphicsView):
     def mouseMoveEvent(self, event: Any) -> None:
         """Отслеживание перемещения курсора мыши и передача координат карты."""
         super().mouseMoveEvent(event)
-        scene_pt = self.mapToScene(event.pos())
+        pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+        scene_pt = self.mapToScene(pos)
         map_x = scene_pt.x()
         map_y = -scene_pt.y()
         self.cursor_position_changed.emit(map_x, map_y)
@@ -113,21 +114,21 @@ class MapCanvas(QGraphicsView):
         self.btn_fit.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_fit.setStyleSheet(
             """
-            QPushButton {
-                background-color: rgba(255, 255, 255, 0.9);
-                border: 1px solid #CCCCCC;
+            QPushButton#btnFitMap {
+                background-color: #FFFFFF;
+                border: 1px solid #D9DDE3;
                 border-radius: 4px;
-                padding: 6px 12px;
+                padding: 5px 10px;
                 font-size: 12px;
                 font-weight: 500;
-                color: #333333;
+                color: #202124;
             }
-            QPushButton:hover {
-                background-color: #FFFFFF;
-                border-color: #999999;
+            QPushButton#btnFitMap:hover {
+                background-color: #F1F5F9;
+                border-color: #94A3B8;
             }
-            QPushButton:pressed {
-                background-color: #E6E6E6;
+            QPushButton#btnFitMap:pressed {
+                background-color: #E2E8F0;
             }
             """
         )
@@ -148,8 +149,8 @@ class MapCanvas(QGraphicsView):
             """
             QFrame#emptyStateCard {
                 background-color: #FFFFFF;
-                border: 1px solid #CBD5E1;
-                border-radius: 12px;
+                border: 1px solid #D9DDE3;
+                border-radius: 8px;
                 padding: 24px 32px;
             }
             """
@@ -159,7 +160,7 @@ class MapCanvas(QGraphicsView):
         card_layout.setSpacing(10)
 
         self.empty_title_lbl = QLabel("GeoPoint Mapper", card)
-        self.empty_title_lbl.setStyleSheet("font-size: 20px; font-weight: bold; color: #1E293B;")
+        self.empty_title_lbl.setStyleSheet("font-size: 20px; font-weight: bold; color: #202124;")
         self.empty_title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         card_layout.addWidget(self.empty_title_lbl)
 
@@ -169,23 +170,21 @@ class MapCanvas(QGraphicsView):
         card_layout.addWidget(self.empty_status_lbl)
 
         self.empty_hint_lbl = QLabel("Откройте географически привязанную карту,\nчтобы начать работу.", card)
-        self.empty_hint_lbl.setStyleSheet("font-size: 12px; color: #64748B;")
+        self.empty_hint_lbl.setStyleSheet("font-size: 12px; color: #6B7280;")
         self.empty_hint_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         card_layout.addWidget(self.empty_hint_lbl)
 
         self.btn_open_map = QPushButton("📂  Открыть карту...", card)
         self.btn_open_map.setObjectName("btnOpenMapCanvas")
         self.btn_open_map.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.retranslate_ui()
-
         self.btn_open_map.setStyleSheet(
             """
             QPushButton#btnOpenMapCanvas {
                 background-color: #2563EB;
                 color: #FFFFFF;
                 border: none;
-                border-radius: 6px;
-                padding: 10px 20px;
+                border-radius: 4px;
+                padding: 8px 18px;
                 font-size: 13px;
                 font-weight: 600;
             }
@@ -209,6 +208,7 @@ class MapCanvas(QGraphicsView):
 
         if hasattr(self, "btn_fit"):
             self.btn_fit.setText("⛶ " + tr("action.fit_map"))
+            self.btn_fit.setToolTip(tr("action.fit_map"))
         if hasattr(self, "empty_title_lbl"):
             self.empty_title_lbl.setText(tr("startup.title"))
         if hasattr(self, "empty_status_lbl"):

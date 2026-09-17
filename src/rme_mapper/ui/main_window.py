@@ -4,16 +4,19 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QActionGroup, QFont, QKeySequence
+from PySide6.QtCore import QRect, QSize, Qt
+from PySide6.QtGui import QAction, QActionGroup, QFont, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
+    QHBoxLayout,
     QLabel,
     QMainWindow,
     QMenu,
     QSplitter,
     QStatusBar,
+    QStyle,
+    QToolBar,
     QVBoxLayout,
     QWidget,
 )
@@ -42,6 +45,7 @@ from rme_mapper.ui.panels.properties_panel import (
     SYMBOL_DISPLAY_NAMES,
     get_symbol_display_name,
 )
+from rme_mapper.ui.theme_manager import get_theme_manager
 
 logger = logging.getLogger("rme_mapper.ui.main_window")
 
@@ -100,11 +104,11 @@ class MainWindow(QMainWindow):
             point_service=self._point_service,
             layer_service=self._layer_service,
             map_catalog_service=self._map_catalog_service,
-            on_map_loaded=lambda crs: self.point_controller.reproject_all_points(crs),
+            on_map_loaded=self._on_map_loaded,
             on_modified=lambda: self.project_controller.set_modified(True),
             is_project_active=lambda: bool(self.project_controller.current_project_path),
             set_status_message=self._show_status_message,
-            set_map_title=self.map_title_label.setText,
+            set_map_title=self._on_map_title_changed,
             settings_service=self._settings_service,
             on_map_unloaded=self._on_map_unloaded,
         )
@@ -121,10 +125,18 @@ class MainWindow(QMainWindow):
             settings_service=self._settings_service,
         )
 
-        # Drag & Drop и координаты курсора
+        # Drag & Drop, сигналы курсора и счетчика точек
         self.setAcceptDrops(True)
         self.map_canvas.cursor_position_changed.connect(self._on_canvas_cursor_moved)
         self.map_canvas.cursor_left.connect(self._on_canvas_cursor_left)
+        self.points_panel.count_changed.connect(self._on_points_count_changed)
+
+        # Тема оформления
+        self._theme_manager = get_theme_manager()
+        self._theme_manager.apply_theme(self)
+
+        # Восстановление сохраненного состояния интерфейса
+        self.restore_ui_state()
 
         self.retranslate_ui()
         self._update_window_title()
@@ -143,6 +155,7 @@ class MainWindow(QMainWindow):
     def _setup_ui(self) -> None:
         """Инициализация компонентов интерфейса."""
         self._create_menu_bar()
+        self._create_toolbar()
         self._create_central_layout()
         self._create_status_bar()
 
@@ -197,6 +210,12 @@ class MainWindow(QMainWindow):
         self.close_map_action.triggered.connect(lambda: self.close_map())
         self.map_menu.addAction(self.close_map_action)
 
+        self.map_menu.addSeparator()
+
+        self.fit_map_action = QAction(self)
+        self.fit_map_action.setShortcut(QKeySequence("Ctrl+0"))
+        self.fit_map_action.triggered.connect(lambda: self.map_canvas.fit_to_view())
+        self.map_menu.addAction(self.fit_map_action)
 
         # Меню: Координаты
         self.coords_menu = menu_bar.addMenu("")
@@ -205,13 +224,42 @@ class MainWindow(QMainWindow):
         self.add_pt_action.triggered.connect(self.show_add_point_dialog)
         self.coords_menu.addAction(self.add_pt_action)
 
-        # Заглушки будущих меню
+        # Меню: Импорт / Экспорт (заглушки)
         self.import_menu = menu_bar.addMenu("")
         self.export_menu = menu_bar.addMenu("")
+
+        # Меню: Вид
+        self.view_menu = menu_bar.addMenu("")
+
+        self.toggle_toolbar_action = QAction(self)
+        self.toggle_toolbar_action.setCheckable(True)
+        self.toggle_toolbar_action.setChecked(True)
+        self.toggle_toolbar_action.triggered.connect(self.set_toolbar_visible)
+        self.view_menu.addAction(self.toggle_toolbar_action)
+
+        self.toggle_layers_points_action = QAction(self)
+        self.toggle_layers_points_action.setCheckable(True)
+        self.toggle_layers_points_action.setChecked(True)
+        self.toggle_layers_points_action.triggered.connect(self.set_left_panel_visible)
+        self.view_menu.addAction(self.toggle_layers_points_action)
+
+        self.toggle_properties_action = QAction(self)
+        self.toggle_properties_action.setCheckable(True)
+        self.toggle_properties_action.setChecked(True)
+        self.toggle_properties_action.triggered.connect(self.set_right_panel_visible)
+        self.view_menu.addAction(self.toggle_properties_action)
+
+        self.toggle_statusbar_action = QAction(self)
+        self.toggle_statusbar_action.setCheckable(True)
+        self.toggle_statusbar_action.setChecked(True)
+        self.toggle_statusbar_action.triggered.connect(self.set_statusbar_visible)
+        self.view_menu.addAction(self.toggle_statusbar_action)
+
+        # Меню: Настройки
         self.settings_menu = menu_bar.addMenu("")
 
-        # Меню: Язык (Language)
-        self.language_menu = menu_bar.addMenu("")
+        # Подменю: Язык (Language) внутри меню Настройки
+        self.language_menu = self.settings_menu.addMenu("")
         self.lang_group = QActionGroup(self)
         self.lang_group.setExclusive(True)
 
@@ -239,13 +287,41 @@ class MainWindow(QMainWindow):
         self.about_action.triggered.connect(self.show_about_dialog)
         self.help_menu.addAction(self.about_action)
 
+    def _create_toolbar(self) -> None:
+        """Создание компактной верхней панели инструментов."""
+        self.main_toolbar = self.addToolBar("MainToolBar")
+        self.main_toolbar.setObjectName("mainToolBar")
+        self.main_toolbar.setMovable(False)
+        self.main_toolbar.setIconSize(QSize(18, 18))
+        self.main_toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+
+        # Системные иконки для действий панели инструментов
+        style = self.style()
+        if style:
+            self.open_map_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
+            self.open_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton))
+            self.save_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton))
+            self.add_pt_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_FileDialogNewFolder))
+            self.fit_map_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_TitleBarMaxButton))
+
+        # Добавление существующих действий в тулбар (без создания дубликатов)
+        self.main_toolbar.addAction(self.open_map_action)
+        self.main_toolbar.addAction(self.open_action)
+        self.main_toolbar.addAction(self.save_action)
+        self.main_toolbar.addSeparator()
+        self.main_toolbar.addAction(self.add_pt_action)
+        self.main_toolbar.addAction(self.fit_map_action)
+
     def _create_central_layout(self) -> None:
-        """Создание трехпанельной компоновки: Слои/Точки | Карта | Свойства."""
-        splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        """Создание трехпанельной компоновки: Слои/Точки | Карта | Свойства на базе QSplitter."""
+        self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        self.splitter.setObjectName("mainSplitter")
+        self.splitter.setChildrenCollapsible(False)
 
         # Левая панель: Слои и Точки
         self.left_panel = QWidget()
         self.left_panel.setObjectName("leftPanel")
+        self.left_panel.setMinimumWidth(240)
         left_layout = QVBoxLayout(self.left_panel)
         left_layout.setContentsMargins(8, 8, 8, 8)
         left_layout.setSpacing(10)
@@ -260,21 +336,37 @@ class MainWindow(QMainWindow):
 
         self.points_panel = PointsPanel(self.left_panel)
         left_layout.addWidget(self.points_panel, stretch=1)
-        splitter.addWidget(self.left_panel)
+        self.splitter.addWidget(self.left_panel)
 
         # Центральная область: Карта (MapCanvas)
         self.center_panel = QWidget()
         self.center_panel.setObjectName("centerPanel")
+        self.center_panel.setMinimumWidth(300)
         center_layout = QVBoxLayout(self.center_panel)
         center_layout.setContentsMargins(8, 8, 8, 8)
-        center_layout.setSpacing(6)
+        center_layout.setSpacing(4)
+
+        # Шапка над картой: Название карты + CRS справа
+        map_header_layout = QHBoxLayout()
+        map_header_layout.setContentsMargins(0, 0, 0, 0)
+        map_header_layout.setSpacing(8)
 
         self.map_title_label = QLabel(self.center_panel)
         header_font = QFont()
         header_font.setBold(True)
         header_font.setPointSize(12)
         self.map_title_label.setFont(header_font)
-        center_layout.addWidget(self.map_title_label)
+        map_header_layout.addWidget(self.map_title_label)
+        map_header_layout.addStretch()
+
+        self.map_crs_label = QLabel(self.center_panel)
+        crs_font = QFont()
+        crs_font.setPointSize(10)
+        self.map_crs_label.setFont(crs_font)
+        self.map_crs_label.setStyleSheet("color: #6B7280;")
+        map_header_layout.addWidget(self.map_crs_label)
+
+        center_layout.addLayout(map_header_layout)
 
         self.map_canvas = MapCanvas(self.center_panel)
         self.map_placeholder = self.map_canvas
@@ -282,18 +374,19 @@ class MainWindow(QMainWindow):
         self.btn_open_map_center = self.map_canvas.btn_open_map
         self.map_canvas.btn_open_map.clicked.connect(lambda: self.open_map())
         center_layout.addWidget(self.map_canvas, stretch=1)
-        splitter.addWidget(self.center_panel)
+        self.splitter.addWidget(self.center_panel)
 
         # Правая панель: Свойства
         self.properties_panel = PropertiesPanel(self)
+        self.properties_panel.setMinimumWidth(260)
         self.right_panel = self.properties_panel
-        splitter.addWidget(self.right_panel)
+        self.splitter.addWidget(self.right_panel)
 
-        splitter.setSizes([300, 800, 300])
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setStretchFactor(2, 0)
-        self.setCentralWidget(splitter)
+        self.splitter.setSizes([310, 780, 310])
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setStretchFactor(2, 0)
+        self.setCentralWidget(self.splitter)
 
         # Ссылки обратной совместимости с существующими тестами
         self._setup_compat_references()
@@ -315,6 +408,9 @@ class MainWindow(QMainWindow):
         self.properties_placeholder = self.properties_panel.placeholder
         self.prop_empty_label = self.properties_panel.prop_empty_label
         self.prop_container = self.properties_panel.prop_container
+        self.sec_coords_lbl = self.properties_panel.sec_coords_lbl
+        self.sec_marker_lbl = self.properties_panel.sec_marker_lbl
+        self.sec_zone_lbl = self.properties_panel.sec_zone_lbl
         self.prop_name_lbl = self.properties_panel.prop_name_lbl
         self.prop_name_val = self.properties_panel.prop_name_val
         self.prop_lat_lbl = self.properties_panel.prop_lat_lbl
@@ -337,12 +433,23 @@ class MainWindow(QMainWindow):
         self.prop_zone_color_swatch = self.properties_panel.prop_zone_color_swatch
         self.prop_zone_opacity_lbl = self.properties_panel.prop_zone_opacity_lbl
         self.prop_zone_opacity_val = self.properties_panel.prop_zone_opacity_val
+        self.btn_fit = self.map_canvas.btn_fit
 
     def _create_status_bar(self) -> None:
         """Создание нижней строки состояния."""
         status_bar = QStatusBar(self)
         status_bar.setObjectName("statusBar")
         self.setStatusBar(status_bar)
+
+        self.status_crs_label = QLabel(self)
+        self.status_crs_label.setObjectName("statusCrsLabel")
+        status_bar.addPermanentWidget(self.status_crs_label)
+        self.status_crs_label.setVisible(False)
+
+        self.status_points_label = QLabel(self)
+        self.status_points_label.setObjectName("statusPointsLabel")
+        status_bar.addPermanentWidget(self.status_points_label)
+        self.status_points_label.setVisible(False)
 
         self.status_coords_label = QLabel(self)
         self.status_coords_label.setObjectName("statusCoordsLabel")
@@ -354,6 +461,142 @@ class MainWindow(QMainWindow):
     def _show_status_message(self, text: str, timeout: int = 0) -> None:
         if self.statusBar():
             self.statusBar().showMessage(text, timeout)
+
+    def _on_map_loaded(self, crs: str) -> None:
+        """Слушатель успешной загрузки карты контроллером."""
+        self.point_controller.reproject_all_points(crs)
+        if hasattr(self, "map_crs_label"):
+            self.map_crs_label.setText(crs)
+        if hasattr(self, "status_crs_label"):
+            self.status_crs_label.setText(f"CRS: {crs}")
+            self.status_crs_label.setVisible(True)
+        self._update_map_dependent_actions(True)
+        if hasattr(self, "points_panel"):
+            self._on_points_count_changed(self.points_panel.total_count, self.points_panel.shown_count)
+
+    def _on_map_title_changed(self, title: str) -> None:
+        """Слушатель изменения заголовка карты."""
+        self.map_title_label.setText(title)
+        if self.map_controller.active_crs and hasattr(self, "map_crs_label"):
+            self.map_crs_label.setText(self.map_controller.active_crs)
+
+    def _on_points_count_changed(self, total: int, shown: int) -> None:
+        """Обновление счетчика точек в строке состояния."""
+        if self.map_controller.active_profile is None and self.map_controller.map_path is None:
+            if hasattr(self, "status_points_label"):
+                self.status_points_label.setVisible(False)
+            return
+
+        query = self.points_panel.search_input.text().strip() if hasattr(self, "points_panel") else ""
+        if hasattr(self, "status_points_label"):
+            if query:
+                self.status_points_label.setText(tr("status.points_filtered", shown=shown, total=total))
+            else:
+                self.status_points_label.setText(tr("status.points_count", count=total))
+            self.status_points_label.setVisible(True)
+
+    def _update_map_dependent_actions(self, enabled: bool) -> None:
+        """Включение/выключение действий, зависящих от наличия активной карты."""
+        if hasattr(self, "add_pt_action"):
+            self.add_pt_action.setEnabled(enabled)
+        if hasattr(self, "fit_map_action"):
+            self.fit_map_action.setEnabled(enabled)
+        if hasattr(self, "close_map_action"):
+            self.close_map_action.setEnabled(enabled)
+        if hasattr(self, "btn_add_point"):
+            self.btn_add_point.setEnabled(enabled)
+        if hasattr(self, "map_canvas") and hasattr(self.map_canvas, "btn_fit"):
+            self.map_canvas.btn_fit.setEnabled(enabled)
+
+    def set_left_panel_visible(self, visible: bool) -> None:
+        """Переключение видимости левой панели (Слои и Точки)."""
+        self.left_panel.setVisible(visible)
+        if hasattr(self, "toggle_layers_points_action"):
+            self.toggle_layers_points_action.setChecked(visible)
+        self._settings_service.set_left_panel_visible(visible)
+
+    def set_right_panel_visible(self, visible: bool) -> None:
+        """Переключение видимости правой панели (Свойства)."""
+        self.right_panel.setVisible(visible)
+        if hasattr(self, "toggle_properties_action"):
+            self.toggle_properties_action.setChecked(visible)
+        self._settings_service.set_right_panel_visible(visible)
+
+    def set_toolbar_visible(self, visible: bool) -> None:
+        """Переключение видимости панели инструментов."""
+        if hasattr(self, "main_toolbar"):
+            self.main_toolbar.setVisible(visible)
+        if hasattr(self, "toggle_toolbar_action"):
+            self.toggle_toolbar_action.setChecked(visible)
+        self._settings_service.set_toolbar_visible(visible)
+
+    def set_statusbar_visible(self, visible: bool) -> None:
+        """Переключение видимости строки состояния."""
+        if self.statusBar():
+            self.statusBar().setVisible(visible)
+        if hasattr(self, "toggle_statusbar_action"):
+            self.toggle_statusbar_action.setChecked(visible)
+        self._settings_service.set_statusbar_visible(visible)
+
+    def _apply_default_geometry(self) -> None:
+        """Установка геометрии по умолчанию (1400x850) с центрированием на экране."""
+        self.resize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
+        screen = QGuiApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            x = avail.x() + max(0, (avail.width() - self.DEFAULT_WIDTH) // 2)
+            y = avail.y() + max(0, (avail.height() - self.DEFAULT_HEIGHT) // 2)
+            self.move(x, y)
+
+    def restore_ui_state(self) -> None:
+        """Восстановление геометрии, состояния сплиттера и видимости панелей."""
+        geom = self._settings_service.get_window_geometry()
+        if geom:
+            target_rect = QRect(geom["x"], geom["y"], geom["width"], geom["height"])
+            valid_screen = False
+            for screen in QGuiApplication.screens():
+                if screen.availableGeometry().intersects(target_rect):
+                    valid_screen = True
+                    break
+            if valid_screen:
+                self.setGeometry(target_rect)
+            else:
+                self._apply_default_geometry()
+        else:
+            self._apply_default_geometry()
+
+        if self._settings_service.get_window_maximized():
+            self.showMaximized()
+
+        saved_sizes = self._settings_service.get_splitter_sizes()
+        if saved_sizes and len(saved_sizes) == 3:
+            self.splitter.setSizes(saved_sizes)
+        else:
+            self.splitter.setSizes([310, 780, 310])
+
+        self.set_left_panel_visible(self._settings_service.get_left_panel_visible())
+        self.set_right_panel_visible(self._settings_service.get_right_panel_visible())
+        self.set_toolbar_visible(self._settings_service.get_toolbar_visible())
+        self.set_statusbar_visible(self._settings_service.get_statusbar_visible())
+
+    def save_ui_state(self, force: bool = False) -> None:
+        """Сохранение геометрии, состояния сплиттера и видимости панелей."""
+        is_max = self.isMaximized()
+        self._settings_service.set_window_maximized(is_max)
+        if (self.isVisible() or force) and not is_max:
+            self._settings_service.set_window_geometry(
+                self.x(), self.y(), self.width(), self.height()
+            )
+        if hasattr(self, "splitter"):
+            self._settings_service.set_splitter_sizes(self.splitter.sizes())
+        if hasattr(self, "left_panel"):
+            self._settings_service.set_left_panel_visible(self.left_panel.isVisible())
+        if hasattr(self, "right_panel"):
+            self._settings_service.set_right_panel_visible(self.right_panel.isVisible())
+        if hasattr(self, "main_toolbar"):
+            self._settings_service.set_toolbar_visible(self.main_toolbar.isVisible())
+        if self.statusBar():
+            self._settings_service.set_statusbar_visible(self.statusBar().isVisible())
 
     def switch_language(self, lang_code: str) -> None:
         """Переключение языка интерфейса и сохранение настройки."""
@@ -372,24 +615,42 @@ class MainWindow(QMainWindow):
         self.coords_menu.setTitle(tr("menu.coordinates"))
         self.import_menu.setTitle(tr("menu.import"))
         self.export_menu.setTitle(tr("menu.export"))
+        if hasattr(self, "view_menu"):
+            self.view_menu.setTitle(tr("menu.view"))
         self.settings_menu.setTitle(tr("menu.settings"))
         self.language_menu.setTitle(tr("menu.language"))
         self.help_menu.setTitle(tr("menu.help"))
 
         self.new_action.setText(tr("action.new_project"))
         self.open_action.setText(tr("action.open_project"))
+        self.open_action.setToolTip(tr("tooltip.open_project"))
         if hasattr(self, "recent_projects_menu"):
             self.recent_projects_menu.setTitle(tr("menu.recent_projects"))
         self.save_action.setText(tr("action.save"))
+        self.save_action.setToolTip(tr("tooltip.save_project"))
         self.save_as_action.setText(tr("action.save_as"))
         self.exit_action.setText(tr("action.exit"))
 
         self.open_map_action.setText(tr("action.open_map"))
+        self.open_map_action.setToolTip(tr("tooltip.open_map"))
         if hasattr(self, "recent_maps_menu"):
             self.recent_maps_menu.setTitle(tr("menu.recent_maps"))
         self.close_map_action.setText(tr("action.close_map"))
+        if hasattr(self, "fit_map_action"):
+            self.fit_map_action.setText(tr("action.fit_map"))
+            self.fit_map_action.setToolTip(tr("tooltip.fit_map"))
         self.add_pt_action.setText(tr("action.add_point"))
+        self.add_pt_action.setToolTip(tr("tooltip.add_point"))
         self.about_action.setText(tr("action.about"))
+
+        if hasattr(self, "toggle_toolbar_action"):
+            self.toggle_toolbar_action.setText(tr("action.view_toolbar"))
+        if hasattr(self, "toggle_layers_points_action"):
+            self.toggle_layers_points_action.setText(tr("action.view_layers_points"))
+        if hasattr(self, "toggle_properties_action"):
+            self.toggle_properties_action.setText(tr("action.view_properties"))
+        if hasattr(self, "toggle_statusbar_action"):
+            self.toggle_statusbar_action.setText(tr("action.view_statusbar"))
 
         self.layers_panel.retranslate_ui()
         self.points_panel.retranslate_ui()
@@ -402,28 +663,38 @@ class MainWindow(QMainWindow):
         if self.map_controller.active_profile:
             map_name = self.map_controller.active_profile.name
             self.map_title_label.setText(f"{tr('menu.map')}: {map_name}")
-            self.statusBar().showMessage(
-                tr(
-                    "status.map_info",
-                    name=map_name,
-                    crs=self.map_controller.active_crs,
-                    count=len(self.map_controller.loaded_layers),
-                )
-            )
+            crs = self.map_controller.active_crs or "OGC:CRS84"
+            if hasattr(self, "map_crs_label"):
+                self.map_crs_label.setText(crs)
+            if hasattr(self, "status_crs_label"):
+                self.status_crs_label.setText(f"CRS: {crs}")
+                self.status_crs_label.setVisible(True)
+            self._update_map_dependent_actions(True)
         elif self.map_controller.map_path:
             map_name = self.map_controller.map_path.stem
             self.map_title_label.setText(f"{tr('menu.map')}: {map_name}")
-            self.statusBar().showMessage(
-                tr(
-                    "status.map_info",
-                    name=map_name,
-                    crs=self.map_controller.active_crs,
-                    count=len(self.map_controller.loaded_layers),
-                )
-            )
+            crs = self.map_controller.active_crs or "OGC:CRS84"
+            if hasattr(self, "map_crs_label"):
+                self.map_crs_label.setText(crs)
+            if hasattr(self, "status_crs_label"):
+                self.status_crs_label.setText(f"CRS: {crs}")
+                self.status_crs_label.setVisible(True)
+            self._update_map_dependent_actions(True)
         else:
             self.map_title_label.setText(tr("status.no_map"))
+            if hasattr(self, "map_crs_label"):
+                self.map_crs_label.setText("")
+            if hasattr(self, "status_crs_label"):
+                self.status_crs_label.setVisible(False)
+            if hasattr(self, "status_points_label"):
+                self.status_points_label.setVisible(False)
             self.statusBar().showMessage(tr("status.no_map"))
+            self._update_map_dependent_actions(False)
+
+        if hasattr(self, "points_panel"):
+            self._on_points_count_changed(self.points_panel.total_count, self.points_panel.shown_count)
+
+        self._update_window_title()
 
         self._update_window_title()
 
@@ -504,9 +775,18 @@ class MainWindow(QMainWindow):
         self.status_coords_label.setVisible(False)
 
     def _on_map_unloaded(self) -> None:
-        """Сброс и скрытие виджета координат при выгрузке карты."""
+        """Сброс и скрытие виджета координат и счетчиков при выгрузке карты."""
         self.status_coords_label.setText("")
         self.status_coords_label.setVisible(False)
+        if hasattr(self, "status_crs_label"):
+            self.status_crs_label.setText("")
+            self.status_crs_label.setVisible(False)
+        if hasattr(self, "status_points_label"):
+            self.status_points_label.setText("")
+            self.status_points_label.setVisible(False)
+        if hasattr(self, "map_crs_label"):
+            self.map_crs_label.setText("")
+        self._update_map_dependent_actions(False)
 
     def _update_recent_projects_menu(self) -> None:
         """Динамическое заполнение подменю 'Недавние проекты'."""
@@ -635,6 +915,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: Any) -> None:
         """Обработка события закрытия окна с проверкой несохраненных изменений."""
         if self.project_controller.maybe_save_prompt(tr("dialog.unsaved_action_exit")):
+            self.save_ui_state()
             self.project_controller.cleanup_on_exit()
             event.accept()
         else:

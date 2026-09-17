@@ -17,6 +17,7 @@ TRANSLATIONS_RU: dict[str, str] = {
     "menu.coordinates": "Координаты",
     "menu.import": "Импорт",
     "menu.export": "Экспорт",
+    "menu.view": "Вид",
     "menu.settings": "Настройки",
     "menu.language": "Язык",
     "menu.help": "Справка",
@@ -35,6 +36,17 @@ TRANSLATIONS_RU: dict[str, str] = {
     "action.delete_point": "Удалить",
     "action.center_on_map": "Центрировать на карте",
     "action.about": "О программе...",
+    "action.view_toolbar": "Панель инструментов",
+    "action.view_layers_points": "Панель слоев и точек",
+    "action.view_properties": "Панель свойств",
+    "action.view_statusbar": "Строка состояния",
+
+    # Подсказки (Tooltips)
+    "tooltip.open_map": "Открыть карту",
+    "tooltip.open_project": "Открыть проект",
+    "tooltip.save_project": "Сохранить проект",
+    "tooltip.add_point": "Добавить точку",
+    "tooltip.fit_map": "Показать всю карту",
 
     # Панели главного окна
     "panel.layers": "Слои",
@@ -56,17 +68,25 @@ TRANSLATIONS_RU: dict[str, str] = {
     "status.no_map": "Карта не загружена",
     "status.map_info": "Карта: {name} | {crs} | Слоёв: {count}",
     "status.ready": "Готово",
+    "status.crs": "CRS: {crs}",
+    "status.points_count": "Точек: {count}",
+    "status.points_filtered": "Показано: {shown} из {total}",
 
-    # Таблица точек
+    # Таблица и счетчик точек
     "table.col_index": "№",
     "table.col_name": "Название",
     "table.col_lat": "Широта",
     "table.col_lon": "Долгота",
     "table.col_shape": "Форма",
     "table.col_radius": "Радиус",
+    "points.count_total": "Точек: {count}",
+    "points.count_filtered": "Показано: {shown} из {total}",
 
     # Панель свойств
-    "properties.empty_hint": "Выберите точку в таблице для просмотра свойств",
+    "properties.empty_hint": "Выберите точку в таблице для просмотра свойств.",
+    "properties.section_coords": "Координаты",
+    "properties.section_marker": "Маркер",
+    "properties.section_zone": "Зона",
     "properties.name": "Название:",
     "properties.latitude": "Широта:",
     "properties.longitude": "Долгота:",

@@ -17,6 +17,7 @@ TRANSLATIONS_EN: dict[str, str] = {
     "menu.coordinates": "Coordinates",
     "menu.import": "Import",
     "menu.export": "Export",
+    "menu.view": "View",
     "menu.settings": "Settings",
     "menu.language": "Language",
     "menu.help": "Help",
@@ -29,12 +30,23 @@ TRANSLATIONS_EN: dict[str, str] = {
     "action.exit": "Exit",
     "action.open_map": "Open Map...",
     "action.close_map": "Close Map",
-    "action.fit_map": "Fit to View",
+    "action.fit_map": "Fit Map",
     "action.add_point": "Add Point",
     "action.edit_point": "Edit",
     "action.delete_point": "Delete",
     "action.center_on_map": "Center on Map",
     "action.about": "About...",
+    "action.view_toolbar": "Toolbar",
+    "action.view_layers_points": "Layers and Points Panel",
+    "action.view_properties": "Properties Panel",
+    "action.view_statusbar": "Status Bar",
+
+    # Tooltips
+    "tooltip.open_map": "Open Map",
+    "tooltip.open_project": "Open Project",
+    "tooltip.save_project": "Save Project",
+    "tooltip.add_point": "Add Point",
+    "tooltip.fit_map": "Fit Map",
 
     # Panels
     "panel.layers": "Layers",
@@ -56,17 +68,25 @@ TRANSLATIONS_EN: dict[str, str] = {
     "status.no_map": "No map loaded",
     "status.map_info": "Map: {name} | {crs} | Layers: {count}",
     "status.ready": "Ready",
+    "status.crs": "CRS: {crs}",
+    "status.points_count": "Points: {count}",
+    "status.points_filtered": "Shown: {shown} of {total}",
 
-    # Point Table
+    # Point Table and Counter
     "table.col_index": "#",
     "table.col_name": "Name",
     "table.col_lat": "Latitude",
     "table.col_lon": "Longitude",
     "table.col_shape": "Shape",
     "table.col_radius": "Radius",
+    "points.count_total": "Points: {count}",
+    "points.count_filtered": "Shown: {shown} of {total}",
 
     # Properties Panel
-    "properties.empty_hint": "Select a point in the table to view properties",
+    "properties.empty_hint": "Select a point in the table to view its properties.",
+    "properties.section_coords": "Coordinates",
+    "properties.section_marker": "Marker",
+    "properties.section_zone": "Zone",
     "properties.name": "Name:",
     "properties.latitude": "Latitude:",
     "properties.longitude": "Longitude:",

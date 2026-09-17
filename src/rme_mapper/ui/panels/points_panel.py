@@ -32,6 +32,7 @@ class PointsPanel(QWidget):
     row_double_clicked = Signal(int, int)
     selection_changed = Signal()
     custom_context_menu_requested = Signal(object)
+    count_changed = Signal(int, int)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -44,7 +45,7 @@ class PointsPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
 
-        # Заголовок блока
+        # 1. Заголовок блока и счетчик точек
         points_header_layout = QHBoxLayout()
         self.title_label = QLabel()
         points_font = QFont()
@@ -53,18 +54,37 @@ class PointsPanel(QWidget):
         self.title_label.setFont(points_font)
         points_header_layout.addWidget(self.title_label)
         points_header_layout.addStretch()
+
+        self.count_label = QLabel()
+        self.count_label.setObjectName("pointCountLabel")
+        count_font = QFont()
+        count_font.setPointSize(10)
+        self.count_label.setFont(count_font)
+        self.count_label.setStyleSheet("color: #6B7280;")
+        points_header_layout.addWidget(self.count_label)
         layout.addLayout(points_header_layout)
 
-        # Кнопки добавления, редактирования и удаления точки
+        # 2. Поле поиска по названию точки на всю ширину
+        self.search_input = QLineEdit(self)
+        self.search_input.setObjectName("searchPointInput")
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.textChanged.connect(self._on_search_text_changed)
+        layout.addWidget(self.search_input)
+
+        # 3. Кнопки добавления, редактирования и удаления точки (единая высота и стиль)
         btn_row_layout = QHBoxLayout()
+        btn_row_layout.setSpacing(4)
+
         self.btn_add = QPushButton(self)
         self.btn_add.setObjectName("btnAddPoint")
+        self.btn_add.setFixedHeight(28)
         self.btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_add.clicked.connect(self.add_clicked.emit)
         btn_row_layout.addWidget(self.btn_add)
 
         self.btn_edit = QPushButton(self)
         self.btn_edit.setObjectName("btnEditPoint")
+        self.btn_edit.setFixedHeight(28)
         self.btn_edit.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_edit.setEnabled(False)
         self.btn_edit.clicked.connect(self.edit_clicked.emit)
@@ -72,6 +92,7 @@ class PointsPanel(QWidget):
 
         self.btn_delete = QPushButton(self)
         self.btn_delete.setObjectName("btnDeletePoint")
+        self.btn_delete.setFixedHeight(28)
         self.btn_delete.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_delete.setEnabled(False)
         self.btn_delete.clicked.connect(self.delete_clicked.emit)
@@ -79,14 +100,7 @@ class PointsPanel(QWidget):
 
         layout.addLayout(btn_row_layout)
 
-        # Поле поиска по названию точки
-        self.search_input = QLineEdit(self)
-        self.search_input.setObjectName("searchPointInput")
-        self.search_input.setClearButtonEnabled(True)
-        self.search_input.textChanged.connect(self._on_search_text_changed)
-        layout.addWidget(self.search_input)
-
-        # Таблица точек
+        # 4. Таблица точек
         self.points_table = QTableWidget(0, 6, self)
         self.points_table.setObjectName("pointsTable")
         self.points_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -97,10 +111,12 @@ class PointsPanel(QWidget):
         header = self.points_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        self.points_table.setColumnWidth(2, 85)
+        self.points_table.setColumnWidth(3, 85)
 
         self.points_table.cellDoubleClicked.connect(self.row_double_clicked.emit)
         self.points_table.itemSelectionChanged.connect(self.selection_changed.emit)
@@ -159,6 +175,7 @@ class PointsPanel(QWidget):
             name = item.text().lower() if item else ""
             matches = (not query) or (query in name)
             self.points_table.setRowHidden(r, not matches)
+        self._update_counter()
 
     def _apply_filter_to_row(self, row: int) -> None:
         query = self.search_input.text().strip().lower()
@@ -168,6 +185,27 @@ class PointsPanel(QWidget):
         item = self.points_table.item(row, 1)
         name = item.text().lower() if item else ""
         self.points_table.setRowHidden(row, query not in name)
+
+    def _update_counter(self) -> None:
+        """Обновление счетчика точек (всего / отфильтровано)."""
+        total = self.points_table.rowCount()
+        shown = sum(1 for r in range(total) if not self.points_table.isRowHidden(r))
+        query = self.search_input.text().strip() if hasattr(self, "search_input") else ""
+        if hasattr(self, "count_label"):
+            if query:
+                self.count_label.setText(tr("points.count_filtered", shown=shown, total=total))
+            else:
+                self.count_label.setText(tr("points.count_total", count=total))
+        self.count_changed.emit(total, shown)
+
+    @property
+    def total_count(self) -> int:
+        return self.points_table.rowCount()
+
+    @property
+    def shown_count(self) -> int:
+        total = self.points_table.rowCount()
+        return sum(1 for r in range(total) if not self.points_table.isRowHidden(r))
 
     def retranslate_ui(self) -> None:
         """Обновление локализованных строк панели и таблицы."""
@@ -185,7 +223,7 @@ class PointsPanel(QWidget):
             tr("table.col_shape"),
             tr("table.col_radius"),
         ])
-
+        self._update_counter()
 
     def set_buttons_enabled(
         self,
@@ -229,6 +267,7 @@ class PointsPanel(QWidget):
         self.points_table.setItem(row, 4, shape_item)
         self.points_table.setItem(row, 5, radius_item)
         self._apply_filter_to_row(row)
+        self._update_counter()
         return row
 
     def update_row(
@@ -248,7 +287,7 @@ class PointsPanel(QWidget):
             self.points_table.item(row, 4).setText(shape)
             self.points_table.item(row, 5).setText(radius)
             self._apply_filter_to_row(row)
-
+            self._update_counter()
 
     def remove_row(self, row: int) -> None:
         """Удаление строки из таблицы и пересчет нумерации."""
@@ -258,10 +297,12 @@ class PointsPanel(QWidget):
                 item = self.points_table.item(r, 0)
                 if item:
                     item.setText(str(r + 1))
+            self._update_counter()
 
     def clear_table(self) -> None:
         """Полная очистка строк таблицы."""
         self.points_table.setRowCount(0)
+        self._update_counter()
 
     def selected_row(self) -> int | None:
         """Индекс первой выбранной строки или None."""

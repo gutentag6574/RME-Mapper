@@ -29,6 +29,13 @@ class AppSettingsService:
     KEY_RECENT_MAPS = "history/recent_maps"
     KEY_LAST_MAP_DIR = "paths/last_map_directory"
     KEY_LAST_PROJECT_DIR = "paths/last_project_directory"
+    KEY_WINDOW_GEOMETRY = "ui/window_geometry"
+    KEY_WINDOW_MAXIMIZED = "ui/window_maximized"
+    KEY_SPLITTER_SIZES = "ui/splitter_sizes"
+    KEY_LEFT_PANEL_VISIBLE = "ui/left_panel_visible"
+    KEY_RIGHT_PANEL_VISIBLE = "ui/right_panel_visible"
+    KEY_TOOLBAR_VISIBLE = "ui/toolbar_visible"
+    KEY_STATUSBAR_VISIBLE = "ui/statusbar_visible"
     MAX_RECENT_ITEMS = 10
 
     def __init__(self, settings: Any = _AUTO) -> None:
@@ -214,6 +221,105 @@ class AppSettingsService:
         if d:
             self._set_str(self.KEY_LAST_PROJECT_DIR, d)
 
+    # --- UI State & Geometry ---
+    def _get_bool(self, key: str, default: bool = True) -> bool:
+        if self._settings is not None:
+            val = self._settings.value(key, default)
+        else:
+            val = self._memory_fallback.get(key, default)
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, (int, float)):
+            return bool(val)
+        if isinstance(val, str):
+            return val.strip().lower() in ("true", "1", "yes")
+        return default
+
+    def _set_bool(self, key: str, value: bool) -> None:
+        val = bool(value)
+        if self._settings is not None:
+            self._settings.setValue(key, val)
+            if hasattr(self._settings, "sync"):
+                self._settings.sync()
+        self._memory_fallback[key] = val
+
+    def get_window_geometry(self) -> dict[str, int] | None:
+        """Получить сохраненную геометрию окна {x, y, width, height}."""
+        raw = self._get_str(self.KEY_WINDOW_GEOMETRY, "")
+        if not raw:
+            return None
+        try:
+            import json
+            data = json.loads(raw)
+            if isinstance(data, dict) and all(k in data for k in ("x", "y", "width", "height")):
+                return {k: int(data[k]) for k in ("x", "y", "width", "height")}
+        except Exception:
+            pass
+        return None
+
+    def set_window_geometry(self, x: int, y: int, width: int, height: int) -> None:
+        """Сохранить координаты и размеры главного окна."""
+        import json
+        payload = json.dumps({"x": int(x), "y": int(y), "width": int(width), "height": int(height)})
+        self._set_str(self.KEY_WINDOW_GEOMETRY, payload)
+
+    def get_window_maximized(self) -> bool:
+        """Получить признак развернутого состояния окна (maximized)."""
+        return self._get_bool(self.KEY_WINDOW_MAXIMIZED, default=False)
+
+    def set_window_maximized(self, maximized: bool) -> None:
+        """Сохранить признак развернутого состояния окна."""
+        self._set_bool(self.KEY_WINDOW_MAXIMIZED, maximized)
+
+    def get_splitter_sizes(self) -> list[int] | None:
+        """Получить сохраненные размеры панелей сплиттера [left, center, right]."""
+        raw = self._get_string_list(self.KEY_SPLITTER_SIZES)
+        if not raw:
+            return None
+        try:
+            sizes = [int(x) for x in raw]
+            if len(sizes) == 3 and all(s > 0 for s in sizes):
+                return sizes
+        except (ValueError, TypeError):
+            pass
+        return None
+
+    def set_splitter_sizes(self, sizes: list[int]) -> None:
+        """Сохранить размеры панелей сплиттера."""
+        str_list = [str(int(s)) for s in sizes]
+        self._set_string_list(self.KEY_SPLITTER_SIZES, str_list)
+
+    def get_left_panel_visible(self) -> bool:
+        """Видимость левой панели (Слои и Точки)."""
+        return self._get_bool(self.KEY_LEFT_PANEL_VISIBLE, default=True)
+
+    def set_left_panel_visible(self, visible: bool) -> None:
+        """Сохранить видимость левой панели."""
+        self._set_bool(self.KEY_LEFT_PANEL_VISIBLE, visible)
+
+    def get_right_panel_visible(self) -> bool:
+        """Видимость правой панели (Свойства)."""
+        return self._get_bool(self.KEY_RIGHT_PANEL_VISIBLE, default=True)
+
+    def set_right_panel_visible(self, visible: bool) -> None:
+        """Сохранить видимость правой панели."""
+        self._set_bool(self.KEY_RIGHT_PANEL_VISIBLE, visible)
+
+    def get_toolbar_visible(self) -> bool:
+        """Видимость верхней панели инструментов."""
+        return self._get_bool(self.KEY_TOOLBAR_VISIBLE, default=True)
+
+    def set_toolbar_visible(self, visible: bool) -> None:
+        """Сохранить видимость верхней панели инструментов."""
+        self._set_bool(self.KEY_TOOLBAR_VISIBLE, visible)
+
+    def get_statusbar_visible(self) -> bool:
+        """Видимость нижней строки состояния."""
+        return self._get_bool(self.KEY_STATUSBAR_VISIBLE, default=True)
+
+    def set_statusbar_visible(self, visible: bool) -> None:
+        """Сохранить видимость нижней строки состояния."""
+        self._set_bool(self.KEY_STATUSBAR_VISIBLE, visible)
 
     def clear(self) -> None:
         """Очистить сохраненные настройки (для изолированного тестирования)."""
