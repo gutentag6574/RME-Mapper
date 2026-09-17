@@ -202,9 +202,9 @@ def test_missing_optional_layer_graceful(layer_service, default_gpkg):
     assert LayerRole.PLACES not in roles
 
 
-def test_main_window_layers_panel(qapp):
+def test_main_window_layers_panel(qapp, default_gpkg):
     """11. Проверка, что в MainWindow отображаются чекбоксы только реально найденных слоев."""
-    window = MainWindow()
+    window = MainWindow(map_path=default_gpkg)
 
     assert hasattr(window, "layer_checkboxes")
     assert len(window.layer_checkboxes) == 2

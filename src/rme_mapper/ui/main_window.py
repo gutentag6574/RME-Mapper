@@ -1,8 +1,9 @@
-"""Главное окно приложения RME-Mapper."""
+"""Главное окно приложения GeoPoint Mapper."""
 
 import logging
 from pathlib import Path
 from typing import Any
+import uuid
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QFont, QKeySequence
@@ -29,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from rme_mapper.maps.map_canvas import MapCanvas
-from rme_mapper.maps.map_config import get_default_geopackage_path
+from rme_mapper.maps.map_config import get_default_geopackage_path, get_project_root
 from rme_mapper.models.map_layer import LayerRole, MapLayer
 from rme_mapper.models.map_point import MapPoint
 from rme_mapper.models.map_profile import MapProfile
@@ -42,6 +43,7 @@ from rme_mapper.services.map_catalog_service import MapCatalogService
 from rme_mapper.services.point_service import PointService
 from rme_mapper.services.project_service import ProjectService
 from rme_mapper.ui.add_point_dialog import AddPointDialog, PointDialog
+from rme_mapper.ui.open_map_dialog import OpenMapDialog
 
 SYMBOL_DISPLAY_NAMES = {
     "circle": "Круг",
@@ -53,7 +55,7 @@ logger = logging.getLogger("rme_mapper.ui.main_window")
 
 
 class MainWindow(QMainWindow):
-    """Главное окно приложения RME-Mapper."""
+    """Главное окно приложения GeoPoint Mapper."""
 
     DEFAULT_WIDTH = 1400
     DEFAULT_HEIGHT = 850
@@ -72,19 +74,18 @@ class MainWindow(QMainWindow):
         self._point_service = PointService()
         self._project_service = ProjectService()
 
-        # Активный профиль карты и активный CRS
+        # Активный профиль карты и активный CRS (по умолчанию карта НЕ загружена)
         if map_profile is not None:
             self._active_profile: MapProfile | None = map_profile
+            self._map_path: Path | None = self._active_profile.get_absolute_source_path()
+            self._active_crs: str = self._active_profile.crs or "OGC:CRS84"
         elif map_path is not None:
             self._active_profile = self._map_catalog_service.get_profile_by_path(map_path)
+            self._map_path = Path(map_path)
+            self._active_crs = (self._active_profile.crs if self._active_profile else None) or "OGC:CRS84"
         else:
-            self._active_profile = self._map_catalog_service.get_default_profile()
-
-        if self._active_profile:
-            self._map_path: Path = self._active_profile.get_absolute_source_path()
-            self._active_crs: str = self._active_profile.crs or "OGC:CRS84"
-        else:
-            self._map_path = Path(map_path) if map_path else get_default_geopackage_path()
+            self._active_profile = None
+            self._map_path = None
             self._active_crs = "OGC:CRS84"
 
         # Текущий проект и отслеживание изменений
@@ -103,8 +104,12 @@ class MainWindow(QMainWindow):
         self._table_point_ids: list[str] = []
 
         self._setup_ui()
-        self.setWindowTitle("RME Mapper — Географическая привязка координат")
-        self.load_map(self._active_profile if self._active_profile else self._map_path)
+        self._update_window_title()
+
+        if self._active_profile or self._map_path:
+            self.load_map(self._active_profile if self._active_profile else self._map_path)
+        else:
+            self._unload_map()
 
     def _setup_ui(self) -> None:
         """Инициализация компонентов интерфейса."""
@@ -148,6 +153,18 @@ class MainWindow(QMainWindow):
 
         # Меню: Карта
         self.map_menu = menu_bar.addMenu("Карта")
+
+        self.open_map_action = QAction("Открыть карту...", self)
+        self.open_map_action.setShortcut(QKeySequence("Ctrl+L"))
+        self.open_map_action.triggered.connect(lambda: self.open_map())
+        self.map_menu.addAction(self.open_map_action)
+
+        self.close_map_action = QAction("Закрыть карту", self)
+        self.close_map_action.triggered.connect(lambda: self.close_map())
+        self.map_menu.addAction(self.close_map_action)
+
+        self.map_menu.addSeparator()
+
         fit_action = QAction("Показать всю карту", self)
         fit_action.triggered.connect(lambda: self.map_canvas.fit_to_view())
         self.map_menu.addAction(fit_action)
@@ -293,7 +310,7 @@ class MainWindow(QMainWindow):
         layout.setSpacing(6)
 
         header_layout = QVBoxLayout()
-        map_name_init = self._active_profile.name if self._active_profile else "Карта"
+        map_name_init = self._active_profile.name if self._active_profile else "не загружена"
         self.map_title_label = QLabel(f"Карта: {map_name_init}")
         header_font = QFont()
         header_font.setBold(True)
@@ -304,6 +321,9 @@ class MainWindow(QMainWindow):
 
         self.map_canvas = MapCanvas(panel)
         self.map_placeholder = self.map_canvas
+        self.btn_open_map = self.map_canvas.btn_open_map
+        self.btn_open_map_center = self.map_canvas.btn_open_map
+        self.map_canvas.btn_open_map.clicked.connect(lambda: self.open_map())
         layout.addWidget(self.map_canvas, stretch=1)
 
         return panel
@@ -400,8 +420,65 @@ class MainWindow(QMainWindow):
         """Создание нижней строки состояния."""
         status_bar = QStatusBar(self)
         status_bar.setObjectName("statusBar")
-        status_bar.showMessage("Готово")
+        status_bar.showMessage("Карта не загружена" if not self._active_profile else "Готово")
         self.setStatusBar(status_bar)
+
+    def _unload_map(self) -> None:
+        """Перевод приложения в состояние без активной карты."""
+        self._active_profile = None
+        self._map_path = None
+        self._boundary_geometry = None
+        self.loaded_layers.clear()
+        self._clear_layer_checkboxes()
+        self.map_canvas.clear_map()
+        if hasattr(self, "map_title_label"):
+            self.map_title_label.setText("Карта не загружена")
+        if self.statusBar():
+            self.statusBar().showMessage("Карта не загружена")
+        if hasattr(self, "btn_add_point"):
+            self.btn_add_point.setEnabled(False)
+        if hasattr(self, "btn_edit_point"):
+            self.btn_edit_point.setEnabled(False)
+        if hasattr(self, "btn_delete_point"):
+            self.btn_delete_point.setEnabled(False)
+
+    def open_map(self, map_target: MapProfile | Path | str | None = None) -> bool:
+        """Открытие карты через OpenMapDialog или напрямую по объекту/пути."""
+        if map_target is not None:
+            self.load_map(map_target)
+            return True
+
+        dialog = OpenMapDialog(parent=self, catalog_service=self._map_catalog_service)
+        if dialog.exec():
+            profile = dialog.get_map_profile()
+            if profile:
+                self.load_map(profile)
+                if self._current_project_path:
+                    self._set_modified(True)
+                return True
+        return False
+
+    def close_map(self, prompt: bool = True) -> bool:
+        """Безопасная выгрузка карты из приложения."""
+        if self._active_profile is None and self._map_path is None:
+            return True
+
+        if prompt and len(self._point_service) > 0:
+            reply = QMessageBox.question(
+                self,
+                "Закрыть карту",
+                f"В проекте есть пользовательские точки ({len(self._point_service)}).\n"
+                f"Закрыть карту? Точки проекта останутся в модели и будут скрыты до загрузки новой карты.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return False
+
+        self._unload_map()
+        if self._current_project_path:
+            self._set_modified(True)
+        return True
 
     def load_map(self, map_target: MapProfile | Path | str) -> None:
         """Загрузка слоев карты из MapProfile или пути к файлу."""
@@ -482,8 +559,9 @@ class MainWindow(QMainWindow):
 
             # Обновляем заголовок и строку состояния
             self.map_title_label.setText(f"Карта: {map_title}")
-            status_text = f"Карта загружена: {map_title} | {self._active_crs} | Слоёв: {len(successfully_loaded)}"
+            status_text = f"Карта: {map_title} | {self._active_crs} | Слоёв: {len(successfully_loaded)}"
             self.statusBar().showMessage(status_text)
+            self.btn_add_point.setEnabled(True)
             logger.info("Карта успешно загружена. %s", status_text)
 
             # Пересчитываем пользовательские точки под новую CRS
@@ -551,6 +629,14 @@ class MainWindow(QMainWindow):
 
     def show_add_point_dialog(self) -> None:
         """Открытие модального диалога добавления пользовательской точки."""
+        if self._active_profile is None and self._map_path is None:
+            QMessageBox.information(
+                self,
+                "Карта не загружена",
+                "Для добавления точек сначала откройте карту.",
+            )
+            return
+
         auto_name = f"Точка {len(self._point_service) + 1}"
         dialog = PointDialog(
             parent=self,
@@ -837,14 +923,10 @@ class MainWindow(QMainWindow):
         self._update_window_title()
 
     def _update_window_title(self) -> None:
-        """Обновление заголовка окна в формате: RME-Mapper — <Имя>[ *]."""
-        if not self._project_loaded and not self._is_modified and self._current_project_path is None:
-            self.setWindowTitle("RME Mapper — Географическая привязка координат")
-            return
-
+        """Обновление заголовка окна в формате: GeoPoint Mapper — <Имя>[ *]."""
         proj_name = self._current_project_path.name if self._current_project_path else "Без имени"
         mod_suffix = " *" if self._is_modified else ""
-        self.setWindowTitle(f"RME-Mapper — {proj_name}{mod_suffix}")
+        self.setWindowTitle(f"GeoPoint Mapper — {proj_name}{mod_suffix}")
 
     def closeEvent(self, event: Any) -> None:
         """Обработка события закрытия окна с проверкой несохраненных изменений."""
@@ -886,11 +968,11 @@ class MainWindow(QMainWindow):
             return False
 
         self._clear_all_points()
-        self._reset_layers_visibility()
+        self._unload_map()
         self._current_project_path = None
-        self._project_loaded = True
+        self._project_loaded = False
         self._set_modified(False)
-        self.statusBar().showMessage("Создан новый проект", 3000)
+        self.statusBar().showMessage("Карта не загружена")
         logger.info("Создан новый проект")
         return True
 
@@ -908,7 +990,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Сохранить проект",
                 initial_dir,
-                "Проект RME-Mapper (*.rmeproject);;Все файлы (*.*)",
+                "Проект GeoPoint Mapper (*.gpmap);;Проект RME-Mapper (*.rmeproject);;Все файлы (*.*)",
             )
             if not chosen:
                 return False
@@ -916,8 +998,8 @@ class MainWindow(QMainWindow):
         else:
             path = Path(file_path)
 
-        if path.suffix.lower() != ".rmeproject":
-            path = path.with_suffix(".rmeproject")
+        if path.suffix.lower() not in (".gpmap", ".rmeproject"):
+            path = path.with_suffix(".gpmap")
 
         return self._do_save(path)
 
@@ -925,15 +1007,16 @@ class MainWindow(QMainWindow):
         """Атомарная запись проекта через ProjectService."""
         try:
             points = self._point_service.get_points()
-            map_id = self._active_profile.id if self._active_profile else "mari_el"
             project_data = self._project_service.build_project_data(
-                map_id=map_id,
                 map_path=self._map_path,
                 layers=self.loaded_layers,
                 points=points,
+                map_id=self._active_profile.id if self._active_profile else "",
+                map_profile=self._active_profile,
             )
             saved_path = self._project_service.save_project(project_data, path)
             self._current_project_path = saved_path
+            self._project_loaded = True
             self._set_modified(False)
             self.statusBar().showMessage(f"Проект сохранен: {saved_path.name}", 3000)
             logger.info("Проект успешно сохранен в %s", saved_path)
@@ -948,7 +1031,7 @@ class MainWindow(QMainWindow):
             return False
 
     def open_project(self, file_path: Path | str | None = None) -> bool:
-        """Открытие проекта из файла *.rmeproject."""
+        """Открытие проекта из файла *.gpmap или *.rmeproject."""
         if not self._maybe_save_prompt("открытием другого проекта"):
             return False
 
@@ -958,7 +1041,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Открыть проект",
                 initial_dir,
-                "Проект RME-Mapper (*.rmeproject);;Все файлы (*.*)",
+                "Проекты GeoPoint Mapper (*.gpmap *.rmeproject);;Проект GeoPoint Mapper (*.gpmap);;Проект RME-Mapper (*.rmeproject);;Все файлы (*.*)",
             )
             if not selected_file:
                 return False
@@ -977,19 +1060,81 @@ class MainWindow(QMainWindow):
             )
             return False
 
-        # Разрешаем карту проекта через MapCatalogService
-        map_id = project.map.map_id
-        profile = self._map_catalog_service.get_profile(map_id)
-        if not profile and project.map.relative_path:
-            profile = self._map_catalog_service.get_profile_by_path(project.map.relative_path)
+        # Разрешаем карту проекта
+        target_map_path: Path | None = None
+        target_profile: MapProfile | None = None
 
-        if profile:
-            self.load_map(profile)
-        elif project.map.relative_path:
-            self.load_map(project.map.relative_path)
+        if project.map.map_id:
+            target_profile = self._map_catalog_service.get_profile(project.map.map_id)
+            if target_profile:
+                target_map_path = target_profile.get_absolute_source_path()
+
+        if not target_map_path and project.map.relative_path:
+            p = Path(project.map.relative_path)
+            if p.is_absolute() and p.exists():
+                target_map_path = p
+            elif (path.parent / p).exists():
+                target_map_path = (path.parent / p).resolve()
+            elif (get_project_root() / p).exists():
+                target_map_path = (get_project_root() / p).resolve()
+            elif p.exists():
+                target_map_path = p.resolve()
+
+        has_map_reference = bool(project.map.map_id or project.map.relative_path)
+
+        if has_map_reference and (target_map_path is None or not target_map_path.exists()):
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Файл карты не найден")
+            msg_box.setIcon(QMessageBox.Icon.Warning)
+            map_name_display = project.map.name or project.map.relative_path or project.map.map_id
+            msg_box.setText(f"Файл карты «{map_name_display}» не найден.\nЧто вы хотите сделать?")
+            btn_find = msg_box.addButton("Найти карту...", QMessageBox.ButtonRole.ActionRole)
+            btn_no_map = msg_box.addButton("Открыть проект без карты", QMessageBox.ButtonRole.ActionRole)
+            btn_cancel = msg_box.addButton("Отмена", QMessageBox.ButtonRole.RejectRole)
+            msg_box.setDefaultButton(btn_find)
+            msg_box.exec()
+
+            clicked = msg_box.clickedButton()
+            if clicked == btn_cancel:
+                return False
+            elif clicked == btn_find:
+                chosen, _ = QFileDialog.getOpenFileName(
+                    self,
+                    "Укажите файл карты",
+                    str(path.parent),
+                    "Файлы GeoPackage (*.gpkg);;Все файлы (*.*)",
+                )
+                if not chosen:
+                    return False
+                target_map_path = Path(chosen)
+                target_profile = None
+            else:  # btn_no_map
+                target_map_path = None
+                target_profile = None
+
+        if target_profile:
+            self.load_map(target_profile)
+        elif target_map_path and target_map_path.exists():
+            if project.map.layers:
+                runtime_prof = MapProfile(
+                    id=project.map.map_id or f"runtime_{uuid.uuid4().hex[:8]}",
+                    name=project.map.name or target_map_path.stem,
+                    source_type=project.map.source_type or "geopackage",
+                    source_path=str(target_map_path),
+                    base_dir=target_map_path.parent,
+                    crs=project.map.crs,
+                    boundary_layer=project.map.boundary_layer,
+                    layers=project.map.layers,
+                )
+                self.load_map(runtime_prof)
+            else:
+                self.load_map(target_map_path)
+        else:
+            self._unload_map()
 
         self._apply_project_data(project)
         self._current_project_path = path
+        self._project_loaded = True
         self._set_modified(False)
         self.statusBar().showMessage(f"Проект открыт: {path.name}", 3000)
         logger.info("Проект открыт: %s (%d точек)", path, len(project.points))

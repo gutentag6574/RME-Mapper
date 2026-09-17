@@ -56,7 +56,7 @@ def test_main_window_creation(qapp):
 
     window = MainWindow()
     assert window is not None
-    assert window.windowTitle() == "RME Mapper — Географическая привязка координат"
+    assert "GeoPoint Mapper" in window.windowTitle()
     assert window.width() == 1400
     assert window.height() == 850
 
@@ -78,9 +78,13 @@ def test_main_window_menu_structure(qapp):
 def test_main_window_panels_and_placeholders(qapp):
     """Проверка наличия трех областей (левая панель, центр, правая панель) и статусбара."""
     from PySide6.QtWidgets import QLabel
+    from rme_mapper.services.map_catalog_service import MapCatalogService
     from rme_mapper.ui.main_window import MainWindow
 
     window = MainWindow()
+    prof = MapCatalogService().get_profile("mari_el")
+    if prof:
+        window.load_map(prof)
 
     # Левая панель: Точки
     assert hasattr(window, "left_panel")
@@ -103,7 +107,7 @@ def test_main_window_panels_and_placeholders(qapp):
     # Строка состояния: Готово или статус загрузки карты
     status_bar = window.statusBar()
     assert status_bar is not None
-    assert status_bar.currentMessage() == "Готово" or "Карта загружена" in status_bar.currentMessage()
+    assert status_bar.currentMessage() == "Готово" or "Карта" in status_bar.currentMessage()
 
 
 

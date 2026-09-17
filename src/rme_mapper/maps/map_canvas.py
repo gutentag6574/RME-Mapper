@@ -16,13 +16,16 @@ from PySide6.QtGui import (
     QWheelEvent,
 )
 from PySide6.QtWidgets import (
+    QFrame,
     QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsPathItem,
     QGraphicsScene,
     QGraphicsTextItem,
     QGraphicsView,
+    QLabel,
     QPushButton,
+    QVBoxLayout,
     QWidget,
 )
 from shapely.geometry import (
@@ -110,12 +113,107 @@ class MapCanvas(QGraphicsView):
         )
         self.btn_fit.clicked.connect(self.fit_to_view)
 
+        # Оверлей пустого состояния холста
+        self.empty_overlay = QWidget(self.viewport())
+        self.empty_overlay.setObjectName("mapCanvasEmptyOverlay")
+        self.empty_overlay.setStyleSheet("background-color: transparent;")
+
+        overlay_layout = QVBoxLayout(self.empty_overlay)
+        overlay_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        overlay_layout.setContentsMargins(20, 20, 20, 20)
+
+        card = QFrame(self.empty_overlay)
+        card.setObjectName("emptyStateCard")
+        card.setStyleSheet(
+            """
+            QFrame#emptyStateCard {
+                background-color: #FFFFFF;
+                border: 1px solid #CBD5E1;
+                border-radius: 12px;
+                padding: 24px 32px;
+            }
+            """
+        )
+        card_layout = QVBoxLayout(card)
+        card_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.setSpacing(10)
+
+        title_lbl = QLabel("GeoPoint Mapper", card)
+        title_lbl.setStyleSheet("font-size: 20px; font-weight: bold; color: #1E293B;")
+        title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(title_lbl)
+
+        status_lbl = QLabel("Карта не загружена", card)
+        status_lbl.setStyleSheet("font-size: 14px; font-weight: 600; color: #475569;")
+        status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(status_lbl)
+
+        hint_lbl = QLabel("Откройте географически привязанную карту,\nчтобы начать работу.", card)
+        hint_lbl.setStyleSheet("font-size: 12px; color: #64748B;")
+        hint_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(hint_lbl)
+
+        self.btn_open_map = QPushButton("📂  Открыть карту...", card)
+        self.btn_open_map.setObjectName("btnOpenMapCanvas")
+        self.btn_open_map.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_open_map.setStyleSheet(
+            """
+            QPushButton#btnOpenMapCanvas {
+                background-color: #2563EB;
+                color: #FFFFFF;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QPushButton#btnOpenMapCanvas:hover {
+                background-color: #1D4ED8;
+            }
+            QPushButton#btnOpenMapCanvas:pressed {
+                background-color: #1E40AF;
+            }
+            """
+        )
+        card_layout.addWidget(self.btn_open_map, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        overlay_layout.addWidget(card, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.show_empty_state()
+
+    def show_empty_state(self) -> None:
+        """Показ экрана пустого состояния холста."""
+        if hasattr(self, "empty_overlay"):
+            self.empty_overlay.setVisible(True)
+            self.empty_overlay.raise_()
+        if hasattr(self, "btn_fit"):
+            self.btn_fit.setVisible(False)
+
+    def hide_empty_state(self) -> None:
+        """Скрытие экрана пустого состояния холста при наличии загруженных данных."""
+        if hasattr(self, "empty_overlay"):
+            self.empty_overlay.setVisible(False)
+        if hasattr(self, "btn_fit"):
+            self.btn_fit.setVisible(True)
+
+    def clear_map(self) -> None:
+        """Полная очистка карты (слои, границы, точки, зоны)."""
+        self.clear_user_points()
+        for item in self._layer_items.values():
+            self._scene.removeItem(item)
+        self._layer_items.clear()
+        self._boundary_bounds = None
+        self._scene.clear()
+        self.resetTransform()
+        self._initial_fit_done = False
+        self.show_empty_state()
+
     # -------------------------------------------------------------------------
     # Управление слоями
     # -------------------------------------------------------------------------
 
     def add_layer_item(self, layer: MapLayer, gdf: gpd.GeoDataFrame) -> None:
         """Создание и добавление графического элемента слоя на сцену."""
+        self.hide_empty_state()
         if layer.id in self._layer_items:
             old_item = self._layer_items.pop(layer.id)
             self._scene.removeItem(old_item)
@@ -610,6 +708,9 @@ class MapCanvas(QGraphicsView):
             btn_width,
             btn_height,
         )
+
+        if hasattr(self, "empty_overlay"):
+            self.empty_overlay.setGeometry(0, 0, self.viewport().width(), self.viewport().height())
 
         if not self._initial_fit_done and (self._boundary_bounds or self._layer_items):
             self.fit_to_view()

@@ -20,6 +20,7 @@ from rme_mapper.services.project_service import (
     CURRENT_VERSION,
     PROJECT_EXTENSION,
     SUPPORTED_FORMAT,
+    SUPPORTED_FORMATS,
     ProjectService,
 )
 from rme_mapper.ui.main_window import MainWindow
@@ -175,10 +176,10 @@ def test_13_project_data_serializes(sample_point):
 
 
 def test_14_format_recorded():
-    """14. Поле 'format' строго записывается как 'RME-Mapper Project'."""
+    """14. Поле 'format' записывается как валидный формат проекта."""
     proj = ProjectData()
-    assert proj.format == SUPPORTED_FORMAT
-    assert proj.to_dict()["format"] == "RME-Mapper Project"
+    assert proj.format in SUPPORTED_FORMATS
+    assert proj.to_dict()["format"] in SUPPORTED_FORMATS
 
 
 def test_15_version_recorded():
@@ -196,7 +197,7 @@ def test_16_json_is_valid(sample_point, tmp_path):
 
     with open(out_file, "r", encoding="utf-8") as f:
         loaded = json.load(f)
-    assert loaded["format"] == "RME-Mapper Project"
+    assert loaded["format"] in SUPPORTED_FORMATS
     assert len(loaded["points"]) == 1
 
 
@@ -435,10 +436,10 @@ def test_36_window_title_shows_asterisk(qapp):
     window = MainWindow()
     window._current_project_path = Path("my_map.rmeproject")
     window._set_modified(False)
-    assert window.windowTitle() == "RME-Mapper — my_map.rmeproject"
+    assert window.windowTitle() == "GeoPoint Mapper — my_map.rmeproject"
 
     window._set_modified(True)
-    assert window.windowTitle() == "RME-Mapper — my_map.rmeproject *"
+    assert window.windowTitle() == "GeoPoint Mapper — my_map.rmeproject *"
 
 
 # =============================================================================

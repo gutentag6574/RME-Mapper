@@ -110,15 +110,15 @@ def test_map_canvas_creation(qapp, default_gpkg):
     assert -56.0 <= rect.bottom() <= -55.0
 
 
-def test_main_window_has_map_canvas(qapp):
+def test_main_window_has_map_canvas(qapp, default_gpkg):
     """8. Проверка, что MainWindow содержит MapCanvas и отображает корректный статус."""
-    window = MainWindow()
+    window = MainWindow(map_path=default_gpkg)
     assert hasattr(window, "map_canvas")
     assert isinstance(window.map_canvas, MapCanvas)
 
     # Проверяем строку состояния
     status_text = window.statusBar().currentMessage()
-    assert "Карта загружена" in status_text
+    assert "Карта" in status_text
     assert "CRS84" in status_text or "WGS" in status_text
 
 

@@ -1,4 +1,4 @@
-"""Модели структуры данных проекта RME-Mapper (*.rmeproject)."""
+"""Модели структуры данных проекта GeoPoint Mapper (*.gpmap, *.rmeproject)."""
 
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -10,8 +10,13 @@ from rme_mapper.models.map_point import MapPoint
 class ProjectMapData:
     """Данные о подключенной карте проекта."""
 
-    map_id: str = "mari_el"
-    relative_path: str = "maps/test_map/prepared/mari.gpkg"
+    map_id: str = ""
+    relative_path: str = ""
+    name: str = ""
+    source_type: str = "geopackage"
+    crs: str | None = None
+    boundary_layer: str | None = None
+    layers: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Преобразование в словарь для JSON-сериализации."""
@@ -20,6 +25,16 @@ class ProjectMapData:
         }
         if self.relative_path:
             res["relative_path"] = self.relative_path
+        if self.name:
+            res["name"] = self.name
+        if self.source_type:
+            res["source_type"] = self.source_type
+        if self.crs:
+            res["crs"] = self.crs
+        if self.boundary_layer:
+            res["boundary_layer"] = self.boundary_layer
+        if self.layers:
+            res["layers"] = [dict(l) for l in self.layers]
         return res
 
     @classmethod
@@ -27,9 +42,16 @@ class ProjectMapData:
         """Создание экземпляра из словаря с поддержкой обратной совместимости."""
         if not data or not isinstance(data, dict):
             return cls()
+        raw_layers = data.get("layers", [])
+        layers_list = [dict(l) for l in raw_layers if isinstance(l, dict)]
         return cls(
-            map_id=str(data.get("map_id") or "mari_el"),
-            relative_path=str(data.get("relative_path") or data.get("path") or "maps/test_map/prepared/mari.gpkg"),
+            map_id=str(data.get("map_id") or ""),
+            relative_path=str(data.get("relative_path") or data.get("path") or ""),
+            name=str(data.get("name") or ""),
+            source_type=str(data.get("source_type") or "geopackage"),
+            crs=data.get("crs"),
+            boundary_layer=data.get("boundary_layer"),
+            layers=layers_list,
         )
 
 
@@ -128,11 +150,16 @@ class ProjectPointData:
         )
 
 
+PRIMARY_PROJECT_FORMAT = "GeoPoint Mapper Project"
+LEGACY_PROJECT_FORMAT = "RME-Mapper Project"
+SUPPORTED_PROJECT_FORMATS = {PRIMARY_PROJECT_FORMAT, LEGACY_PROJECT_FORMAT}
+
+
 @dataclass
 class ProjectData:
-    """Корневая модель проекта RME-Mapper."""
+    """Корневая модель проекта GeoPoint Mapper."""
 
-    format: str = "RME-Mapper Project"
+    format: str = PRIMARY_PROJECT_FORMAT
     version: int = 1
     map: ProjectMapData = field(default_factory=ProjectMapData)
     layers: dict[str, bool] = field(default_factory=dict)
@@ -155,9 +182,10 @@ class ProjectData:
             raise ValueError("Данные проекта должны быть JSON-объектом (словарем).")
 
         fmt = data.get("format")
-        if fmt != "RME-Mapper Project":
+        if fmt not in SUPPORTED_PROJECT_FORMATS:
             raise ValueError(
-                f"Неподдерживаемый формат проекта: '{fmt}'. Ожидается 'RME-Mapper Project'."
+                f"Неподдерживаемый формат проекта: '{fmt}'. "
+                f"Ожидается '{PRIMARY_PROJECT_FORMAT}' или '{LEGACY_PROJECT_FORMAT}'."
             )
 
         ver = data.get("version")

@@ -325,7 +325,9 @@ def test_17_layer_service_reads_names_from_profile(projected_fixture_dir):
 # -----------------------------------------------------------------------------
 def test_18_ui_gets_map_name_from_profile(qapp):
     """18. Заголовок над картой в MainWindow формируется из имени активного профиля."""
-    window = MainWindow()
+    catalog = MapCatalogService()
+    prof = catalog.get_profile("mari_el")
+    window = MainWindow(map_profile=prof)
     assert hasattr(window, "map_title_label")
     assert "Республика Марий Эл" in window.map_title_label.text()
 
@@ -335,7 +337,9 @@ def test_18_ui_gets_map_name_from_profile(qapp):
 # -----------------------------------------------------------------------------
 def test_19_status_bar_gets_crs_from_profile(qapp):
     """19. Строка состояния MainWindow отображает CRS активного профиля."""
-    window = MainWindow()
+    catalog = MapCatalogService()
+    prof = catalog.get_profile("mari_el")
+    window = MainWindow(map_profile=prof)
     msg = window.statusBar().currentMessage()
     assert "OGC:CRS84" in msg or "4326" in msg
 
@@ -457,7 +461,9 @@ def test_24_map_without_boundary_no_crash(qapp, projected_fixture_dir):
 # -----------------------------------------------------------------------------
 def test_25_existing_mari_el_map_works(qapp):
     """25. Регрессионная проверка: карта Марий Эл загружается и полностью функциональна."""
-    window = MainWindow()
+    catalog = MapCatalogService()
+    prof = catalog.get_profile("mari_el")
+    window = MainWindow(map_profile=prof)
     assert window._active_profile.id == "mari_el"
     assert len(window.loaded_layers) == 2
     assert window._boundary_geometry is not None

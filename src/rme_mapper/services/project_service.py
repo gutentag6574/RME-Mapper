@@ -1,4 +1,4 @@
-"""Сервис сохранения, загрузки и валидации проектов RME-Mapper (*.rmeproject)."""
+"""Сервис сохранения, загрузки и валидации проектов GeoPoint Mapper (*.gpmap, *.rmeproject)."""
 
 import json
 import logging
@@ -8,10 +8,14 @@ from typing import Any
 from uuid import uuid4
 
 from rme_mapper.coordinates.validator import CoordinateValidator
+from rme_mapper.maps.map_config import get_project_root
 from rme_mapper.models.map_layer import MapLayer
 from rme_mapper.models.map_point import MapPoint
 from rme_mapper.models.point_style import StyleValidator
 from rme_mapper.models.project_data import (
+    PRIMARY_PROJECT_FORMAT,
+    LEGACY_PROJECT_FORMAT,
+    SUPPORTED_PROJECT_FORMATS,
     ProjectData,
     ProjectMapData,
     ProjectPointData,
@@ -19,9 +23,17 @@ from rme_mapper.models.project_data import (
 
 logger = logging.getLogger("rme_mapper.services.project")
 
-SUPPORTED_FORMAT = "RME-Mapper Project"
+PRIMARY_FORMAT = PRIMARY_PROJECT_FORMAT
+LEGACY_FORMAT = LEGACY_PROJECT_FORMAT
+SUPPORTED_FORMATS = SUPPORTED_PROJECT_FORMATS
 CURRENT_VERSION = 1
-PROJECT_EXTENSION = ".rmeproject"
+PRIMARY_EXTENSION = ".gpmap"
+LEGACY_EXTENSION = ".rmeproject"
+SUPPORTED_EXTENSIONS = {PRIMARY_EXTENSION, LEGACY_EXTENSION}
+
+# Для обратной совместимости
+SUPPORTED_FORMAT = PRIMARY_FORMAT
+PROJECT_EXTENSION = PRIMARY_EXTENSION
 
 
 class ProjectService:
@@ -29,15 +41,15 @@ class ProjectService:
 
     @staticmethod
     def save_project(project: ProjectData, file_path: Path | str) -> Path:
-        """Атомарное сохранение данных проекта в файл *.rmeproject.
+        """Атомарное сохранение данных проекта в файл *.gpmap или *.rmeproject.
 
         Запись сначала ведется во временный файл в том же каталоге,
         после чего выполняется атомарное замещение целевого файла (os.replace).
         Это предотвращает повреждение старого файла проекта при сбоях записи.
         """
         target = Path(file_path)
-        if target.suffix.lower() != PROJECT_EXTENSION:
-            target = target.with_suffix(PROJECT_EXTENSION)
+        if target.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            target = target.with_suffix(PRIMARY_EXTENSION)
 
         target.parent.mkdir(parents=True, exist_ok=True)
 
@@ -87,10 +99,10 @@ class ProjectService:
             raise ValueError("Корневой элемент файла проекта должен быть JSON-объектом.")
 
         fmt = raw_data.get("format")
-        if fmt != SUPPORTED_FORMAT:
+        if fmt not in SUPPORTED_FORMATS:
             raise ValueError(
                 f"Неподдерживаемый формат проекта: '{fmt}'. "
-                f"Ожидается '{SUPPORTED_FORMAT}'."
+                f"Ожидается '{PRIMARY_FORMAT}' или '{LEGACY_FORMAT}'."
             )
 
         ver = raw_data.get("version")
@@ -104,7 +116,7 @@ class ProjectService:
 
         if ver_int > CURRENT_VERSION:
             raise ValueError(
-                f"Проект создан более новой версией RME-Mapper (версия {ver_int}, поддерживается {CURRENT_VERSION})."
+                f"Проект создан более новой версией программы (версия {ver_int}, поддерживается {CURRENT_VERSION})."
             )
 
         # Валидация и парсинг точек
@@ -194,32 +206,66 @@ class ProjectService:
 
     @staticmethod
     def build_project_data(
-        map_path: Path | str,
-        layers: list[MapLayer],
-        points: list[MapPoint],
-        map_id: str = "mari_el",
+        map_path: Path | str | None = None,
+        layers: list[MapLayer] | None = None,
+        points: list[MapPoint] | None = None,
+        map_id: str = "",
+        map_name: str = "",
+        source_type: str = "geopackage",
+        crs: str | None = None,
+        boundary_layer: str | None = None,
+        map_profile: Any = None,
     ) -> ProjectData:
         """Сборка модели ProjectData из текущего состояния приложения."""
-        # Относительный путь к карте
-        path_obj = Path(map_path)
-        try:
-            rel_path = path_obj.as_posix()
-            # Если путь абсолютный, пытаемся сделать относительным
-            if "maps/" in rel_path:
-                rel_path = "maps/" + rel_path.split("maps/", 1)[1]
-        except Exception:
-            rel_path = "maps/test_map/prepared/mari.gpkg"
+        if map_profile is not None:
+            if not map_id:
+                map_id = getattr(map_profile, "id", "")
+            if not map_name:
+                map_name = getattr(map_profile, "name", "")
+            if not crs:
+                crs = getattr(map_profile, "crs", None)
+            if not boundary_layer:
+                boundary_layer = getattr(map_profile, "boundary_layer", None)
+            source_type = getattr(map_profile, "source_type", "geopackage")
+            if not map_path:
+                map_path = map_profile.get_absolute_source_path()
+
+        rel_path = ""
+        if map_path:
+            path_obj = Path(map_path)
+            posix_str = path_obj.as_posix()
+            if "maps/" in posix_str:
+                rel_path = "maps/" + posix_str.split("maps/", 1)[1]
+            else:
+                try:
+                    root = get_project_root().resolve()
+                    resolved = path_obj.resolve()
+                    try:
+                        rel_path = resolved.relative_to(root).as_posix()
+                    except ValueError:
+                        rel_path = resolved.as_posix()
+                except Exception:
+                    rel_path = str(map_path)
+
+        profile_layers_meta: list[dict[str, Any]] = []
+        if map_profile and getattr(map_profile, "layers", None):
+            profile_layers_meta = [dict(l) for l in map_profile.layers]
 
         map_data = ProjectMapData(
             map_id=map_id,
             relative_path=rel_path,
+            name=map_name,
+            source_type=source_type,
+            crs=crs,
+            boundary_layer=boundary_layer,
+            layers=profile_layers_meta,
         )
 
-        layers_state = {layer.id: layer.visible for layer in layers}
-        points_data = [ProjectPointData.from_map_point(p) for p in points]
+        layers_state = {layer.id: layer.visible for layer in (layers or [])}
+        points_data = [ProjectPointData.from_map_point(p) for p in (points or [])]
 
         return ProjectData(
-            format=SUPPORTED_FORMAT,
+            format=PRIMARY_FORMAT,
             version=CURRENT_VERSION,
             map=map_data,
             layers=layers_state,
