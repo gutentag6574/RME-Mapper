@@ -16,6 +16,31 @@ class CoordinateFormat(str, Enum):
     AUTO = "auto"
     DD = "dd"
     DMS = "dms"
+    XY = "xy"
+
+
+class DuplicatePolicy(str, Enum):
+    """Политика обработки дубликатов координат."""
+    IMPORT_ALL = "all"
+    SKIP_DUPLICATES = "skip"
+
+
+class OutsideAreaPolicy(str, Enum):
+    """Политика обработки точек вне рабочей области карты."""
+    IMPORT_OUTSIDE = "import"
+    SKIP_OUTSIDE = "skip"
+
+
+@dataclass
+class ImportPreset:
+    """Сохраненная схема сопоставления колонок."""
+    name: str
+    coordinate_format: CoordinateFormat = CoordinateFormat.AUTO
+    source_crs: str = "EPSG:4326"
+    column_mapping: dict[str, str] = field(default_factory=dict)
+    header_row: int = 1
+    delimiter: str | None = None
+    encoding: str | None = None
 
 
 @dataclass
@@ -27,6 +52,11 @@ class ImportOptions:
     delimiter: str | None = None
     encoding: str | None = None
     boundary_geometry: Any = None
+    header_row: int = 1
+    column_mapping: dict[str, str] = field(default_factory=dict)
+    duplicate_policy: DuplicatePolicy = DuplicatePolicy.IMPORT_ALL
+    outside_policy: OutsideAreaPolicy = OutsideAreaPolicy.IMPORT_OUTSIDE
+    existing_points: list[MapPoint] = field(default_factory=list)
 
 
 @dataclass
@@ -84,6 +114,9 @@ class ImportRow:
     raw_data: dict[str, Any]
     point: MapPoint | None = None
     is_valid: bool = True
+    is_excluded: bool = False
+    status: str = "ok"  # "ok", "warning", "error", "skipped"
+    formatted_coords: str = ""
     errors: list[ImportRowError] = field(default_factory=list)
     warnings: list[ImportRowWarning] = field(default_factory=list)
 
@@ -99,7 +132,10 @@ class ImportResult:
     total_rows: int = 0
     valid_rows: int = 0
     invalid_rows: int = 0
+    excluded_rows: int = 0
     points: list[MapPoint] = field(default_factory=list)
     errors: list[ImportRowError] = field(default_factory=list)
     warnings: list[ImportRowWarning] = field(default_factory=list)
     rows: list[ImportRow] = field(default_factory=list)
+    file_mtime: float | None = None
+    file_size: int | None = None

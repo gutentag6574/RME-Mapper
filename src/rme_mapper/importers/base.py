@@ -32,3 +32,25 @@ class BaseImporter(ABC):
             ]
         """
         raise NotImplementedError
+
+    def get_sheet_names(self, file_path: Path) -> list[str]:
+        """Получение списка имен листов книги (для форматов таблиц, например XLSX)."""
+        return []
+
+    def read_preview_rows(
+        self,
+        file_path: Path,
+        options: ImportOptions,
+        max_rows: int = 100,
+    ) -> tuple[list[list[str]], int, str | None, str | None]:
+        """Чтение сырых строк файла для предварительного просмотра структуры.
+
+        Возвращает:
+            tuple[
+                list[list[str]]: строки таблицы (списки строковых значений ячеек),
+                int: приблизительное или точное общее число строк,
+                str | None: определенная/использованная кодировка,
+                str | None: определенный/использованный разделитель,
+            ]
+        """
+        return [], 0, None, None

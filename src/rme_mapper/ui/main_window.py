@@ -303,7 +303,7 @@ class MainWindow(QMainWindow):
         # Меню: Импорт / Экспорт
         self.import_menu = menu_bar.addMenu("")
         self.import_points_action = QAction(self)
-        self.import_points_action.triggered.connect(lambda: self.import_controller.open_import_dialog())
+        self.import_points_action.triggered.connect(lambda: self.import_controller.open_import_wizard())
         self.import_menu.addAction(self.import_points_action)
         self.export_menu = menu_bar.addMenu("")
 

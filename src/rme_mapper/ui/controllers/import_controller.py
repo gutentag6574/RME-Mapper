@@ -15,6 +15,7 @@ from rme_mapper.services.undo_manager import ImportPointsCommand
 from rme_mapper.ui.controllers.point_controller import PointController
 from rme_mapper.ui.controllers.project_controller import ProjectController
 from rme_mapper.ui.import_dialog import ImportDialog
+from rme_mapper.ui.import_wizard import ImportWizard
 
 logger = logging.getLogger("rme_mapper.ui.controllers.import")
 
@@ -52,8 +53,53 @@ class ImportController:
         """Проверка наличия загруженной карты."""
         return self._get_active_profile() is not None or self._get_map_path() is not None
 
+    def open_import_wizard(self, file_path: Path | str | None = None) -> bool:
+        """Открытие пошагового мастера импорта точек (Этап 14)."""
+        if not self._has_active_map():
+            QMessageBox.information(
+                self._parent,
+                tr("dialog.no_map_title"),
+                tr("dialog.no_map_text"),
+            )
+            return False
+
+        last_dir = self._settings_service.get_last_import_directory()
+        wizard = ImportWizard(
+            parent=self._parent,
+            file_path=file_path,
+            last_directory=last_dir,
+            existing_points=self._point_service.get_points(),
+            boundary_geometry=self._get_boundary_geometry(),
+        )
+
+        if wizard.exec():
+            points = wizard.get_final_points()
+            if not points:
+                return False
+
+            src_path = wizard.get_source_path()
+            if src_path:
+                self._settings_service.set_last_import_directory(str(src_path))
+
+            cmd = ImportPointsCommand(
+                points=points,
+                add_fn=self._point_controller._cmd_add_points,
+                remove_fn=self._point_controller._cmd_remove_points,
+                description=f"{tr('action.import_points')}: {len(points)}",
+            )
+            self._point_controller.undo_manager.push(cmd, execute=True)
+
+            # Сохранение снимка аварийного восстановления
+            self._project_controller._save_recovery_snapshot_worker()
+
+            self._set_status(tr("status.import_success", count=len(points)), 3000)
+            logger.info("Мастер успешно импортировал %s точек из %s", len(points), src_path)
+            return True
+
+        return False
+
     def open_import_dialog(self, file_path: Path | str | None = None) -> bool:
-        """Открытие базового диалога импорта точек и добавление валидных точек в проект."""
+        """Открытие базового диалога импорта точек (Этап 13, для совместимости)."""
         if not self._has_active_map():
             QMessageBox.information(
                 self._parent,

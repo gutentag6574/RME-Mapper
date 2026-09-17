@@ -30,6 +30,7 @@ class AppSettingsService:
     KEY_LAST_MAP_DIR = "paths/last_map_directory"
     KEY_LAST_PROJECT_DIR = "paths/last_project_directory"
     KEY_LAST_IMPORT_DIR = "paths/last_import_directory"
+    KEY_IMPORT_PRESETS = "import/mapping_presets"
     KEY_WINDOW_GEOMETRY = "ui/window_geometry"
     KEY_WINDOW_MAXIMIZED = "ui/window_maximized"
     KEY_SPLITTER_SIZES = "ui/splitter_sizes"
@@ -390,6 +391,52 @@ class AppSettingsService:
     def set_show_zones_visible(self, visible: bool) -> None:
         """Сохранить глобальную видимость геодезических зон на холсте."""
         self._set_bool(self.KEY_SHOW_ZONES_VISIBLE, visible)
+
+    def get_import_presets(self) -> list[dict[str, Any]]:
+        """Получить список сохраненных пресетов сопоставления колонок импорта."""
+        if self._settings is not None:
+            val = self._settings.value(self.KEY_IMPORT_PRESETS, "[]")
+        else:
+            val = self._memory_fallback.get(self.KEY_IMPORT_PRESETS, "[]")
+        if isinstance(val, str):
+            try:
+                import json
+                parsed = json.loads(val)
+                return parsed if isinstance(parsed, list) else []
+            except Exception:
+                return []
+        return val if isinstance(val, list) else []
+
+    def save_import_preset(self, name: str, preset_data: dict[str, Any]) -> None:
+        """Сохранить или обновить пресет сопоставления по имени."""
+        import json
+        presets = self.get_import_presets()
+        presets = [p for p in presets if p.get("name") != name]
+        presets.append(preset_data)
+        val = json.dumps(presets, ensure_ascii=False)
+        if self._settings is not None:
+            self._settings.setValue(self.KEY_IMPORT_PRESETS, val)
+            if hasattr(self._settings, "sync"):
+                self._settings.sync()
+        else:
+            self._memory_fallback[self.KEY_IMPORT_PRESETS] = val
+
+    def delete_import_preset(self, name: str) -> bool:
+        """Удалить пресет сопоставления по имени."""
+        import json
+        presets = self.get_import_presets()
+        initial_len = len(presets)
+        presets = [p for p in presets if p.get("name") != name]
+        if len(presets) < initial_len:
+            val = json.dumps(presets, ensure_ascii=False)
+            if self._settings is not None:
+                self._settings.setValue(self.KEY_IMPORT_PRESETS, val)
+                if hasattr(self._settings, "sync"):
+                    self._settings.sync()
+            else:
+                self._memory_fallback[self.KEY_IMPORT_PRESETS] = val
+            return True
+        return False
 
     def clear(self) -> None:
         """Очистить сохраненные настройки (для изолированного тестирования)."""

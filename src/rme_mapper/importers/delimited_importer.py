@@ -47,11 +47,11 @@ class DelimitedImporter(BaseImporter):
 
     @staticmethod
     def detect_delimiter(first_line: str, file_ext: str) -> str:
-        """Автоопределение разделителя по первой строке файла.
+        """Автоопределение разделителя по строке файла.
 
         Приоритет:
         - Если в строке есть символы табуляции -> '\t'
-        - Если есть точка с запятой (стандарт для европейских/русских CSV с десятичной запятой) -> ';'
+        - Если есть точка с запятой -> ';'
         - Если есть запятая -> ','
         - По умолчанию для .txt -> '\t', для .csv -> ';'
         """
@@ -59,11 +59,9 @@ class DelimitedImporter(BaseImporter):
         semi_count = first_line.count(";")
         comma_count = first_line.count(",")
 
-        # Если есть табуляция, в первую очередь предполагаем TSV/TXT
         if tab_count > 0 and tab_count >= semi_count and tab_count >= comma_count:
             return "\t"
 
-        # Точка с запятой имеет приоритет над запятой (исключает ложный выбор при десятичных запятых)
         if semi_count > 0 and semi_count >= comma_count:
             return ";"
 
@@ -77,6 +75,49 @@ class DelimitedImporter(BaseImporter):
             return ";"
 
         return "\t" if file_ext.lower() == ".txt" else ";"
+
+    def read_preview_rows(
+        self,
+        file_path: Path,
+        options: ImportOptions,
+        max_rows: int = 100,
+    ) -> tuple[list[list[str]], int, str | None, str | None]:
+        """Чтение первых max_rows строк для предпросмотра структуры CSV/TXT."""
+        if not file_path.exists():
+            return [], 0, None, None
+
+        raw_bytes = file_path.read_bytes()
+        encoding = options.encoding or self.detect_encoding(raw_bytes)
+
+        try:
+            text = raw_bytes.decode(encoding)
+        except Exception as e:
+            logger.error("Ошибка декодирования %s в %s: %s", file_path, encoding, e)
+            return [], 0, encoding, None
+
+        lines = [line for line in io.StringIO(text, newline=None)]
+        if not lines:
+            return [], 0, encoding, None
+
+        first_non_empty = ""
+        for line in lines:
+            if line.strip():
+                first_non_empty = line.strip()
+                break
+
+        delimiter = options.delimiter or self.detect_delimiter(first_non_empty, file_path.suffix)
+
+        preview_lines = lines[:max_rows]
+        reader = csv.reader(preview_lines, delimiter=delimiter)
+        preview_rows: list[list[str]] = []
+
+        for row in reader:
+            preview_rows.append([c.strip() for c in row])
+
+        max_cols = max((len(r) for r in preview_rows), default=0)
+        normalized_rows = [r + [""] * (max_cols - len(r)) for r in preview_rows]
+
+        return normalized_rows, len(lines), encoding, delimiter
 
     def read_rows(
         self,
@@ -96,30 +137,21 @@ class DelimitedImporter(BaseImporter):
             logger.error("Ошибка декодирования файла %s с кодировкой %s: %s", file_path, encoding, e)
             raise ValueError(f"Не удалось прочитать файл в кодировке {encoding}: {e}")
 
-        # Нормализация переводов строк
         text_io = io.StringIO(text, newline=None)
-
-        # 1. Поиск первой непустой строки для определения разделителя и заголовков
         lines = text_io.readlines()
         if not lines:
             return [], encoding, None, None
 
-        header_line_idx = -1
-        first_line_content = ""
-        for idx, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped:
-                header_line_idx = idx
-                first_line_content = stripped
-                break
+        target_header_row = max(1, options.header_row)
+        header_line_idx = target_header_row - 1
 
-        if header_line_idx == -1:
+        if header_line_idx >= len(lines):
             return [], encoding, None, None
 
-        delimiter = options.delimiter or self.detect_delimiter(first_line_content, file_path.suffix)
+        header_line_content = lines[header_line_idx].strip()
+        delimiter = options.delimiter or self.detect_delimiter(header_line_content, file_path.suffix)
 
-        # 2. Чтение через csv.reader
-        # Передаем строки начиная со строки заголовка
+        # Читаем строки через csv.reader начиная со строки заголовка
         reader = csv.reader(lines[header_line_idx:], delimiter=delimiter)
 
         try:
@@ -127,7 +159,10 @@ class DelimitedImporter(BaseImporter):
         except StopIteration:
             return [], encoding, delimiter, None
 
-        headers = [h.strip() for h in raw_headers]
+        headers = [
+            h.strip() if h.strip() else f"Column_{i+1}"
+            for i, h in enumerate(raw_headers)
+        ]
         if not any(headers):
             return [], encoding, delimiter, None
 
@@ -139,7 +174,6 @@ class DelimitedImporter(BaseImporter):
             if not row:
                 continue
 
-            # Проверяем, есть ли хоть одно непустое значение
             row_dict: dict[str, Any] = {}
             is_empty = True
 
