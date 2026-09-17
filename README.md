@@ -14,11 +14,24 @@
 - **Стилизация маркеров**: выбор формы (круг, квадрат, треугольник), размера и цвета RGB.
 - **Геодезические зоны радиуса**: расчет эллипсоидальных зон вокруг точек по WGS84 через `pyproj.Geod` с настраиваемым цветом и прозрачностью.
 - **Проекты**: сохранение и открытие проектов в формате `.gpmap` с поддержкой обратной совместимости с `.rmeproject`.
+- **Справка**: встроенное информационное окно «О программе» со сведениями о версии и разработчике.
+
+## Поддерживаемые платформы
+
+### Текущая Modern версия
+- **Поддерживается в текущей сборке**: Windows 10 x64, Windows 11 x64.
+- **Стек**: Python 3.12+, PySide6 (Qt 6.6+), GeoPandas, Shapely 2.0+, pyproj, pyogrio.
+
+### Планируемые Legacy версии
+- **GeoPoint Mapper Legacy 7** *(в разработке, отдельный будущий этап)*: Windows 7 SP1 (x86/x64), Windows 8.1. Сборка на базе Python 3.8 и Qt 5.
+- **GeoPoint Mapper Legacy XP** *(в разработке, отдельный будущий этап)*: Windows XP SP3 (x86, 32-bit). Сборка на базе Python 3.4, Qt 4 / PySide 1.2 и легковесного SQLite-бэкенда без тяжелых C-библиотек.
+
+> Подробнее об архитектуре совместимости см. в [docs/PLATFORM_COMPATIBILITY.md](docs/PLATFORM_COMPATIBILITY.md).
 
 ## Требования
 
 - Python 3.12+
-- Windows 10/11
+- Windows 10/11 x64
 - Зависимости: PySide6, pyproj, geopandas, shapely, pandas, pyogrio, pytest
 
 ## Установка и настройка
@@ -69,12 +82,15 @@
 src/
 └── rme_mapper/
     ├── __init__.py          # Инициализация пакета и PROJ/GDAL
+    ├── app_info.py          # Единый источник метаданных и версии приложения
     ├── main.py              # Точка входа в приложение GeoPoint Mapper
+    ├── backends/            # Абстракция доступа к ГИС-данным (Modern, Legacy placeholder)
     ├── ui/                  # Пользовательский интерфейс (PySide6)
     │   ├── __init__.py
     │   ├── main_window.py   # Главное окно GeoPoint Mapper
     │   ├── open_map_dialog.py # Диалог открытия карты и выбора слоев GeoPackage
-    │   └── add_point_dialog.py # Диалог создания/редактирования точек и зон
+    │   ├── add_point_dialog.py # Диалог создания/редактирования точек и зон
+    │   └── about_dialog.py  # Информационное окно "О программе"
     ├── models/              # Модели данных (MapPoint, MapLayer, MapProfile, ProjectData)
     ├── maps/                # MapCanvas и конфигурация путей
     ├── coordinates/         # Парсинг и валидация координат DD/DMS
@@ -83,3 +99,10 @@ maps/
 └── test_map/                # Тестовый профиль Республики Марий Эл
 tests/                       # Набор автоматических тестов
 ```
+
+## Автор
+
+- **Автор и разработчик**: Кульдеев Вадим Алексеевич
+- **Telegram**: [@enotis03](https://t.me/enotis03)
+- **Электронная почта**: zingeevruslan@gmail.com
+- **Copyright**: © 2026 Кульдеев Вадим Алексеевич

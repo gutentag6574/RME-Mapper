@@ -3,7 +3,9 @@
 import os
 from pathlib import Path
 
-__version__ = "0.1.0"
+from rme_mapper.app_info import APP_VERSION
+
+__version__ = APP_VERSION
 
 def _setup_gis_environment() -> None:
     """Настройка путей к базам данных PROJ и GDAL при их отсутствии в окружении."""

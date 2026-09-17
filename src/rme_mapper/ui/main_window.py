@@ -29,6 +29,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from rme_mapper.app_info import APP_NAME
+from rme_mapper.backends import MapDataBackend, get_backend
 from rme_mapper.maps.map_canvas import MapCanvas
 from rme_mapper.maps.map_config import get_default_geopackage_path, get_project_root
 from rme_mapper.models.map_layer import LayerRole, MapLayer
@@ -42,6 +44,7 @@ from rme_mapper.services.layer_service import LayerService
 from rme_mapper.services.map_catalog_service import MapCatalogService
 from rme_mapper.services.point_service import PointService
 from rme_mapper.services.project_service import ProjectService
+from rme_mapper.ui.about_dialog import AboutDialog
 from rme_mapper.ui.add_point_dialog import AddPointDialog, PointDialog
 from rme_mapper.ui.open_map_dialog import OpenMapDialog
 
@@ -65,12 +68,14 @@ class MainWindow(QMainWindow):
         parent: QWidget | None = None,
         map_profile: MapProfile | None = None,
         map_path: Path | str | None = None,
+        backend: MapDataBackend | None = None,
     ) -> None:
         super().__init__(parent)
         self.resize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
 
+        self._backend: MapDataBackend = backend or get_backend()
         self._map_catalog_service = MapCatalogService()
-        self._layer_service = LayerService()
+        self._layer_service = LayerService(backend=self._backend)
         self._point_service = PointService()
         self._project_service = ProjectService()
 
@@ -183,6 +188,12 @@ class MainWindow(QMainWindow):
 
         # Меню: Настройки
         self.settings_menu = menu_bar.addMenu("Настройки")
+
+        # Меню: Справка
+        self.help_menu = menu_bar.addMenu("Справка")
+        self.about_action = QAction("О программе...", self)
+        self.about_action.triggered.connect(self.show_about_dialog)
+        self.help_menu.addAction(self.about_action)
 
     def _create_central_layout(self) -> None:
         """Создание трехпанельной компоновки: Слои/Точки | Карта | Свойства."""
@@ -448,7 +459,11 @@ class MainWindow(QMainWindow):
             self.load_map(map_target)
             return True
 
-        dialog = OpenMapDialog(parent=self, catalog_service=self._map_catalog_service)
+        dialog = OpenMapDialog(
+            parent=self,
+            catalog_service=self._map_catalog_service,
+            backend=self._backend,
+        )
         if dialog.exec():
             profile = dialog.get_map_profile()
             if profile:
@@ -496,7 +511,7 @@ class MainWindow(QMainWindow):
         map_title = profile.name if profile else path.stem
         logger.info("Загрузка карты '%s' из: %s", map_title, path)
 
-        if not GeoPackageService.exists(path):
+        if not self._backend.exists(path):
             err_msg = f"Не найден файл карты:\n{path}"
             logger.error("Файл карты не найден: %s", path)
             self.map_canvas.set_error(err_msg)
@@ -923,10 +938,15 @@ class MainWindow(QMainWindow):
         self._update_window_title()
 
     def _update_window_title(self) -> None:
-        """Обновление заголовка окна в формате: GeoPoint Mapper — <Имя>[ *]."""
+        """Обновление заголовка окна в формате: <APP_NAME> — <Имя>[ *]."""
         proj_name = self._current_project_path.name if self._current_project_path else "Без имени"
         mod_suffix = " *" if self._is_modified else ""
-        self.setWindowTitle(f"GeoPoint Mapper — {proj_name}{mod_suffix}")
+        self.setWindowTitle(f"{APP_NAME} — {proj_name}{mod_suffix}")
+
+    def show_about_dialog(self) -> None:
+        """Открытие диалогового окна 'О программе' со сведениями о версии и авторе."""
+        dlg = AboutDialog(self)
+        dlg.exec()
 
     def closeEvent(self, event: Any) -> None:
         """Обработка события закрытия окна с проверкой несохраненных изменений."""

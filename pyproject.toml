@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rme-mapper"
-version = "0.1.0"
+version = "0.11.0"
 description = "Настольное приложение для привязки и нанесения географических координат на карты Республики Марий Эл"
 readme = "README.md"
 requires-python = ">=3.12"

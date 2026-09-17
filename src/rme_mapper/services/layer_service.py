@@ -7,6 +7,7 @@ from typing import Any
 
 import geopandas as gpd
 
+from rme_mapper.backends.base import MapDataBackend
 from rme_mapper.models.map_layer import LayerRole, MapLayer
 from rme_mapper.models.map_profile import MapProfile
 from rme_mapper.services.geopackage_service import GeoPackageService
@@ -56,7 +57,11 @@ ROLE_STYLES: dict[LayerRole, dict[str, Any]] = {
 class LayerService:
     """Сервис управления реестром и данными картографических слоев."""
 
-    def __init__(self) -> None:
+    def __init__(self, backend: MapDataBackend | None = None) -> None:
+        if backend is None:
+            from rme_mapper.backends.factory import get_backend
+            backend = get_backend()
+        self._backend: MapDataBackend = backend
         # Кэш в памяти: "путь_к_файлу:имя_слоя" -> GeoDataFrame
         self._cache: dict[str, gpd.GeoDataFrame] = {}
 
@@ -76,7 +81,7 @@ class LayerService:
 
         logger.info("Загрузка %d слоев из профиля '%s'", len(profile.layers), profile.name)
         discovered: list[MapLayer] = []
-        raw_layers_info = {name: geom for name, geom in GeoPackageService.list_layers(source_path)}
+        raw_layers_info = {name: geom for name, geom in self._backend.list_layers(source_path)}
 
         for layer_cfg in profile.layers:
             source_name = str(layer_cfg.get("source_name") or layer_cfg.get("name") or "")
@@ -96,7 +101,7 @@ class LayerService:
                 role = LayerRole.BOUNDARY
 
             try:
-                meta = GeoPackageService.get_layer_metadata(source_path, source_name)
+                meta = self._backend.get_layer_metadata(source_path, source_name)
                 crs_val = meta.get("crs")
                 crs_str = crs_val.to_string() if hasattr(crs_val, "to_string") else str(crs_val)
                 feature_count = meta.get("features_count") or 0
@@ -135,7 +140,7 @@ class LayerService:
         Возвращает список поддерживаемых слоев, отсортированных по z_order.
         """
         p = Path(gpkg_path)
-        raw_layers = GeoPackageService.list_layers(p)
+        raw_layers = self._backend.list_layers(p)
         logger.info("Анализ слоев в %s: %s", p.name, raw_layers)
 
         # Пытаемся найти metadata.json рядом для извлечения настроенных имен слоев
@@ -163,7 +168,7 @@ class LayerService:
                 continue
 
             try:
-                meta = GeoPackageService.get_layer_metadata(p, name)
+                meta = self._backend.get_layer_metadata(p, name)
                 crs_val = meta.get("crs")
                 crs_str = crs_val.to_string() if hasattr(crs_val, "to_string") else str(crs_val)
                 feature_count = meta.get("features_count") or 0
@@ -244,7 +249,7 @@ class LayerService:
             return self._cache[cache_key]
 
         logger.info("Чтение слоя '%s' (%s) с диска...", layer.display_name, layer.source_name)
-        gdf = GeoPackageService.read_layer(p, layer.source_name)
+        gdf = self._backend.read_layer(p, layer.source_name)
         self._cache[cache_key] = gdf
         return gdf
 

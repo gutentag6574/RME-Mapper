@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 )
 import pyproj
 
+from rme_mapper.backends import MapDataBackend, get_backend
 from rme_mapper.maps.map_config import get_project_root
 from rme_mapper.models.map_profile import MapProfile
 from rme_mapper.services.geopackage_service import GeoPackageService
@@ -100,6 +101,7 @@ class OpenMapDialog(QDialog):
         parent: QWidget | None = None,
         catalog_service: MapCatalogService | None = None,
         initial_file_path: Path | str | None = None,
+        backend: MapDataBackend | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Открыть карту — GeoPoint Mapper")
@@ -107,6 +109,7 @@ class OpenMapDialog(QDialog):
         self.setModal(True)
 
         self._catalog_service = catalog_service or MapCatalogService()
+        self._backend: MapDataBackend = backend or get_backend()
         self._initial_file_path = Path(initial_file_path) if initial_file_path else None
 
         # Выбранный профиль в результате закрытия
@@ -301,7 +304,7 @@ class OpenMapDialog(QDialog):
         self.file_path_edit.setText(str(path))
 
         try:
-            raw_layers = GeoPackageService.list_layers(path)
+            raw_layers = self._backend.list_layers(path)
         except Exception as e:
             logger.exception("Ошибка чтения слоев из %s: %s", path, e)
             QMessageBox.critical(self, "Ошибка чтения GeoPackage", f"Не удалось прочитать слои из файла:\n{path}\n\n{e}")
@@ -317,7 +320,7 @@ class OpenMapDialog(QDialog):
 
         for name, geom_type in raw_layers:
             try:
-                meta = GeoPackageService.get_layer_metadata(path, name)
+                meta = self._backend.get_layer_metadata(path, name)
                 feat_cnt = meta.get("features_count", 0)
                 crs_val = meta.get("crs")
                 if crs_val and not found_crs_raw:
@@ -371,7 +374,7 @@ class OpenMapDialog(QDialog):
 
         # Автоматический выбор слоя границы, если найден подходящий
         try:
-            suggested_bnd = GeoPackageService.find_boundary_layer(path)
+            suggested_bnd = self._backend.find_boundary_layer(path)
             if suggested_bnd:
                 for idx in range(self.boundary_combo.count()):
                     if self.boundary_combo.itemData(idx) == suggested_bnd:

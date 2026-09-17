@@ -35,7 +35,7 @@ def test_internal_modules_imported():
     import rme_mapper.ui
     from rme_mapper.ui.main_window import MainWindow
 
-    assert rme_mapper.__version__ == "0.1.0"
+    assert rme_mapper.__version__ == "0.11.0"
     assert MainWindow is not None
 
 
