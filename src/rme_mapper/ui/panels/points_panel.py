@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -23,7 +24,7 @@ logger = logging.getLogger("rme_mapper.ui.panels.points_panel")
 
 
 class PointsPanel(QWidget):
-    """Панель со списком точек, кнопками управления и таблицей."""
+    """Панель со списком точек, кнопками управления, поиском и таблицей."""
 
     add_clicked = Signal()
     edit_clicked = Signal()
@@ -78,6 +79,13 @@ class PointsPanel(QWidget):
 
         layout.addLayout(btn_row_layout)
 
+        # Поле поиска по названию точки
+        self.search_input = QLineEdit(self)
+        self.search_input.setObjectName("searchPointInput")
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.textChanged.connect(self._on_search_text_changed)
+        layout.addWidget(self.search_input)
+
         # Таблица точек
         self.points_table = QTableWidget(0, 6, self)
         self.points_table.setObjectName("pointsTable")
@@ -99,9 +107,67 @@ class PointsPanel(QWidget):
         self.points_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.points_table.customContextMenuRequested.connect(self.custom_context_menu_requested.emit)
 
+        # Перехват клавиш для таблицы
+        orig_table_key_press = self.points_table.keyPressEvent
+
+        def table_key_press(event: Any) -> None:
+            if event.key() == Qt.Key.Key_Insert:
+                self.add_clicked.emit()
+                event.accept()
+                return
+            if event.key() == Qt.Key.Key_F2:
+                if self.btn_edit.isEnabled():
+                    self.edit_clicked.emit()
+                event.accept()
+                return
+            if event.key() == Qt.Key.Key_Delete:
+                if self.btn_delete.isEnabled():
+                    self.delete_clicked.emit()
+                event.accept()
+                return
+            orig_table_key_press(event)
+
+        self.points_table.keyPressEvent = table_key_press
+
         layout.addWidget(self.points_table, stretch=1)
 
         self.retranslate_ui()
+
+    def keyPressEvent(self, event: Any) -> None:
+        """Обработка горячих клавиш панели."""
+        if event.key() == Qt.Key.Key_Insert:
+            self.add_clicked.emit()
+            event.accept()
+            return
+        if event.key() == Qt.Key.Key_F2:
+            if self.btn_edit.isEnabled():
+                self.edit_clicked.emit()
+            event.accept()
+            return
+        if event.key() == Qt.Key.Key_Delete and not self.search_input.hasFocus():
+            if self.btn_delete.isEnabled():
+                self.delete_clicked.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def _on_search_text_changed(self, text: str) -> None:
+        """Фильтрация строк таблицы по введенному названию."""
+        query = text.strip().lower()
+        for r in range(self.points_table.rowCount()):
+            item = self.points_table.item(r, 1)
+            name = item.text().lower() if item else ""
+            matches = (not query) or (query in name)
+            self.points_table.setRowHidden(r, not matches)
+
+    def _apply_filter_to_row(self, row: int) -> None:
+        query = self.search_input.text().strip().lower()
+        if not query:
+            self.points_table.setRowHidden(row, False)
+            return
+        item = self.points_table.item(row, 1)
+        name = item.text().lower() if item else ""
+        self.points_table.setRowHidden(row, query not in name)
 
     def retranslate_ui(self) -> None:
         """Обновление локализованных строк панели и таблицы."""
@@ -109,6 +175,8 @@ class PointsPanel(QWidget):
         self.btn_add.setText(tr("btn.add_point"))
         self.btn_edit.setText(tr("btn.edit_point"))
         self.btn_delete.setText(tr("btn.delete_point"))
+        if hasattr(self, "search_input"):
+            self.search_input.setPlaceholderText(tr("search.placeholder"))
         self.points_table.setHorizontalHeaderLabels([
             tr("table.col_index"),
             tr("table.col_name"),
@@ -117,6 +185,7 @@ class PointsPanel(QWidget):
             tr("table.col_shape"),
             tr("table.col_radius"),
         ])
+
 
     def set_buttons_enabled(
         self,
@@ -159,6 +228,7 @@ class PointsPanel(QWidget):
         self.points_table.setItem(row, 3, lon_item)
         self.points_table.setItem(row, 4, shape_item)
         self.points_table.setItem(row, 5, radius_item)
+        self._apply_filter_to_row(row)
         return row
 
     def update_row(
@@ -177,6 +247,8 @@ class PointsPanel(QWidget):
             self.points_table.item(row, 3).setText(lon)
             self.points_table.item(row, 4).setText(shape)
             self.points_table.item(row, 5).setText(radius)
+            self._apply_filter_to_row(row)
+
 
     def remove_row(self, row: int) -> None:
         """Удаление строки из таблицы и пересчет нумерации."""

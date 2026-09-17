@@ -3,9 +3,11 @@
 from collections.abc import Callable
 import logging
 from pathlib import Path
+from typing import Any
 import uuid
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, QTimer
+
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 from rme_mapper.i18n import tr
@@ -34,6 +36,7 @@ class ProjectController(QObject):
         map_catalog_service: MapCatalogService,
         on_title_changed: Callable[[], None],
         set_status_message: Callable[[str, int], None] | None = None,
+        settings_service: Any = None,
     ) -> None:
         super().__init__(parent_widget)
         self._parent = parent_widget
@@ -44,11 +47,19 @@ class ProjectController(QObject):
         self._map_catalog_service = map_catalog_service
         self._on_title_changed = on_title_changed
         self._set_status_message = set_status_message
+        self._settings_service = settings_service
 
         # Владение состоянием проекта
         self._current_project_path: Path | None = None
         self._is_modified: bool = False
         self._project_loaded: bool = False
+
+        # Таймер аварийного снимка (debounce 3 секунды)
+        self._recovery_timer = QTimer(self)
+        self._recovery_timer.setSingleShot(True)
+        self._recovery_timer.setInterval(3000)
+        self._recovery_timer.timeout.connect(self._save_recovery_snapshot_worker)
+
 
     @property
     def current_project_path(self) -> Path | None:
@@ -84,7 +95,37 @@ class ProjectController(QObject):
         self._is_modified = modified
         if modified:
             self._project_loaded = True
+            if hasattr(self, "_recovery_timer"):
+                self._recovery_timer.start()
+        else:
+            if hasattr(self, "_recovery_timer"):
+                self._recovery_timer.stop()
         self._on_title_changed()
+
+    def _save_recovery_snapshot_worker(self) -> None:
+        """Фоновое сохранение снимка аварийного восстановления при наличии изменений."""
+        if not self._is_modified:
+            return
+        try:
+            points = self._point_service.get_points()
+            profile = self._map_controller.active_profile
+            project_data = self._project_service.build_project_data(
+                map_path=self._map_controller.map_path,
+                layers=self._map_controller.loaded_layers,
+                points=points,
+                map_id=profile.id if profile else "",
+                map_profile=profile,
+            )
+            curr_path = str(self._current_project_path) if self._current_project_path else None
+            self._project_service.save_recovery_snapshot(project_data, curr_path)
+        except Exception as e:
+            logger.warning("Не удалось сохранить аварийный снимок: %s", e)
+
+    def cleanup_on_exit(self) -> None:
+        """Очистка таймеров и удаление аварийных снимков при штатном завершении работы."""
+        if hasattr(self, "_recovery_timer"):
+            self._recovery_timer.stop()
+        self._project_service.clear_recovery_snapshot()
 
     def maybe_save_prompt(self, action_name: str | None = None) -> bool:
         """Запрос сохранения при наличии несохраненных изменений.
@@ -125,6 +166,7 @@ class ProjectController(QObject):
         self._current_project_path = None
         self._project_loaded = False
         self.set_modified(False)
+        self._project_service.clear_recovery_snapshot()
         self._set_status(tr("status.no_map"))
         logger.info("Создан новый проект")
         return True
@@ -138,7 +180,11 @@ class ProjectController(QObject):
     def save_project_as_workflow(self, file_path: Path | str | None = None) -> bool:
         """Сохранение проекта с выбором файла через диалог."""
         if file_path is None:
-            initial_dir = str(self._current_project_path.parent) if self._current_project_path else ""
+            initial_dir = (
+                str(self._current_project_path.parent)
+                if self._current_project_path
+                else (self._settings_service.get_last_project_directory(check_exists=True) if self._settings_service else "")
+            )
             chosen, _ = QFileDialog.getSaveFileName(
                 self._parent,
                 tr("dialog.save_project_title"),
@@ -172,6 +218,10 @@ class ProjectController(QObject):
             self._current_project_path = saved_path
             self._project_loaded = True
             self.set_modified(False)
+            self._project_service.clear_recovery_snapshot()
+            if self._settings_service:
+                self._settings_service.add_recent_project(str(saved_path))
+                self._settings_service.set_last_project_directory(str(saved_path))
             self._set_status(tr("status.project_saved", path=saved_path.name), 3000)
             logger.info("Проект успешно сохранен в %s", saved_path)
             return True
@@ -190,7 +240,11 @@ class ProjectController(QObject):
             return False
 
         if not file_path:
-            initial_dir = str(self._current_project_path.parent) if self._current_project_path else ""
+            initial_dir = (
+                str(self._current_project_path.parent)
+                if self._current_project_path
+                else (self._settings_service.get_last_project_directory(check_exists=True) if self._settings_service else "")
+            )
             selected_file, _ = QFileDialog.getOpenFileName(
                 self._parent,
                 tr("dialog.open_project_title"),
@@ -214,7 +268,38 @@ class ProjectController(QObject):
             )
             return False
 
-        # Разрешение карты проекта
+        if not self._resolve_and_apply_project(project, path):
+            return False
+
+        self._current_project_path = path
+        self._project_loaded = True
+        self.set_modified(False)
+        self._project_service.clear_recovery_snapshot()
+        if self._settings_service:
+            self._settings_service.add_recent_project(str(path))
+            self._settings_service.set_last_project_directory(str(path))
+        self._set_status(tr("status.project_opened", name=path.name), 3000)
+        logger.info("Проект открыт: %s (%d точек)", path, len(project.points))
+        return True
+
+    def restore_recovery_snapshot(self) -> bool:
+        """Восстановление проекта из аварийного снимка."""
+        try:
+            project, curr_path = self._project_service.load_recovery_snapshot()
+            path_obj = Path(curr_path) if curr_path else None
+            if not self._resolve_and_apply_project(project, path_obj):
+                return False
+            self._current_project_path = path_obj
+            self._project_loaded = True
+            self.set_modified(True)
+            self._set_status(tr("dialog.recovery_title"), 3000)
+            return True
+        except Exception as e:
+            logger.exception("Ошибка восстановления из аварийного снимка: %s", e)
+            raise
+
+    def _resolve_and_apply_project(self, project: ProjectData, path: Path | None) -> bool:
+        """Разрешение связанных слоев карты и применение структуры проекта."""
         target_map_path: Path | None = None
         target_profile: MapProfile | None = None
 
@@ -227,7 +312,7 @@ class ProjectController(QObject):
             p = Path(project.map.relative_path)
             if p.is_absolute() and p.exists():
                 target_map_path = p
-            elif (path.parent / p).exists():
+            elif path and (path.parent / p).exists():
                 target_map_path = (path.parent / p).resolve()
             elif (get_project_root() / p).exists():
                 target_map_path = (get_project_root() / p).resolve()
@@ -252,10 +337,11 @@ class ProjectController(QObject):
             if clicked == btn_cancel:
                 return False
             elif clicked == btn_find:
+                dir_for_search = str(path.parent) if path else str(get_project_root())
                 chosen, _ = QFileDialog.getOpenFileName(
                     self._parent,
                     tr("dialog.locate_map_title"),
-                    str(path.parent),
+                    dir_for_search,
                     tr("filter.geopackage_files"),
                 )
                 if not chosen:
@@ -287,12 +373,8 @@ class ProjectController(QObject):
             self._map_controller.unload_map()
 
         self.apply_project_data(project)
-        self._current_project_path = path
-        self._project_loaded = True
-        self.set_modified(False)
-        self._set_status(tr("status.project_opened", name=path.name), 3000)
-        logger.info("Проект открыт: %s (%d точек)", path, len(project.points))
         return True
+
 
     def apply_project_data(self, project: ProjectData) -> None:
         """Восстановление состояния карты, видимости слоев, точек и зон из проекта."""

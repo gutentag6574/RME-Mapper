@@ -105,6 +105,8 @@ class MainWindow(QMainWindow):
             is_project_active=lambda: bool(self.project_controller.current_project_path),
             set_status_message=self._show_status_message,
             set_map_title=self.map_title_label.setText,
+            settings_service=self._settings_service,
+            on_map_unloaded=self._on_map_unloaded,
         )
 
         self.project_controller = ProjectController(
@@ -116,10 +118,19 @@ class MainWindow(QMainWindow):
             map_catalog_service=self._map_catalog_service,
             on_title_changed=self._update_window_title,
             set_status_message=self._show_status_message,
+            settings_service=self._settings_service,
         )
+
+        # Drag & Drop и координаты курсора
+        self.setAcceptDrops(True)
+        self.map_canvas.cursor_position_changed.connect(self._on_canvas_cursor_moved)
+        self.map_canvas.cursor_left.connect(self._on_canvas_cursor_left)
 
         self.retranslate_ui()
         self._update_window_title()
+
+        # Проверка аварийного снимка при запуске
+        self._check_recovery_snapshot_on_startup()
 
         # Загрузка карты при старте при наличии параметров
         if map_profile is not None:
@@ -152,6 +163,9 @@ class MainWindow(QMainWindow):
         self.open_action.triggered.connect(self.open_project)
         self.file_menu.addAction(self.open_action)
 
+        self.recent_projects_menu = self.file_menu.addMenu("")
+        self.recent_projects_menu.aboutToShow.connect(self._update_recent_projects_menu)
+
         self.save_action = QAction(self)
         self.save_action.setShortcut(QKeySequence.StandardKey.Save)
         self.save_action.triggered.connect(self.save_project)
@@ -176,9 +190,13 @@ class MainWindow(QMainWindow):
         self.open_map_action.triggered.connect(lambda: self.open_map())
         self.map_menu.addAction(self.open_map_action)
 
+        self.recent_maps_menu = self.map_menu.addMenu("")
+        self.recent_maps_menu.aboutToShow.connect(self._update_recent_maps_menu)
+
         self.close_map_action = QAction(self)
         self.close_map_action.triggered.connect(lambda: self.close_map())
         self.map_menu.addAction(self.close_map_action)
+
 
         # Меню: Координаты
         self.coords_menu = menu_bar.addMenu("")
@@ -325,6 +343,12 @@ class MainWindow(QMainWindow):
         status_bar = QStatusBar(self)
         status_bar.setObjectName("statusBar")
         self.setStatusBar(status_bar)
+
+        self.status_coords_label = QLabel(self)
+        self.status_coords_label.setObjectName("statusCoordsLabel")
+        status_bar.addPermanentWidget(self.status_coords_label)
+        self.status_coords_label.setVisible(False)
+
         status_bar.showMessage(tr("status.no_map"))
 
     def _show_status_message(self, text: str, timeout: int = 0) -> None:
@@ -354,11 +378,15 @@ class MainWindow(QMainWindow):
 
         self.new_action.setText(tr("action.new_project"))
         self.open_action.setText(tr("action.open_project"))
+        if hasattr(self, "recent_projects_menu"):
+            self.recent_projects_menu.setTitle(tr("menu.recent_projects"))
         self.save_action.setText(tr("action.save"))
         self.save_as_action.setText(tr("action.save_as"))
         self.exit_action.setText(tr("action.exit"))
 
         self.open_map_action.setText(tr("action.open_map"))
+        if hasattr(self, "recent_maps_menu"):
+            self.recent_maps_menu.setTitle(tr("menu.recent_maps"))
         self.close_map_action.setText(tr("action.close_map"))
         self.add_pt_action.setText(tr("action.add_point"))
         self.about_action.setText(tr("action.about"))
@@ -411,12 +439,207 @@ class MainWindow(QMainWindow):
         dlg = AboutDialog(self)
         dlg.exec()
 
+    def _check_recovery_snapshot_on_startup(self) -> None:
+        """Проверка наличия аварийного снимка предыдущей сессии при запуске."""
+        if not self._project_service.has_recovery_snapshot():
+            return
+        from PySide6.QtWidgets import QMessageBox
+
+        try:
+            self._project_service.load_recovery_snapshot()
+            is_valid = True
+        except Exception:
+            is_valid = False
+
+        if is_valid:
+            reply = QMessageBox.question(
+                self,
+                tr("dialog.recovery_title"),
+                tr("dialog.recovery_text"),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.project_controller.restore_recovery_snapshot()
+            else:
+                self._project_service.clear_recovery_snapshot()
+        else:
+            reply = QMessageBox.question(
+                self,
+                tr("dialog.recovery_corrupt_title"),
+                tr("dialog.recovery_corrupt_text"),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self._project_service.clear_recovery_snapshot()
+
+    def _on_canvas_cursor_moved(self, map_x: float, map_y: float) -> None:
+        """Отображение координат курсора в строке состояния при наличии активной карты."""
+        if self.map_controller.active_profile is None and self.map_controller.map_path is None:
+            self.status_coords_label.setText("")
+            self.status_coords_label.setVisible(False)
+            return
+
+        crs = self.map_controller.active_crs or "OGC:CRS84"
+        from rme_mapper.services.coordinate_service import CoordinateService
+
+        is_geo = "4326" in crs or "CRS84" in crs.upper()
+
+        if is_geo:
+            lon, lat = map_x, map_y
+            self.status_coords_label.setText(f"X: {lon:.6f}  Y: {lat:.6f}")
+        else:
+            mx, my = map_x, map_y
+            try:
+                lon, lat = CoordinateService.transform_xy(mx, my, source_crs=crs, target_crs="OGC:CRS84")
+                self.status_coords_label.setText(f"X: {mx:.2f} м  Y: {my:.2f} м  ({lat:.6f}, {lon:.6f})")
+            except Exception:
+                self.status_coords_label.setText(f"X: {mx:.2f} м  Y: {my:.2f} м")
+        self.status_coords_label.setVisible(True)
+
+    def _on_canvas_cursor_left(self) -> None:
+        """Скрытие координат при выходе курсора за пределы холста."""
+        self.status_coords_label.setText("")
+        self.status_coords_label.setVisible(False)
+
+    def _on_map_unloaded(self) -> None:
+        """Сброс и скрытие виджета координат при выгрузке карты."""
+        self.status_coords_label.setText("")
+        self.status_coords_label.setVisible(False)
+
+    def _update_recent_projects_menu(self) -> None:
+        """Динамическое заполнение подменю 'Недавние проекты'."""
+        self.recent_projects_menu.clear()
+        items = self._settings_service.get_recent_projects()
+        if not items:
+            act = self.recent_projects_menu.addAction(tr("menu.no_recent"))
+            act.setEnabled(False)
+            return
+
+        for path_str in items:
+            p = Path(path_str)
+            act = self.recent_projects_menu.addAction(p.name)
+            act.setToolTip(path_str)
+            act.triggered.connect(lambda checked=False, pth=path_str: self._open_recent_project(pth))
+
+        self.recent_projects_menu.addSeparator()
+        clear_act = self.recent_projects_menu.addAction(tr("menu.clear_recent"))
+        clear_act.triggered.connect(self._clear_recent_projects)
+
+    def _open_recent_project(self, path_str: str) -> None:
+        p = Path(path_str)
+        if not p.exists():
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(self, tr("dialog.error_title"), tr("msg.file_no_longer_exists"))
+            self._settings_service.remove_recent_project(path_str)
+            return
+        self.open_project(p)
+
+    def _clear_recent_projects(self) -> None:
+        self._settings_service.clear_recent_projects()
+
+    def _update_recent_maps_menu(self) -> None:
+        """Динамическое заполнение подменю 'Недавние карты'."""
+        self.recent_maps_menu.clear()
+        items = self._settings_service.get_recent_maps()
+        if not items:
+            act = self.recent_maps_menu.addAction(tr("menu.no_recent"))
+            act.setEnabled(False)
+            return
+
+        for path_str in items:
+            p = Path(path_str)
+            act = self.recent_maps_menu.addAction(p.name)
+            act.setToolTip(path_str)
+            act.triggered.connect(lambda checked=False, pth=path_str: self._open_recent_map(pth))
+
+        self.recent_maps_menu.addSeparator()
+        clear_act = self.recent_maps_menu.addAction(tr("menu.clear_recent"))
+        clear_act.triggered.connect(self._clear_recent_maps)
+
+    def _open_recent_map(self, path_str: str) -> None:
+        p = Path(path_str)
+        if not p.exists():
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(self, tr("dialog.error_title"), tr("msg.file_no_longer_exists"))
+            self._settings_service.remove_recent_map(path_str)
+            return
+        self.load_map(p)
+
+    def _clear_recent_maps(self) -> None:
+        self._settings_service.clear_recent_maps()
+
+    def dragEnterEvent(self, event: Any) -> None:
+        """Обработка события входа курсора при перетаскивании файлов."""
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            has_supported = any(
+                url.toLocalFile().lower().endswith((".gpkg", ".gpmap", ".rmeproject"))
+                for url in urls
+            )
+            if has_supported:
+                event.acceptProposedAction()
+                return
+        event.ignore()
+
+    def dragMoveEvent(self, event: Any) -> None:
+        """Перемещение объекта над окном при перетаскивании."""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event: Any) -> None:
+        """Обработка сброса перетащенных файлов."""
+        if not event.mimeData().hasUrls():
+            event.ignore()
+            return
+
+        urls = event.mimeData().urls()
+        local_paths = [Path(u.toLocalFile()) for u in urls if u.toLocalFile()]
+        if not local_paths:
+            event.ignore()
+            return
+
+        if len(local_paths) > 1:
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(
+                self,
+                tr("dialog.drop_title"),
+                tr("msg.drop_multiple", path=str(local_paths[0])),
+            )
+
+        first_path = local_paths[0]
+        ext = first_path.suffix.lower()
+
+        if ext == ".gpkg":
+            event.acceptProposedAction()
+            self.map_controller.load_map(first_path)
+        elif ext in (".gpmap", ".rmeproject"):
+            event.acceptProposedAction()
+            self.project_controller.open_project_workflow(first_path)
+        else:
+            event.ignore()
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(
+                self,
+                tr("dialog.drop_title"),
+                tr("msg.drop_unsupported", ext=ext),
+            )
+
     def closeEvent(self, event: Any) -> None:
         """Обработка события закрытия окна с проверкой несохраненных изменений."""
         if self.project_controller.maybe_save_prompt(tr("dialog.unsaved_action_exit")):
+            self.project_controller.cleanup_on_exit()
             event.accept()
         else:
             event.ignore()
+
 
     # -------------------------------------------------------------------------
     # Делегирование методов контроллерам для обратной совместимости
@@ -452,8 +675,9 @@ class MainWindow(QMainWindow):
     def edit_selected_point(self) -> None:
         self.point_controller.edit_point_workflow()
 
-    def delete_selected_point(self) -> None:
-        self.point_controller.delete_point_workflow()
+    def delete_selected_point(self, confirm: bool = False) -> None:
+        self.point_controller.delete_point_workflow(confirm=confirm)
+
 
     def _add_point_to_table(self, point: MapPoint) -> None:
         self.point_controller.add_point_to_table(point)

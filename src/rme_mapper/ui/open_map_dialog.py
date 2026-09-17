@@ -102,6 +102,7 @@ class OpenMapDialog(QDialog):
         catalog_service: MapCatalogService | None = None,
         initial_file_path: Path | str | None = None,
         backend: MapDataBackend | None = None,
+        initial_dir: Path | str | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Открыть карту — GeoPoint Mapper")
@@ -111,6 +112,8 @@ class OpenMapDialog(QDialog):
         self._catalog_service = catalog_service or MapCatalogService()
         self._backend: MapDataBackend = backend or get_backend()
         self._initial_file_path = Path(initial_file_path) if initial_file_path else None
+        self._initial_dir = Path(initial_dir) if initial_dir else None
+
 
         # Выбранный профиль в результате закрытия
         self._selected_profile: MapProfile | None = None
@@ -331,7 +334,11 @@ class OpenMapDialog(QDialog):
 
     def _on_browse_clicked(self) -> None:
         """Диалог выбора файла GeoPackage на диске."""
-        root_dir = str(get_project_root())
+        root_dir = (
+            str(self._initial_dir)
+            if (self._initial_dir and self._initial_dir.is_dir())
+            else str(get_project_root())
+        )
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Выберите файл карты",
@@ -340,6 +347,7 @@ class OpenMapDialog(QDialog):
         )
         if file_path:
             self._set_file_path(Path(file_path))
+
 
     def _set_file_path(self, path: Path) -> None:
         """Исследование структуры GeoPackage и обновление интерфейса диалога."""

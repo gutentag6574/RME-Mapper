@@ -60,10 +60,11 @@ class PointController(QObject):
     def _connect_signals(self) -> None:
         self._points_panel.add_clicked.connect(self.add_point_workflow)
         self._points_panel.edit_clicked.connect(self.edit_point_workflow)
-        self._points_panel.delete_clicked.connect(self.delete_point_workflow)
+        self._points_panel.delete_clicked.connect(lambda: self.delete_point_workflow(confirm=True))
         self._points_panel.row_double_clicked.connect(self.on_table_row_double_clicked)
         self._points_panel.selection_changed.connect(self.on_table_selection_changed)
         self._points_panel.custom_context_menu_requested.connect(self.show_context_menu)
+
 
     def retranslate_ui(self) -> None:
         """Перевод динамических данных в таблице точек (форма, радиус) и панели свойств."""
@@ -190,11 +191,65 @@ class PointController(QObject):
                 self._set_status(tr("status.point_updated", name=updated.name), 3000)
                 logger.info("Точка '%s' (id=%s) успешно обновлена", updated.name, updated.id)
 
-    def delete_point_workflow(self) -> None:
+    def copy_coordinates_dd(self, point: MapPoint) -> str:
+        """Форматирование координат точки в формате DD (десятичные градусы)."""
+        from PySide6.QtWidgets import QApplication
+
+        text = f"{point.latitude:.6f}, {point.longitude:.6f}"
+        QApplication.clipboard().setText(text)
+        self._set_status(tr("status.coords_copied"), 2000)
+        return text
+
+    def copy_coordinates_dms(self, point: MapPoint) -> str:
+        """Форматирование координат точки в формате DMS (градусы, минуты, секунды)."""
+        from PySide6.QtWidgets import QApplication
+        from rme_mapper.ui.point_dialog import decimal_to_dms
+
+        d_lat, m_lat, s_lat = decimal_to_dms(point.latitude)
+        d_lon, m_lon, s_lon = decimal_to_dms(point.longitude)
+        lat_dir = "N" if point.latitude >= 0 else "S"
+        lon_dir = "E" if point.longitude >= 0 else "W"
+        s_lat_str = f"{int(round(s_lat)):02d}" if abs(s_lat - round(s_lat)) < 1e-4 else f"{s_lat:04.1f}"
+        s_lon_str = f"{int(round(s_lon)):02d}" if abs(s_lon - round(s_lon)) < 1e-4 else f"{s_lon:04.1f}"
+        text = f"{d_lat}°{m_lat:02d}'{s_lat_str}\"{lat_dir}, {d_lon}°{m_lon:02d}'{s_lon_str}\"{lon_dir}"
+        QApplication.clipboard().setText(text)
+        self._set_status(tr("status.coords_copied"), 2000)
+        return text
+
+    def copy_coordinates_map_xy(self, point: MapPoint) -> str | None:
+        """Форматирование координат точки в системе координат активной карты (X/Y)."""
+        from PySide6.QtWidgets import QApplication
+
+        if self._get_active_profile() is None and self._get_map_path() is None:
+            return None
+        active_crs = self._get_active_crs()
+        mx, my = CoordinateService.transform_xy(
+            point.longitude, point.latitude,
+            source_crs=point.source_crs,
+            target_crs=active_crs,
+        )
+        text = f"{mx:.2f}, {my:.2f}"
+        QApplication.clipboard().setText(text)
+        self._set_status(tr("status.coords_copied"), 2000)
+        return text
+
+    def delete_point_workflow(self, confirm: bool = False) -> None:
         """Сценарий удаления выбранной в таблице точки."""
         row = self._points_panel.selected_row()
+
         if row is None or not (0 <= row < len(self._table_point_ids)):
             return
+
+        if confirm:
+            reply = QMessageBox.question(
+                self._parent,
+                tr("dialog.confirm_delete_title"),
+                tr("dialog.confirm_delete_text"),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
 
         point_id = self._table_point_ids.pop(row)
         self._point_service.remove_point(point_id)
@@ -206,6 +261,7 @@ class PointController(QObject):
         self._on_modified()
         self._set_status(tr("status.point_deleted"), 3000)
         logger.info("Точка с ID %s успешно удалена", point_id)
+
 
     def clear_all_points(self) -> None:
         """Полная очистка всех точек из сервиса, карты, таблицы и панели свойств."""
@@ -330,14 +386,40 @@ class PointController(QObject):
         menu = QMenu(self._parent)
         act_edit = menu.addAction(tr("action.edit_point"))
         act_center = menu.addAction(tr("action.center_on_map"))
+
+        # Подменю копирования координат
+        copy_menu = menu.addMenu(tr("action.copy_coordinates"))
+        act_copy_dd = copy_menu.addAction(tr("action.copy_dd"))
+        act_copy_dms = copy_menu.addAction(tr("action.copy_dms"))
+        act_copy_map_xy = copy_menu.addAction(tr("action.copy_map_xy"))
+
+        has_map = self._get_active_profile() is not None or self._get_map_path() is not None
+        act_copy_map_xy.setEnabled(has_map)
+
         menu.addSeparator()
         act_delete = menu.addAction(tr("action.delete_point"))
 
         action = menu.exec(table.viewport().mapToGlobal(pos))
+        row = table.row(item)
+        if 0 <= row < len(self._table_point_ids):
+            point = self._point_service.get_point(self._table_point_ids[row])
+            if point:
+                if action == act_copy_dd:
+                    self.copy_coordinates_dd(point)
+                    return
+                elif action == act_copy_dms:
+                    self.copy_coordinates_dms(point)
+                    return
+                elif action == act_copy_map_xy:
+                    self.copy_coordinates_map_xy(point)
+                    return
+
         if action == act_edit:
             self.edit_point_workflow()
         elif action == act_center:
-            row = table.currentRow()
-            self.on_table_row_double_clicked(row, 0)
+            r = table.currentRow()
+            self.on_table_row_double_clicked(r, 0)
         elif action == act_delete:
-            self.delete_point_workflow()
+            self.delete_point_workflow(confirm=True)
+
+

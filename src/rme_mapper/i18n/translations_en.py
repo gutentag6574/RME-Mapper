@@ -297,5 +297,30 @@ TRANSLATIONS_EN: dict[str, str] = {
     "msg.open_project_error": "Failed to open project file:\n{path}\n\n{err}",
     "msg.map_file_not_found": "Map file not found",
     "msg.no_layers_found": "No supported map layers found in source",
+
+    # Stage 12.2: Recent files, search, coordinates, safety
+    "menu.recent_projects": "Recent Projects",
+    "menu.recent_maps": "Recent Maps",
+    "menu.clear_recent": "Clear List",
+    "menu.no_recent": "(no recent files)",
+    "msg.file_no_longer_exists": "The file no longer exists.",
+    "search.placeholder": "Search...",
+    "action.copy_coordinates": "Copy Coordinates",
+    "action.copy_dd": "DD",
+    "action.copy_dms": "DMS",
+    "action.copy_map_xy": "Map X/Y",
+    "status.coords_copied": "Coordinates copied.",
+    "dialog.confirm_delete_title": "Delete Point",
+    "dialog.confirm_delete_text": "Delete selected point?",
+    "dialog.recovery_title": "Crash Recovery",
+    "dialog.recovery_text": "An unsaved recovery snapshot from a previous session was found.\nRestore it?",
+    "dialog.recovery_corrupt_title": "Recovery Error",
+    "dialog.recovery_corrupt_text": "Recovery snapshot is corrupt and cannot be read.\nDiscard it?",
+    "btn.restore": "Restore",
+    "btn.discard": "Discard",
+    "dialog.drop_title": "Drag & Drop",
+    "msg.drop_multiple": "Multiple files dropped. Only opening the first file:\n{path}",
+    "msg.drop_unsupported": "Unsupported file format: {ext}",
 }
+
 

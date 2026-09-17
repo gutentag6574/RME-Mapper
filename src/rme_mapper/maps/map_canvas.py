@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 import geopandas as gpd
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -52,6 +52,9 @@ class MapCanvas(QGraphicsView):
     MIN_ZOOM = 0.05
     MAX_ZOOM = 500.0
 
+    cursor_position_changed = Signal(float, float)
+    cursor_left = Signal()
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("mapCanvas")
@@ -85,6 +88,23 @@ class MapCanvas(QGraphicsView):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setBackgroundBrush(QBrush(QColor("#F5F7FA")))
+        self.setMouseTracking(True)
+        if self.viewport():
+            self.viewport().setMouseTracking(True)
+
+    def mouseMoveEvent(self, event: Any) -> None:
+        """Отслеживание перемещения курсора мыши и передача координат карты."""
+        super().mouseMoveEvent(event)
+        scene_pt = self.mapToScene(event.pos())
+        map_x = scene_pt.x()
+        map_y = -scene_pt.y()
+        self.cursor_position_changed.emit(map_x, map_y)
+
+    def leaveEvent(self, event: Any) -> None:
+        """Курсор покинул область холста."""
+        super().leaveEvent(event)
+        self.cursor_left.emit()
+
 
     def _create_controls(self) -> None:
         """Создание элементов управления поверх холста."""

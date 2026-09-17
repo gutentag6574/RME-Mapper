@@ -36,22 +36,138 @@ SUPPORTED_FORMAT = PRIMARY_FORMAT
 PROJECT_EXTENSION = PRIMARY_EXTENSION
 
 
+MAX_PROJECT_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+MAX_PROJECT_POINTS = 100_000
+
+
 class ProjectService:
     """Сервис сериализации, десериализации и атомарной записи проектов."""
 
+    MAX_FILE_SIZE = MAX_PROJECT_FILE_SIZE
+    MAX_POINTS = MAX_PROJECT_POINTS
+
     @staticmethod
-    def save_project(project: ProjectData, file_path: Path | str) -> Path:
+    def get_recovery_snapshot_path() -> Path:
+        """Путь к файлу аварийного восстановления."""
+        base = os.environ.get("LOCALAPPDATA")
+        if base:
+            return Path(base) / "GeoPointMapper" / "recovery_snapshot.json"
+        return Path.home() / ".geopoint_mapper" / "recovery_snapshot.json"
+
+    @classmethod
+    def has_recovery_snapshot(cls, snapshot_path: Path | str | None = None) -> bool:
+        """Проверить наличие файла аварийного восстановления."""
+        p = Path(snapshot_path) if snapshot_path else cls.get_recovery_snapshot_path()
+        return p.is_file() and p.stat().st_size > 0
+
+    @classmethod
+    def save_recovery_snapshot(
+        cls,
+        project: ProjectData,
+        current_project_path: str | None = None,
+        snapshot_path: Path | str | None = None,
+    ) -> Path:
+        """Сохранить снимок текущего проекта в файл аварийного восстановления."""
+        import time
+
+        p = Path(snapshot_path) if snapshot_path else cls.get_recovery_snapshot_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "version": 1,
+            "timestamp": time.time(),
+            "current_project_path": current_project_path,
+            "project": project.to_dict(),
+        }
+        tmp_p = p.with_name(f"{p.name}.tmp_{uuid4().hex[:8]}")
+        content = json.dumps(payload, ensure_ascii=False, indent=2)
+        try:
+            with open(tmp_p, "w", encoding="utf-8") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_p, p)
+            logger.debug("Аварийный снимок успешно сохранен: %s", p)
+            return p
+        except Exception as e:
+            logger.warning("Ошибка при записи аварийного снимка %s: %s", p, e)
+            if tmp_p.exists():
+                try:
+                    tmp_p.unlink()
+                except OSError:
+                    pass
+            raise
+
+    @classmethod
+    def load_recovery_snapshot(
+        cls,
+        snapshot_path: Path | str | None = None,
+    ) -> tuple[ProjectData, str | None]:
+        """Загрузить проект и путь из аварийного снимка."""
+        p = Path(snapshot_path) if snapshot_path else cls.get_recovery_snapshot_path()
+        if not p.exists():
+            raise FileNotFoundError(f"Файл аварийного восстановления не найден: {p}")
+
+        if p.stat().st_size > cls.MAX_FILE_SIZE:
+            raise ValueError("Размер аварийного снимка превышает допустимый предел.")
+
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except json.JSONDecodeError as json_err:
+            logger.error("Ошибка парсинга JSON аварийного снимка %s: %s", p, json_err)
+            raise ValueError(f"Снимок аварийного восстановления поврежден:\n{json_err}") from json_err
+
+        if not isinstance(data, dict):
+            raise ValueError("Некорректная структура аварийного снимка (ожидается dict).")
+
+        raw_proj = data.get("project")
+        if not isinstance(raw_proj, dict):
+            raise ValueError("Аварийный снимок не содержит данных проекта.")
+
+        project = cls._parse_project_dict(raw_proj)
+        proj_path = data.get("current_project_path")
+        return project, str(proj_path) if proj_path else None
+
+    @classmethod
+    def clear_recovery_snapshot(cls, snapshot_path: Path | str | None = None) -> None:
+        """Удалить файл аварийного восстановления."""
+        p = Path(snapshot_path) if snapshot_path else cls.get_recovery_snapshot_path()
+        if p.exists():
+            try:
+                p.unlink()
+                logger.debug("Аварийный снимок удален: %s", p)
+            except OSError as e:
+                logger.warning("Не удалось удалить аварийный снимок %s: %s", p, e)
+
+    @staticmethod
+    def save_project(
+        project: ProjectData,
+        file_path: Path | str,
+        create_backup: bool = True,
+    ) -> Path:
         """Атомарное сохранение данных проекта в файл *.gpmap или *.rmeproject.
 
+        Если целевой файл уже существует и create_backup=True, создается копия *.bak.
         Запись сначала ведется во временный файл в том же каталоге,
         после чего выполняется атомарное замещение целевого файла (os.replace).
         Это предотвращает повреждение старого файла проекта при сбоях записи.
         """
+        import shutil
+
         target = Path(file_path)
         if target.suffix.lower() not in SUPPORTED_EXTENSIONS:
             target = target.with_suffix(PRIMARY_EXTENSION)
 
         target.parent.mkdir(parents=True, exist_ok=True)
+
+        # Создание резервной копии перед перезаписью существующего файла
+        if target.exists() and create_backup:
+            bak_path = target.with_name(f"{target.name}.bak")
+            try:
+                shutil.copy2(target, bak_path)
+                logger.info("Создана резервная копия проекта: %s", bak_path)
+            except Exception as bak_err:
+                logger.warning("Не удалось создать резервную копию %s: %s", target, bak_err)
 
         # Подготовка читаемого JSON в кодировке UTF-8
         data_dict = project.to_dict()
@@ -77,15 +193,20 @@ class ProjectService:
                     pass
             raise
 
-    @staticmethod
-    def load_project(file_path: Path | str) -> ProjectData:
-        """Загрузка, проверка формата и валидация проекта из файла *.rmeproject."""
+    @classmethod
+    def load_project(cls, file_path: Path | str) -> ProjectData:
+        """Загрузка, проверка формата и валидация проекта из файла *.gpmap / *.rmeproject."""
         target = Path(file_path)
         if not target.exists():
             raise FileNotFoundError(f"Файл проекта не найден: {target}")
 
         if not target.is_file():
             raise ValueError(f"Указанный путь не является файлом: {target}")
+
+        if target.stat().st_size > cls.MAX_FILE_SIZE:
+            raise ValueError(
+                f"Размер файла проекта превышает допустимый предел ({cls.MAX_FILE_SIZE // (1024*1024)} МБ): {target}"
+            )
 
         logger.info("Чтение проекта из: %s", target)
         try:
@@ -95,8 +216,13 @@ class ProjectService:
             logger.error("Ошибка парсинга JSON в файле проекта %s: %s", target, json_err)
             raise ValueError(f"Файл проекта поврежден (некорректный JSON):\n{json_err}") from json_err
 
+        return cls._parse_project_dict(raw_data)
+
+    @classmethod
+    def _parse_project_dict(cls, raw_data: dict) -> ProjectData:
+        """Внутренняя валидация и сборка ProjectData из словаря."""
         if not isinstance(raw_data, dict):
-            raise ValueError("Корневой элемент файла проекта должен быть JSON-объектом.")
+            raise ValueError("Корневой элемент данных проекта должен быть JSON-объектом.")
 
         fmt = raw_data.get("format")
         if fmt not in SUPPORTED_FORMATS:
@@ -122,64 +248,71 @@ class ProjectService:
         # Валидация и парсинг точек
         validated_points: list[ProjectPointData] = []
         raw_points = raw_data.get("points", [])
-        if isinstance(raw_points, list):
-            for idx, pt_dict in enumerate(raw_points):
-                if not isinstance(pt_dict, dict):
-                    logger.warning("Точка №%d имеет неверный формат (не словарь), пропущена", idx + 1)
-                    continue
+        if not isinstance(raw_points, list):
+            raw_points = []
 
-                try:
-                    # Валидация обязательных координат
-                    lat = float(pt_dict["latitude"])
-                    lon = float(pt_dict["longitude"])
-                    CoordinateValidator.validate_latitude(lat)
-                    CoordinateValidator.validate_longitude(lon)
+        if len(raw_points) > cls.MAX_POINTS:
+            raise ValueError(
+                f"Количество точек в проекте превышает допустимый предел ({cls.MAX_POINTS})."
+            )
 
-                    # Валидация стиля
-                    sym = StyleValidator.validate_symbol(str(pt_dict.get("symbol", "circle")))
-                    size = StyleValidator.validate_size(pt_dict.get("size", 12.0))
-                    r, g, b = StyleValidator.validate_rgb(
-                        pt_dict.get("red", 220),
-                        pt_dict.get("green", 30),
-                        pt_dict.get("blue", 30),
-                    )
+        for idx, pt_dict in enumerate(raw_points):
+            if not isinstance(pt_dict, dict):
+                logger.warning("Точка №%d имеет неверный формат (не словарь), пропущена", idx + 1)
+                continue
 
-                    # Валидация параметров зоны
-                    zone_en = bool(pt_dict.get("zone_enabled", False))
-                    rad_m = StyleValidator.validate_radius(
-                        pt_dict.get("radius_m", 0.0),
-                        enabled=zone_en,
-                    )
-                    zr, zg, zb = StyleValidator.validate_rgb(
-                        pt_dict.get("zone_red", 220),
-                        pt_dict.get("zone_green", 30),
-                        pt_dict.get("zone_blue", 30),
-                    )
-                    opacity = StyleValidator.validate_opacity(pt_dict.get("zone_opacity", 30))
+            try:
+                # Валидация обязательных координат
+                lat = float(pt_dict["latitude"])
+                lon = float(pt_dict["longitude"])
+                CoordinateValidator.validate_latitude(lat)
+                CoordinateValidator.validate_longitude(lon)
 
-                    pt_data = ProjectPointData(
-                        id=str(pt_dict.get("id", uuid4().hex)),
-                        name=str(pt_dict.get("name", "")),
-                        latitude=lat,
-                        longitude=lon,
-                        source_crs=str(pt_dict.get("source_crs", "OGC:CRS84")),
-                        visible=bool(pt_dict.get("visible", True)),
-                        symbol=sym,
-                        size=size,
-                        red=r,
-                        green=g,
-                        blue=b,
-                        zone_enabled=zone_en,
-                        radius_m=rad_m,
-                        zone_red=zr,
-                        zone_green=zg,
-                        zone_blue=zb,
-                        zone_opacity=opacity,
-                    )
-                    validated_points.append(pt_data)
-                except Exception as pt_err:
-                    logger.warning("Ошибка валидации точки №%d в проекте: %s (пропущена)", idx + 1, pt_err)
-                    continue
+                # Валидация стиля
+                sym = StyleValidator.validate_symbol(str(pt_dict.get("symbol", "circle")))
+                size = StyleValidator.validate_size(pt_dict.get("size", 12.0))
+                r, g, b = StyleValidator.validate_rgb(
+                    pt_dict.get("red", 220),
+                    pt_dict.get("green", 30),
+                    pt_dict.get("blue", 30),
+                )
+
+                # Валидация параметров зоны
+                zone_en = bool(pt_dict.get("zone_enabled", False))
+                rad_m = StyleValidator.validate_radius(
+                    pt_dict.get("radius_m", 0.0),
+                    enabled=zone_en,
+                )
+                zr, zg, zb = StyleValidator.validate_rgb(
+                    pt_dict.get("zone_red", 220),
+                    pt_dict.get("zone_green", 30),
+                    pt_dict.get("zone_blue", 30),
+                )
+                opacity = StyleValidator.validate_opacity(pt_dict.get("zone_opacity", 30))
+
+                pt_data = ProjectPointData(
+                    id=str(pt_dict.get("id", uuid4().hex)),
+                    name=str(pt_dict.get("name", "")),
+                    latitude=lat,
+                    longitude=lon,
+                    source_crs=str(pt_dict.get("source_crs", "OGC:CRS84")),
+                    visible=bool(pt_dict.get("visible", True)),
+                    symbol=sym,
+                    size=size,
+                    red=r,
+                    green=g,
+                    blue=b,
+                    zone_enabled=zone_en,
+                    radius_m=rad_m,
+                    zone_red=zr,
+                    zone_green=zg,
+                    zone_blue=zb,
+                    zone_opacity=opacity,
+                )
+                validated_points.append(pt_data)
+            except Exception as pt_err:
+                logger.warning("Ошибка валидации точки №%d в проекте: %s (пропущена)", idx + 1, pt_err)
+                continue
 
         map_dict = raw_data.get("map")
         map_data = ProjectMapData.from_dict(map_dict)
@@ -203,6 +336,7 @@ class ProjectService:
             list(project.layers.keys()),
         )
         return project
+
 
     @staticmethod
     def build_project_data(

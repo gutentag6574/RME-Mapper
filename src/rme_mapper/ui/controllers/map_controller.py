@@ -41,6 +41,8 @@ class MapController(QObject):
         is_project_active: Callable[[], bool] | None = None,
         set_status_message: Callable[[str, int], None] | None = None,
         set_map_title: Callable[[str], None] | None = None,
+        settings_service: Any = None,
+        on_map_unloaded: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent_widget)
         self._parent = parent_widget
@@ -51,12 +53,15 @@ class MapController(QObject):
         self._point_service = point_service
         self._layer_service = layer_service
         self._map_catalog_service = map_catalog_service
+        self._settings_service = settings_service
 
         self._on_map_loaded = on_map_loaded
         self._on_modified = on_modified
         self._is_project_active = is_project_active
         self._set_status_message = set_status_message
         self._set_map_title = set_map_title
+        self._on_map_unloaded = on_map_unloaded
+
 
         # Владение состоянием карты
         self._active_profile: MapProfile | None = None
@@ -121,11 +126,17 @@ class MapController(QObject):
             self.load_map(map_target)
             return True
 
+        initial_dir = None
+        if self._settings_service:
+            initial_dir = self._settings_service.get_last_map_directory(check_exists=True)
+
         dialog = OpenMapDialog(
             parent=self._parent,
             catalog_service=self._map_catalog_service,
             backend=self._backend,
+            initial_dir=initial_dir,
         )
+
         if dialog.exec():
             profile = dialog.get_map_profile()
             if profile:
@@ -168,6 +179,8 @@ class MapController(QObject):
         self._update_title(tr("status.no_map"))
         self._set_status(tr("status.no_map"))
         self._points_panel.set_buttons_enabled(add=False, edit=False, delete=False)
+        if self._on_map_unloaded:
+            self._on_map_unloaded()
 
     def load_map(self, map_target: MapProfile | Path | str) -> None:
         """Загрузка слоев карты из MapProfile или пути к файлу."""
@@ -259,6 +272,11 @@ class MapController(QObject):
 
             # Автоподгонка охвата
             self._map_canvas.fit_to_view()
+
+            if self._settings_service:
+                self._settings_service.add_recent_map(str(path))
+                self._settings_service.set_last_map_directory(str(path))
+
 
         except Exception as e:
             logger.exception("Критическая ошибка при загрузке карты из %s: %s", path, e)
