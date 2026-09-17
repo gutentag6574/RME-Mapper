@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, QRectF
 from PySide6.QtGui import QPainterPath, QPen, QBrush
 from PySide6.QtWidgets import QGraphicsPathItem, QMessageBox, QWidget
 
@@ -96,6 +96,15 @@ class ExportController(QObject):
             bb = self._map_canvas._boundary_bounds
             if bb.isValid() and not bb.isEmpty():
                 return (bb.left(), -bb.bottom(), bb.right(), -bb.top())
+
+        # Иначе вычисляем охват загруженных базовых слоев
+        if hasattr(self._map_canvas, "_layer_items") and self._map_canvas._layer_items:
+            combined = QRectF()
+            for item in self._map_canvas._layer_items.values():
+                if isinstance(item, QGraphicsPathItem) and item.isVisible():
+                    combined = combined.united(item.boundingRect())
+            if combined.isValid() and not combined.isEmpty():
+                return (combined.left(), -combined.bottom(), combined.right(), -combined.top())
 
         return None
 

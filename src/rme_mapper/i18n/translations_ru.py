@@ -626,6 +626,7 @@ TRANSLATIONS_RU: dict[str, str] = {
     "export.status_exporting": "Экспорт карты...",
     "export.status_success": "Карта успешно экспортирована: {path}",
     "export.err_no_map": "Нет активной карты для экспорта.",
+    "export.err_no_map_extent": "Невозможно определить охват всей карты.",
     "export.err_no_points_for_extent": "В проекте нет точек для вычисления охвата.",
     "export.err_no_selection_for_extent": "Нет выбранных точек для вычисления охвата.",
     "export.err_failed": "Ошибка при экспорте карты:\n{error}",

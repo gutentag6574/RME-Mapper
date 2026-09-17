@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPixmap
+from PySide6.QtGui import QColor, QFont, QPixmap, QStandardItemModel
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -251,20 +251,28 @@ class ExportImageDialog(QDialog):
         self.extent_combo.addItem(tr("export.extent_selected_points"), "selected_points")
 
         # Отключение недоступных режимов
-        if not self._full_map_extent:
-            idx = self.extent_combo.findData("full_map")
-            if idx >= 0:
-                self.extent_combo.model().setData(self.extent_combo.model().index(idx, 0), 0, Qt.ItemDataRole.UserRole - 1)
+        model = self.extent_combo.model()
+        if isinstance(model, QStandardItemModel):
+            if not self._full_map_extent:
+                idx = self.extent_combo.findData("full_map")
+                if idx >= 0:
+                    it = model.item(idx)
+                    if it:
+                        it.setEnabled(False)
 
-        if not self._all_points_extent:
-            idx = self.extent_combo.findData("all_points")
-            if idx >= 0:
-                self.extent_combo.model().setData(self.extent_combo.model().index(idx, 0), 0, Qt.ItemDataRole.UserRole - 1)
+            if not self._all_points_extent:
+                idx = self.extent_combo.findData("all_points")
+                if idx >= 0:
+                    it = model.item(idx)
+                    if it:
+                        it.setEnabled(False)
 
-        if not self._selected_points_extent:
-            idx = self.extent_combo.findData("selected_points")
-            if idx >= 0:
-                self.extent_combo.model().setData(self.extent_combo.model().index(idx, 0), 0, Qt.ItemDataRole.UserRole - 1)
+            if not self._selected_points_extent:
+                idx = self.extent_combo.findData("selected_points")
+                if idx >= 0:
+                    it = model.item(idx)
+                    if it:
+                        it.setEnabled(False)
 
         self.extent_combo.currentIndexChanged.connect(self._on_extent_changed)
         row.addWidget(self.extent_combo, stretch=1)
@@ -616,7 +624,7 @@ class ExportImageDialog(QDialog):
 
         extent = self.get_current_target_extent()
         if not extent:
-            QMessageBox.warning(self, tr("dialog.export_map_title"), tr("export.err_no_points_for_extent"))
+            self._show_no_extent_warning()
             return
 
         # Для быстрого предпросмотра используем уменьшенное разрешение (например, 480x270)
@@ -679,7 +687,7 @@ class ExportImageDialog(QDialog):
 
         extent = self.get_current_target_extent()
         if not extent:
-            QMessageBox.warning(self, tr("dialog.export_map_title"), tr("export.err_no_points_for_extent"))
+            self._show_no_extent_warning()
             return
 
         # Проверка существования файла
@@ -703,13 +711,24 @@ class ExportImageDialog(QDialog):
     # Сбор опций и охвата
     # -------------------------------------------------------------------------
 
+    def _show_no_extent_warning(self) -> None:
+        """Показ специфичного сообщения при невозможности определить охват."""
+        mode = str(self.extent_combo.currentData())
+        if mode == "full_map":
+            msg = tr("export.err_no_map_extent")
+        elif mode == "selected_points":
+            msg = tr("export.err_no_selection_for_extent")
+        else:
+            msg = tr("export.err_no_points_for_extent")
+        QMessageBox.warning(self, tr("dialog.export_map_title"), msg)
+
     def get_current_target_extent(self) -> tuple[float, float, float, float] | None:
         """Получение охвата в соответствии с текущим выбранным режимом."""
         mode = str(self.extent_combo.currentData())
         if mode == "current_view":
-            return self._current_view_extent or self._full_map_extent or self._all_points_extent
+            return self._current_view_extent
         elif mode == "full_map":
-            return self._full_map_extent or self._current_view_extent or self._all_points_extent
+            return self._full_map_extent
         elif mode == "all_points":
             return self._all_points_extent
         elif mode == "selected_points":

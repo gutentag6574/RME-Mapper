@@ -127,11 +127,11 @@ class MapDecorationRenderer:
         items: list[tuple[str, str]] = []
         # Порядок: Круг, Квадрат, Треугольник
         if "circle" in shapes_present:
-            items.append(("circle", tr("symbol.circle")))
+            items.append(("circle", tr("shape.circle")))
         if "square" in shapes_present:
-            items.append(("square", tr("symbol.square")))
+            items.append(("square", tr("shape.square")))
         if "triangle" in shapes_present:
-            items.append(("triangle", tr("symbol.triangle")))
+            items.append(("triangle", tr("shape.triangle")))
         if has_zones:
             items.append(("zone", tr("export.legend_zone")))
 

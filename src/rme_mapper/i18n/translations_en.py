@@ -626,6 +626,7 @@ TRANSLATIONS_EN: dict[str, str] = {
     "export.status_exporting": "Exporting map...",
     "export.status_success": "Map exported successfully: {path}",
     "export.err_no_map": "No active map to export.",
+    "export.err_no_map_extent": "Unable to determine full map extent.",
     "export.err_no_points_for_extent": "No points in project to calculate extent.",
     "export.err_no_selection_for_extent": "No points selected to calculate extent.",
     "export.err_failed": "Failed to export map:\n{error}",
