@@ -16,6 +16,7 @@ from PySide6.QtGui import (
     QWheelEvent,
 )
 from PySide6.QtWidgets import (
+    QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsPathItem,
     QGraphicsScene,
@@ -34,6 +35,7 @@ from shapely.geometry import (
 )
 
 from rme_mapper.models.map_layer import LayerRole, MapLayer
+from rme_mapper.models.map_point import MapPoint
 
 logger = logging.getLogger("rme_mapper.maps.canvas")
 
@@ -60,6 +62,8 @@ class MapCanvas(QGraphicsView):
         self._boundary_bounds: QRectF | None = None
         # Словарь созданных графических элементов слоев: layer_id -> QGraphicsItem
         self._layer_items: dict[str, QGraphicsItem] = {}
+        # Словарь графических элементов пользовательских точек: point_id -> QGraphicsItem
+        self._user_point_items: dict[str, QGraphicsItem] = {}
 
         self._setup_view_properties()
         self._create_controls()
@@ -103,13 +107,12 @@ class MapCanvas(QGraphicsView):
         )
         self.btn_fit.clicked.connect(self.fit_to_view)
 
-    def add_layer_item(self, layer: MapLayer, gdf: gpd.GeoDataFrame) -> None:
-        """Создание и добавление графического элемента слоя на сцену.
+    # -------------------------------------------------------------------------
+    # Управление слоями
+    # -------------------------------------------------------------------------
 
-        Поддерживает Polygon, MultiPolygon, LineString, MultiLineString, Point, MultiPoint.
-        Преобразование: x_scene = lon, y_scene = -lat.
-        """
-        # Если слой уже был на сцене, удаляем старый элемент
+    def add_layer_item(self, layer: MapLayer, gdf: gpd.GeoDataFrame) -> None:
+        """Создание и добавление графического элемента слоя на сцену."""
         if layer.id in self._layer_items:
             old_item = self._layer_items.pop(layer.id)
             self._scene.removeItem(old_item)
@@ -156,15 +159,6 @@ class MapCanvas(QGraphicsView):
             if not self._initial_fit_done:
                 self.fit_to_view()
 
-        logger.info(
-            "Слой '%s' (%s) добавлен на сцену. Z=%d, Visible=%s, Bounds=%s",
-            layer.display_name,
-            layer.source_name,
-            layer.z_order,
-            layer.visible,
-            item.boundingRect(),
-        )
-
     def set_layer_visibility(self, layer_id: str, visible: bool) -> None:
         """Мгновенное переключение видимости слоя без перезагрузки данных."""
         if layer_id in self._layer_items:
@@ -187,7 +181,7 @@ class MapCanvas(QGraphicsView):
         border_color: str = "#2A5B84",
         border_width: float = 0.0,
     ) -> None:
-        """Устаревший метод для обратной совместимости с тестами Этапа 2."""
+        """Метод для обратной совместимости с тестами Этапа 2."""
         dummy_layer = MapLayer(
             id="default_boundary",
             source_name="default",
@@ -203,6 +197,93 @@ class MapCanvas(QGraphicsView):
             },
         )
         self.add_layer_item(dummy_layer, gdf)
+
+    # -------------------------------------------------------------------------
+    # Пользовательские точки (Этап 4)
+    # -------------------------------------------------------------------------
+
+    def add_user_point(self, point: MapPoint) -> None:
+        """Отображение пользовательской точки на холсте.
+
+        Использует флаг ItemIgnoresTransformations: маркер всегда имеет фиксированный
+        комфортный размер на экране (12px), независимо от текущего масштаба карты.
+        """
+        # Удаляем предыдущий элемент, если был
+        self.remove_user_point(point.id)
+
+        radius = 6.0
+        item = QGraphicsEllipseItem(-radius, -radius, radius * 2, radius * 2)
+
+        pen = QPen(QColor("#FFFFFF"))
+        pen.setWidthF(1.5)
+        pen.setCosmetic(True)
+        item.setPen(pen)
+
+        brush = QBrush(QColor("#E63946"))
+        item.setBrush(brush)
+
+        # Инвариантность к масштабу карты (размер значка постоянен на экране)
+        item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+        # Пользовательские точки располагаются поверх всех слоев
+        item.setZValue(100.0)
+
+        # Единое преобразование: X = lon, Y = -lat
+        item.setPos(point.longitude, -point.latitude)
+        item.setVisible(point.visible)
+
+        self._scene.addItem(item)
+        self._user_point_items[point.id] = item
+        logger.info(
+            "Пользовательская точка '%s' добавлена на карту: pos=(%s, %s)",
+            point.name, point.longitude, -point.latitude,
+        )
+
+    def remove_user_point(self, point_id: str) -> None:
+        """Удаление пользовательской точки с карты."""
+        if point_id in self._user_point_items:
+            item = self._user_point_items.pop(point_id)
+            self._scene.removeItem(item)
+            logger.info("Пользовательская точка '%s' удалена с карты", point_id)
+
+    def clear_user_points(self) -> None:
+        """Удаление всех пользовательских точек с карты."""
+        for item in self._user_point_items.values():
+            self._scene.removeItem(item)
+        self._user_point_items.clear()
+        logger.info("Все пользовательские точки очищены с карты")
+
+    def has_user_point(self, point_id: str) -> bool:
+        """Проверка наличия маркера точки на холсте."""
+        return point_id in self._user_point_items
+
+    def center_on_coordinates(
+        self,
+        longitude: float,
+        latitude: float,
+        min_zoom: float = 350.0,
+    ) -> None:
+        """Центрирование карты на заданных географических координатах.
+
+        Если текущий масштаб слишком мелкий, выполняется умеренное приближение
+        для комфортного детального обзора точки.
+        """
+        scene_pos = QPointF(longitude, -latitude)
+        self.centerOn(scene_pos)
+
+        current_scale = self.transform().m11()
+        if current_scale < min_zoom:
+            factor = min_zoom / current_scale
+            self.scale(factor, factor)
+            logger.info("Масштаб увеличен при центрировании: x%s", factor)
+
+        logger.info(
+            "Карта отцентрирована на точке: lon=%s, lat=%s (scene=%s)",
+            longitude, latitude, scene_pos,
+        )
+
+    # -------------------------------------------------------------------------
+    # Вспомогательное построение геометрии
+    # -------------------------------------------------------------------------
 
     def _build_path_from_geodataframe(
         self,
@@ -237,7 +318,6 @@ class MapCanvas(QGraphicsView):
 
     @staticmethod
     def _append_polygon(path: QPainterPath, polygon: Polygon) -> None:
-        """Добавление полигона в составной путь с инверсией оси Y."""
         exterior_coords = list(polygon.exterior.coords)
         if exterior_coords:
             start_x, start_y = exterior_coords[0]
@@ -257,7 +337,6 @@ class MapCanvas(QGraphicsView):
 
     @staticmethod
     def _append_linestring(path: QPainterPath, line: LineString) -> None:
-        """Добавление линии в составной путь с инверсией оси Y."""
         coords = list(line.coords)
         if coords:
             path.moveTo(coords[0][0], -coords[0][1])
@@ -266,7 +345,6 @@ class MapCanvas(QGraphicsView):
 
     def fit_to_view(self) -> None:
         """Вписывание карты в окно по охвату границы Республики Марий Эл."""
-        # Охват рассчитывается строго по административной границе, если она есть
         target_rect = self._boundary_bounds
         if target_rect is None or not target_rect.isValid() or target_rect.isEmpty():
             items_rect = self._scene.itemsBoundingRect()
@@ -275,7 +353,6 @@ class MapCanvas(QGraphicsView):
             else:
                 return
 
-        # Добавляем 5% отступ вокруг границы
         padding_x = target_rect.width() * 0.05
         padding_y = target_rect.height() * 0.05
         padded_rect = target_rect.adjusted(-padding_x, -padding_y, padding_x, padding_y)
@@ -292,6 +369,7 @@ class MapCanvas(QGraphicsView):
         self._scene.clear()
         self._boundary_bounds = None
         self._layer_items.clear()
+        self._user_point_items.clear()
         self.resetTransform()
 
         text_item = QGraphicsTextItem()
@@ -311,7 +389,6 @@ class MapCanvas(QGraphicsView):
         logger.warning("Холст переведен в режим ошибки: %s", message)
 
     def wheelEvent(self, event: QWheelEvent) -> None:
-        """Обработка масштабирования карты колесиком мыши."""
         delta = event.angleDelta().y()
         if delta == 0:
             return
@@ -327,13 +404,11 @@ class MapCanvas(QGraphicsView):
             event.ignore()
 
     def showEvent(self, event: QShowEvent) -> None:
-        """Обработка первого показа виджета на экране."""
         super().showEvent(event)
         if not self._initial_fit_done and (self._boundary_bounds or self._layer_items):
             self.fit_to_view()
 
     def resizeEvent(self, event: QResizeEvent) -> None:
-        """Обработка изменения размера окна: перепозиционирование кнопки и автоподгонка."""
         super().resizeEvent(event)
 
         btn_margin = 12
