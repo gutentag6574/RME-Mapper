@@ -10,24 +10,26 @@ from rme_mapper.models.map_point import MapPoint
 class ProjectMapData:
     """Данные о подключенной карте проекта."""
 
-    map_id: str = "test_map"
+    map_id: str = "mari_el"
     relative_path: str = "maps/test_map/prepared/mari.gpkg"
 
     def to_dict(self) -> dict[str, Any]:
         """Преобразование в словарь для JSON-сериализации."""
-        return {
+        res: dict[str, Any] = {
             "map_id": self.map_id,
-            "relative_path": self.relative_path,
         }
+        if self.relative_path:
+            res["relative_path"] = self.relative_path
+        return res
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "ProjectMapData":
-        """Создание экземпляра из словаря."""
+        """Создание экземпляра из словаря с поддержкой обратной совместимости."""
         if not data or not isinstance(data, dict):
             return cls()
         return cls(
-            map_id=str(data.get("map_id", "test_map")),
-            relative_path=str(data.get("relative_path", "maps/test_map/prepared/mari.gpkg")),
+            map_id=str(data.get("map_id") or "mari_el"),
+            relative_path=str(data.get("relative_path") or data.get("path") or "maps/test_map/prepared/mari.gpkg"),
         )
 
 

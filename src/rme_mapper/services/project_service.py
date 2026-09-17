@@ -197,6 +197,7 @@ class ProjectService:
         map_path: Path | str,
         layers: list[MapLayer],
         points: list[MapPoint],
+        map_id: str = "mari_el",
     ) -> ProjectData:
         """Сборка модели ProjectData из текущего состояния приложения."""
         # Относительный путь к карте
@@ -210,7 +211,7 @@ class ProjectService:
             rel_path = "maps/test_map/prepared/mari.gpkg"
 
         map_data = ProjectMapData(
-            map_id="test_map",
+            map_id=map_id,
             relative_path=rel_path,
         )
 

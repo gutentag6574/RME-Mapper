@@ -92,7 +92,7 @@ def test_main_window_panels_and_placeholders(qapp):
     assert hasattr(window, "center_panel")
     assert hasattr(window, "map_placeholder")
     center_labels = [lbl.text() for lbl in window.center_panel.findChildren(QLabel)]
-    assert any("Карта Республики Марий Эл" in lbl for lbl in center_labels)
+    assert any("Республика Марий Эл" in lbl for lbl in center_labels)
 
     # Правая панель: Свойства
     assert hasattr(window, "right_panel")

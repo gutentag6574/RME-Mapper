@@ -32,10 +32,13 @@ from rme_mapper.maps.map_canvas import MapCanvas
 from rme_mapper.maps.map_config import get_default_geopackage_path
 from rme_mapper.models.map_layer import LayerRole, MapLayer
 from rme_mapper.models.map_point import MapPoint
+from rme_mapper.models.map_profile import MapProfile
 from rme_mapper.models.project_data import ProjectData
+from rme_mapper.services.coordinate_service import CoordinateService
 from rme_mapper.services.geodesic_service import GeodesicService
 from rme_mapper.services.geopackage_service import GeoPackageService
 from rme_mapper.services.layer_service import LayerService
+from rme_mapper.services.map_catalog_service import MapCatalogService
 from rme_mapper.services.point_service import PointService
 from rme_mapper.services.project_service import ProjectService
 from rme_mapper.ui.add_point_dialog import AddPointDialog, PointDialog
@@ -58,22 +61,38 @@ class MainWindow(QMainWindow):
     def __init__(
         self,
         parent: QWidget | None = None,
+        map_profile: MapProfile | None = None,
         map_path: Path | str | None = None,
     ) -> None:
         super().__init__(parent)
         self.resize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
 
-        self._map_path = Path(map_path) if map_path else get_default_geopackage_path()
+        self._map_catalog_service = MapCatalogService()
         self._layer_service = LayerService()
         self._point_service = PointService()
         self._project_service = ProjectService()
+
+        # Активный профиль карты и активный CRS
+        if map_profile is not None:
+            self._active_profile: MapProfile | None = map_profile
+        elif map_path is not None:
+            self._active_profile = self._map_catalog_service.get_profile_by_path(map_path)
+        else:
+            self._active_profile = self._map_catalog_service.get_default_profile()
+
+        if self._active_profile:
+            self._map_path: Path = self._active_profile.get_absolute_source_path()
+            self._active_crs: str = self._active_profile.crs or "OGC:CRS84"
+        else:
+            self._map_path = Path(map_path) if map_path else get_default_geopackage_path()
+            self._active_crs = "OGC:CRS84"
 
         # Текущий проект и отслеживание изменений
         self._current_project_path: Path | None = None
         self._is_modified: bool = False
         self._project_loaded: bool = False
 
-        # Геометрия границы РМЭ (для проверки выхода за пределы)
+        # Геометрия границы активной карты
         self._boundary_geometry = None
 
         # Словарь чекбоксов слоев: layer_id -> QCheckBox
@@ -85,7 +104,7 @@ class MainWindow(QMainWindow):
 
         self._setup_ui()
         self.setWindowTitle("RME Mapper — Географическая привязка координат")
-        self.load_map(self._map_path)
+        self.load_map(self._active_profile if self._active_profile else self._map_path)
 
     def _setup_ui(self) -> None:
         """Инициализация компонентов интерфейса."""
@@ -274,12 +293,13 @@ class MainWindow(QMainWindow):
         layout.setSpacing(6)
 
         header_layout = QVBoxLayout()
-        header_label = QLabel("Карта Республики Марий Эл")
+        map_name_init = self._active_profile.name if self._active_profile else "Карта"
+        self.map_title_label = QLabel(f"Карта: {map_name_init}")
         header_font = QFont()
         header_font.setBold(True)
         header_font.setPointSize(12)
-        header_label.setFont(header_font)
-        header_layout.addWidget(header_label)
+        self.map_title_label.setFont(header_font)
+        header_layout.addWidget(self.map_title_label)
         layout.addLayout(header_layout)
 
         self.map_canvas = MapCanvas(panel)
@@ -383,10 +403,21 @@ class MainWindow(QMainWindow):
         status_bar.showMessage("Готово")
         self.setStatusBar(status_bar)
 
-    def load_map(self, map_path: Path | str) -> None:
-        """Загрузка слоев карты из указанного GeoPackage."""
-        path = Path(map_path)
-        logger.info("Загрузка карты из: %s", path)
+    def load_map(self, map_target: MapProfile | Path | str) -> None:
+        """Загрузка слоев карты из MapProfile или пути к файлу."""
+        profile: MapProfile | None = None
+        if isinstance(map_target, MapProfile):
+            profile = map_target
+            path = profile.get_absolute_source_path()
+        else:
+            path = Path(map_target)
+            profile = self._map_catalog_service.get_profile_by_path(path)
+
+        self._active_profile = profile
+        self._map_path = path
+
+        map_title = profile.name if profile else path.stem
+        logger.info("Загрузка карты '%s' из: %s", map_title, path)
 
         if not GeoPackageService.exists(path):
             err_msg = f"Не найден файл карты:\n{path}"
@@ -396,11 +427,15 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            discovered_layers = self._layer_service.discover_layers(path)
+            if profile:
+                discovered_layers = self._layer_service.load_profile_layers(profile)
+            else:
+                discovered_layers = self._layer_service.discover_layers(path)
+
             logger.info("Обнаружено поддерживаемых слоев: %d", len(discovered_layers))
 
             if not discovered_layers:
-                err_msg = "В GeoPackage не найдено поддерживаемых картографических слоев"
+                err_msg = "В источнике карты не найдено поддерживаемых картографических слоев"
                 logger.error(err_msg)
                 self.map_canvas.set_error(err_msg)
                 self.statusBar().showMessage("Ошибка: поддерживаемые слои не найдены")
@@ -409,18 +444,23 @@ class MainWindow(QMainWindow):
             self._clear_layer_checkboxes()
 
             successfully_loaded: list[MapLayer] = []
-            common_crs = "OGC:CRS84"
+            common_crs = (profile.crs if profile and profile.crs else None) or "OGC:CRS84"
+            self._boundary_geometry = None
 
             for layer in discovered_layers:
                 try:
                     logger.info("Загрузка слоя '%s' (%s)...", layer.display_name, layer.source_name)
                     gdf = self._layer_service.load_layer_data(path, layer)
 
-                    if gdf.crs:
+                    if gdf.crs and not (profile and profile.crs):
                         common_crs = gdf.crs.to_string()
 
-                    # Сохраняем полигон границы для проверки точек
-                    if layer.role == LayerRole.BOUNDARY:
+                    # Сохраняем геометрию границы
+                    is_boundary = (layer.role == LayerRole.BOUNDARY)
+                    if profile and profile.boundary_layer:
+                        is_boundary = (layer.source_name == profile.boundary_layer or layer.id == profile.boundary_layer)
+
+                    if is_boundary:
                         try:
                             self._boundary_geometry = gdf.union_all()
                         except AttributeError:
@@ -432,20 +472,50 @@ class MainWindow(QMainWindow):
 
                 except Exception as layer_err:
                     logger.exception("Ошибка загрузки слоя '%s': %s", layer.display_name, layer_err)
-                    if layer.role == LayerRole.BOUNDARY:
-                        self.map_canvas.set_error(f"Ошибка чтения границы РМЭ:\n{layer_err}")
+                    if (profile and profile.boundary_required and layer.role == LayerRole.BOUNDARY):
+                        self.map_canvas.set_error(f"Ошибка чтения границы карты:\n{layer_err}")
                         self.statusBar().showMessage("Ошибка чтения границы карты")
                         return
 
             self.loaded_layers = successfully_loaded
-            status_text = f"Карта загружена | {common_crs} | Слоёв: {len(successfully_loaded)}"
+            self._active_crs = common_crs
+
+            # Обновляем заголовок и строку состояния
+            self.map_title_label.setText(f"Карта: {map_title}")
+            status_text = f"Карта загружена: {map_title} | {self._active_crs} | Слоёв: {len(successfully_loaded)}"
             self.statusBar().showMessage(status_text)
             logger.info("Карта успешно загружена. %s", status_text)
+
+            # Пересчитываем пользовательские точки под новую CRS
+            self._reproject_all_points()
+
+            # Автоподгонка охвата
+            self.map_canvas.fit_to_view()
 
         except Exception as e:
             logger.exception("Критическая ошибка при загрузке карты из %s: %s", path, e)
             self.map_canvas.set_error(f"Ошибка при чтении карты:\n{e}")
             self.statusBar().showMessage("Ошибка загрузки карты")
+
+    def _reproject_all_points(self) -> None:
+        """Пересчет экранных координат всех точек и полигонов зон под активный CRS карты."""
+        for pt in self._point_service.get_points():
+            mx, my = CoordinateService.transform_xy(
+                pt.longitude, pt.latitude,
+                source_crs=pt.source_crs,
+                target_crs=self._active_crs,
+            )
+            zone_poly = None
+            if pt.zone_enabled and pt.radius_m > 0:
+                geo_circle = GeodesicService.create_geodesic_circle(
+                    pt.longitude, pt.latitude, pt.radius_m
+                )
+                zone_poly = CoordinateService.transform_polygon(
+                    geo_circle,
+                    source_crs="EPSG:4326",
+                    target_crs=self._active_crs,
+                )
+            self.map_canvas.add_user_point(pt, map_x=mx, map_y=my, zone_polygon=zone_poly)
 
     def _clear_layer_checkboxes(self) -> None:
         """Очистка всех чекбоксов слоев."""
@@ -487,6 +557,9 @@ class MainWindow(QMainWindow):
             boundary_geometry=self._boundary_geometry,
             default_name=auto_name,
             mode="CREATE",
+            map_name=self._active_profile.name if self._active_profile else None,
+            map_extent=self._active_profile.extent if self._active_profile else None,
+            map_crs=self._active_crs,
         )
         if dialog.exec():
             data = dialog.get_point_data()
@@ -507,7 +580,22 @@ class MainWindow(QMainWindow):
                     zone_blue=data.zone_blue,
                     zone_opacity=data.zone_opacity,
                 )
-                self.map_canvas.add_user_point(point)
+                mx, my = CoordinateService.transform_xy(
+                    point.longitude, point.latitude,
+                    source_crs=point.source_crs,
+                    target_crs=self._active_crs,
+                )
+                zone_poly = None
+                if point.zone_enabled and point.radius_m > 0:
+                    geo_c = GeodesicService.create_geodesic_circle(
+                        point.longitude, point.latitude, point.radius_m
+                    )
+                    zone_poly = CoordinateService.transform_polygon(
+                        geo_c,
+                        source_crs="EPSG:4326",
+                        target_crs=self._active_crs,
+                    )
+                self.map_canvas.add_user_point(point, map_x=mx, map_y=my, zone_polygon=zone_poly)
                 self._add_point_to_table(point)
                 self._set_modified(True)
                 self.statusBar().showMessage(f"Добавлена точка: {point.name}", 3000)
@@ -532,6 +620,9 @@ class MainWindow(QMainWindow):
             boundary_geometry=self._boundary_geometry,
             point=point,
             mode="EDIT",
+            map_name=self._active_profile.name if self._active_profile else None,
+            map_extent=self._active_profile.extent if self._active_profile else None,
+            map_crs=self._active_crs,
         )
         if dialog.exec():
             data = dialog.get_point_data()
@@ -553,7 +644,22 @@ class MainWindow(QMainWindow):
                     zone_blue=data.zone_blue,
                     zone_opacity=data.zone_opacity,
                 )
-                self.map_canvas.update_user_point(updated)
+                mx, my = CoordinateService.transform_xy(
+                    updated.longitude, updated.latitude,
+                    source_crs=updated.source_crs,
+                    target_crs=self._active_crs,
+                )
+                zone_poly = None
+                if updated.zone_enabled and updated.radius_m > 0:
+                    geo_c = GeodesicService.create_geodesic_circle(
+                        updated.longitude, updated.latitude, updated.radius_m
+                    )
+                    zone_poly = CoordinateService.transform_polygon(
+                        geo_c,
+                        source_crs="EPSG:4326",
+                        target_crs=self._active_crs,
+                    )
+                self.map_canvas.update_user_point(updated, map_x=mx, map_y=my, zone_polygon=zone_poly)
                 self._update_point_in_table(row, updated)
                 self._update_properties_panel(updated)
                 self._set_modified(True)
@@ -626,7 +732,12 @@ class MainWindow(QMainWindow):
             point_id = self._table_point_ids[row]
             point = self._point_service.get_point(point_id)
             if point:
-                self.map_canvas.center_on_coordinates(point.longitude, point.latitude)
+                mx, my = CoordinateService.transform_xy(
+                    point.longitude, point.latitude,
+                    source_crs=point.source_crs,
+                    target_crs=self._active_crs,
+                )
+                self.map_canvas.center_on_map_coordinates(mx, my)
                 self.statusBar().showMessage(f"Фокус на точке: {point.name}", 2000)
 
     def _on_table_selection_changed(self) -> None:
@@ -814,7 +925,9 @@ class MainWindow(QMainWindow):
         """Атомарная запись проекта через ProjectService."""
         try:
             points = self._point_service.get_points()
+            map_id = self._active_profile.id if self._active_profile else "mari_el"
             project_data = self._project_service.build_project_data(
+                map_id=map_id,
                 map_path=self._map_path,
                 layers=self.loaded_layers,
                 points=points,
@@ -863,6 +976,17 @@ class MainWindow(QMainWindow):
                 f"Не удалось открыть файл проекта:\n{path}\n\n{e}",
             )
             return False
+
+        # Разрешаем карту проекта через MapCatalogService
+        map_id = project.map.map_id
+        profile = self._map_catalog_service.get_profile(map_id)
+        if not profile and project.map.relative_path:
+            profile = self._map_catalog_service.get_profile_by_path(project.map.relative_path)
+
+        if profile:
+            self.load_map(profile)
+        elif project.map.relative_path:
+            self.load_map(project.map.relative_path)
 
         self._apply_project_data(project)
         self._current_project_path = path
@@ -914,7 +1038,22 @@ class MainWindow(QMainWindow):
                 zone_blue=pt.zone_blue,
                 zone_opacity=pt.zone_opacity,
             )
-            self.map_canvas.add_user_point(added_pt)
+            mx, my = CoordinateService.transform_xy(
+                added_pt.longitude, added_pt.latitude,
+                source_crs=added_pt.source_crs,
+                target_crs=self._active_crs,
+            )
+            zone_poly = None
+            if added_pt.zone_enabled and added_pt.radius_m > 0:
+                geo_c = GeodesicService.create_geodesic_circle(
+                    added_pt.longitude, added_pt.latitude, added_pt.radius_m
+                )
+                zone_poly = CoordinateService.transform_polygon(
+                    geo_c,
+                    source_crs="EPSG:4326",
+                    target_crs=self._active_crs,
+                )
+            self.map_canvas.add_user_point(added_pt, map_x=mx, map_y=my, zone_polygon=zone_poly)
             self._add_point_to_table(added_pt)
 
     def _clear_all_points(self) -> None:

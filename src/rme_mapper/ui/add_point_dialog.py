@@ -151,12 +151,18 @@ class PointDialog(QDialog):
         default_name: str = "",
         point: MapPoint | None = None,
         mode: str = "CREATE",
+        map_name: str | None = None,
+        map_extent: dict[str, float] | tuple[float, float, float, float] | list[float] | None = None,
+        map_crs: str = "OGC:CRS84",
     ) -> None:
         super().__init__(parent)
         self._boundary_geometry = boundary_geometry
         self._point = point
         self.mode = "EDIT" if point is not None else mode.upper()
         self._parsed_data: PointDialogData | None = None
+        self._map_name = map_name
+        self._map_extent = map_extent
+        self._map_crs = map_crs
 
         if self.mode == "EDIT":
             self.setWindowTitle("Редактировать точку")
@@ -678,24 +684,31 @@ class PointDialog(QDialog):
 
         name = self.name_edit.text().strip()
 
-        # 4. Проверка выхода центра точки за границу РМЭ
+        # 4. Проверка выхода центра точки за пределы рабочей области карты
+        is_inside = True
         if self._boundary_geometry is not None:
             is_inside = CoordinateService.is_point_inside_boundary(
                 longitude=lon,
                 latitude=lat,
                 boundary_geometry=self._boundary_geometry,
             )
-            if not is_inside:
-                logger.info("Точка (%s, %s) вне границы РМЭ", lon, lat)
-                reply = QMessageBox.question(
-                    self,
-                    "Предупреждение",
-                    "Координата находится за пределами Республики Марий Эл.\nСохранить точку?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No,
-                )
-                if reply != QMessageBox.StandardButton.Yes:
-                    return
+        elif self._map_extent is not None:
+            # Трансформируем точку в CRS активной карты и проверяем extent
+            mx, my = CoordinateService.transform_xy(lon, lat, "EPSG:4326", self._map_crs)
+            is_inside = CoordinateService.is_point_inside_extent(mx, my, self._map_extent)
+
+        if not is_inside:
+            logger.info("Точка (%s, %s) вне рабочей области карты", lon, lat)
+            map_name_str = f"карты «{self._map_name}»" if self._map_name else "выбранной карты"
+            reply = QMessageBox.question(
+                self,
+                "Предупреждение",
+                f"Координата находится за пределами рабочей области {map_name_str}.\nСохранить точку?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
 
         self._parsed_data = PointDialogData(
             name=name,
@@ -713,7 +726,11 @@ class PointDialog(QDialog):
             zone_blue=z_b,
             zone_opacity=opacity,
         )
-        self.accept()
+        super().accept()
+
+    def accept(self) -> None:
+        """Переопределение accept для выполнения полной валидации перед закрытием."""
+        self._validate_and_submit()
 
     def get_point_data(self) -> PointDialogData | None:
         """Возвращает проверенные данные точки после успешного завершения."""

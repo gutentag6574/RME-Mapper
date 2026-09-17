@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "test_projected_map",
+  "name": "Тестовая спроецированная карта",
+  "description": "Тестовый профиль карты в проекции EPSG:3857 (без границы)",
+  "source": {
+    "type": "geopackage",
+    "path": "projected.gpkg"
+  },
+  "crs": "EPSG:3857",
+  "boundary": null,
+  "layers": [
+    {
+      "id": "features",
+      "display_name": "Тестовые объекты",
+      "source_name": "features",
+      "role": "UNKNOWN",
+      "visible": true
+    }
+  ],
+  "extent": {
+    "xmin": 5200000.0,
+    "ymin": 7500000.0,
+    "xmax": 5500000.0,
+    "ymax": 7800000.0
+  }
+}

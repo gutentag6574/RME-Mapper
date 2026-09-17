@@ -1,5 +1,6 @@
 """Сервис обнаружения, типизации и кэширования картографических слоев."""
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -7,13 +8,14 @@ from typing import Any
 import geopandas as gpd
 
 from rme_mapper.models.map_layer import LayerRole, MapLayer
+from rme_mapper.models.map_profile import MapProfile
 from rme_mapper.services.geopackage_service import GeoPackageService
 
 logger = logging.getLogger("rme_mapper.services.layer")
 
-# Стандартные отображаемые имена для ролей слоев
+# Стандартные нейтральные отображаемые имена для ролей слоев
 ROLE_DISPLAY_NAMES: dict[LayerRole, str] = {
-    LayerRole.BOUNDARY: "Граница РМЭ",
+    LayerRole.BOUNDARY: "Граница",
     LayerRole.ROADS: "Дороги",
     LayerRole.WATER: "Водоемы",
     LayerRole.WATERWAYS: "Реки",
@@ -58,15 +60,98 @@ class LayerService:
         # Кэш в памяти: "путь_к_файлу:имя_слоя" -> GeoDataFrame
         self._cache: dict[str, gpd.GeoDataFrame] = {}
 
+    def load_profile_layers(self, profile: MapProfile, base_dir: Path | None = None) -> list[MapLayer]:
+        """Загрузка слоев, описанных в MapProfile.
+
+        Если в профиле явно задан список слоев (profile.layers), слои настраиваются
+        согласно метаданным профиля. Иначе выполняется автоматическое обнаружение (discovery).
+        """
+        source_path = profile.get_absolute_source_path(root_dir=base_dir)
+        if not source_path.exists():
+            logger.error("Файл данных карты не существует: %s", source_path)
+            return []
+
+        if not profile.layers:
+            return self.discover_layers(source_path)
+
+        logger.info("Загрузка %d слоев из профиля '%s'", len(profile.layers), profile.name)
+        discovered: list[MapLayer] = []
+        raw_layers_info = {name: geom for name, geom in GeoPackageService.list_layers(source_path)}
+
+        for layer_cfg in profile.layers:
+            source_name = str(layer_cfg.get("source_name") or layer_cfg.get("name") or "")
+            if not source_name or source_name not in raw_layers_info:
+                logger.warning("Слой профиля '%s' не найден в источнике %s", source_name, source_path.name)
+                continue
+
+            geom_type = raw_layers_info[source_name]
+            role_val = str(layer_cfg.get("role", "UNKNOWN")).upper()
+            try:
+                role = LayerRole[role_val]
+            except KeyError:
+                role = LayerRole.UNKNOWN
+
+            # Если слой указан как граничный в профиле
+            if profile.boundary_layer and (source_name == profile.boundary_layer or layer_cfg.get("id") == "boundary"):
+                role = LayerRole.BOUNDARY
+
+            try:
+                meta = GeoPackageService.get_layer_metadata(source_path, source_name)
+                crs_val = meta.get("crs")
+                crs_str = crs_val.to_string() if hasattr(crs_val, "to_string") else str(crs_val)
+                feature_count = meta.get("features_count") or 0
+            except Exception as err:
+                logger.warning("Не удалось получить метаданные слоя '%s': %s", source_name, err)
+                crs_str = profile.crs or "OGC:CRS84"
+                feature_count = 0
+
+            display_name = str(layer_cfg.get("display_name") or ROLE_DISPLAY_NAMES.get(role, source_name))
+            layer_id = str(layer_cfg.get("id") or f"layer_{role.value}_{source_name}")
+            visible = bool(layer_cfg.get("visible", True))
+
+            style = layer_cfg.get("style")
+            if not style or not isinstance(style, dict):
+                style = ROLE_STYLES.get(role, {}).copy()
+
+            layer = MapLayer(
+                id=layer_id,
+                source_name=source_name,
+                display_name=display_name,
+                geometry_type=geom_type,
+                crs=crs_str,
+                visible=visible,
+                feature_count=feature_count,
+                role=role,
+                style=style,
+            )
+            discovered.append(layer)
+
+        discovered.sort(key=lambda x: x.z_order)
+        return discovered
+
     def discover_layers(self, gpkg_path: Path | str) -> list[MapLayer]:
         """Обнаружение и классификация поддерживаемых слоев в GeoPackage.
 
         Возвращает список поддерживаемых слоев, отсортированных по z_order.
-        Неизвестные/неподдерживаемые слои исключаются из автоматической загрузки.
         """
         p = Path(gpkg_path)
         raw_layers = GeoPackageService.list_layers(p)
         logger.info("Анализ слоев в %s: %s", p.name, raw_layers)
+
+        # Пытаемся найти metadata.json рядом для извлечения настроенных имен слоев
+        meta_layers: dict[str, dict[str, Any]] = {}
+        for candidate_dir in [p.parent, p.parent.parent]:
+            meta_json = candidate_dir / "metadata.json"
+            if meta_json.is_file():
+                try:
+                    with open(meta_json, "r", encoding="utf-8") as f:
+                        meta_data = json.load(f)
+                    for item in meta_data.get("layers", []):
+                        if isinstance(item, dict) and "source_name" in item:
+                            meta_layers[item["source_name"]] = item
+                    break
+                except Exception:
+                    pass
 
         discovered: list[MapLayer] = []
 
@@ -87,16 +172,21 @@ class LayerService:
                 crs_str = "OGC:CRS84"
                 feature_count = 0
 
+            # Имя отображения: берем из metadata.json если есть, иначе из ROLE_DISPLAY_NAMES
+            layer_meta = meta_layers.get(name, {})
+            custom_name = layer_meta.get("display_name")
+            display_name = custom_name if custom_name else ROLE_DISPLAY_NAMES.get(role, name)
+
             layer = MapLayer(
-                id=f"layer_{role.value}_{name}",
+                id=layer_meta.get("id", f"layer_{role.value}_{name}"),
                 source_name=name,
-                display_name=ROLE_DISPLAY_NAMES.get(role, name),
+                display_name=display_name,
                 geometry_type=geom_type,
                 crs=crs_str,
-                visible=True,
+                visible=bool(layer_meta.get("visible", True)),
                 feature_count=feature_count,
                 role=role,
-                style=ROLE_STYLES.get(role, {}).copy(),
+                style=layer_meta.get("style") or ROLE_STYLES.get(role, {}).copy(),
             )
             discovered.append(layer)
             logger.info("Зарегистрирован слой: %s (роль=%s, объектов=%d, z=%d)",
@@ -112,7 +202,7 @@ class LayerService:
         layer_name: str,
         geom_type: str,
     ) -> LayerRole:
-        """Определение роли слоя по имени и типу геометрии."""
+        """Определение роли слоя по имени и типу геометрии без привязки к конкретным регионам."""
         lower = layer_name.lower()
         geom = geom_type.lower()
 
@@ -120,9 +210,6 @@ class LayerService:
         if any(k in lower for k in ("admin", "boundary", "border")):
             if "polygon" in geom:
                 return LayerRole.BOUNDARY
-        # Дополнительная проверка на случай имени вроде mari_el
-        if "mari" in lower and "polygon" in geom:
-            return LayerRole.BOUNDARY
 
         # 2. Дороги
         if any(k in lower for k in ("road", "roads", "highway", "street")):
@@ -148,11 +235,7 @@ class LayerService:
         return LayerRole.UNKNOWN
 
     def load_layer_data(self, gpkg_path: Path | str, layer: MapLayer) -> gpd.GeoDataFrame:
-        """Загрузка данных слоя с использованием кэша в памяти.
-
-        При повторном запросе данные возвращаются из оперативной памяти
-        без повторного обращения к диску.
-        """
+        """Загрузка данных слоя с использованием кэша в памяти."""
         p = Path(gpkg_path)
         cache_key = f"{p.resolve()}:{layer.source_name}"
 

@@ -149,13 +149,21 @@ class MapCanvas(QGraphicsView):
         item.setVisible(layer.visible)
         self._layer_items[layer.id] = item
 
-        # Если это граница РМЭ, сохраняем ее охват как эталон для fit_to_view
+        # Если это граница, сохраняем ее охват как эталон для fit_to_view
         if layer.role == LayerRole.BOUNDARY:
             rect = item.boundingRect()
             if rect.isValid() and not rect.isEmpty():
                 self._boundary_bounds = rect
                 self._scene.setSceneRect(rect)
-                logger.info("Установлен эталонный охват границы РМЭ: %s", rect)
+                logger.info("Установлен эталонный охват границы карты: %s", rect)
+        elif self._boundary_bounds is None:
+            # Для карт без границы расширяем sceneRect по добавленным слоям
+            cur_rect = self._scene.sceneRect()
+            item_rect = item.boundingRect()
+            if cur_rect.isEmpty() or not cur_rect.isValid():
+                self._scene.setSceneRect(item_rect)
+            else:
+                self._scene.setSceneRect(cur_rect.united(item_rect))
 
         # Выполняем автоподгонку, если виджет уже отображается
         if self.viewport().width() > 100 and self.viewport().height() > 100:
@@ -225,14 +233,24 @@ class MapCanvas(QGraphicsView):
 
         return path
 
-    def add_user_point(self, point: MapPoint) -> None:
+    def add_user_point(
+        self,
+        point: MapPoint,
+        map_x: float | None = None,
+        map_y: float | None = None,
+        zone_polygon: Polygon | None = None,
+    ) -> None:
         """Отображение пользовательской точки на холсте.
 
-        Использует флаг ItemIgnoresTransformations: маркер сохраняет постоянный
-        экранный размер в пикселях (point.size), независимо от масштаба карты.
+        Использует координаты активного CRS карты (map_x, map_y).
+        Если они не переданы, по умолчанию используются point.longitude, point.latitude.
+        Флаг ItemIgnoresTransformations сохраняет постоянный размер маркера в пикселях.
         """
         # Удаляем предыдущий элемент, если был
         self.remove_user_point(point.id)
+
+        px = point.longitude if map_x is None else float(map_x)
+        py = point.latitude if map_y is None else float(map_y)
 
         path = self._create_marker_path(point.symbol, point.size)
         item = QGraphicsPathItem(path)
@@ -250,22 +268,30 @@ class MapCanvas(QGraphicsView):
         # Пользовательские точки располагаются поверх всех слоев
         item.setZValue(100.0)
 
-        # Единое преобразование: X = lon, Y = -lat
-        item.setPos(point.longitude, -point.latitude)
+        # Преобразование координат сцены: scene_x = map_x, scene_y = -map_y
+        item.setPos(px, -py)
         item.setVisible(point.visible)
 
         self._scene.addItem(item)
         self._user_point_items[point.id] = item
         logger.info(
-            "Пользовательская точка '%s' добавлена на карту: pos=(%s, %s), shape=%s, size=%s, rgb=(%s,%s,%s)",
-            point.name, point.longitude, -point.latitude,
-            point.symbol, point.size, point.red, point.green, point.blue,
+            "Пользовательская точка '%s' добавлена на карту: pos=(%s, %s), shape=%s, size=%s",
+            point.name, px, -py, point.symbol, point.size,
         )
         # Синхронно добавляем/обновляем зону радиуса
-        self.update_point_zone(point)
+        self.update_point_zone(point, zone_polygon=zone_polygon, map_coords=(px, py))
 
-    def update_user_point(self, point: MapPoint) -> None:
+    def update_user_point(
+        self,
+        point: MapPoint,
+        map_x: float | None = None,
+        map_y: float | None = None,
+        zone_polygon: Polygon | None = None,
+    ) -> None:
         """Мгновенное обновление маркера и зоны существующей точки без пересоздания карты."""
+        px = point.longitude if map_x is None else float(map_x)
+        py = point.latitude if map_y is None else float(map_y)
+
         item = self._user_point_items.get(point.id)
         if item is not None and isinstance(item, QGraphicsPathItem):
             path = self._create_marker_path(point.symbol, point.size)
@@ -274,38 +300,61 @@ class MapCanvas(QGraphicsView):
             brush = QBrush(QColor(point.red, point.green, point.blue))
             item.setBrush(brush)
 
-            item.setPos(point.longitude, -point.latitude)
+            item.setPos(px, -py)
             item.setVisible(point.visible)
             logger.info(
                 "Маркер точки '%s' обновлен: pos=(%s, %s), shape=%s, size=%s",
-                point.name, point.longitude, -point.latitude, point.symbol, point.size,
+                point.name, px, -py, point.symbol, point.size,
             )
         else:
-            self.add_user_point(point)
+            self.add_user_point(point, map_x=px, map_y=py, zone_polygon=zone_polygon)
+            return
 
         # Синхронно обновляем зону радиуса
-        self.update_point_zone(point)
+        self.update_point_zone(point, zone_polygon=zone_polygon, map_coords=(px, py))
 
     # -------------------------------------------------------------------------
-    # Географические зоны радиуса (Этап 7)
+    # Географические зоны радиуса (Этапы 7 и 9)
     # -------------------------------------------------------------------------
 
     @staticmethod
-    def _create_zone_path(longitude: float, latitude: float, radius_m: float) -> QPainterPath:
-        """Создание QPainterPath для геодезической зоны радиуса."""
-        polygon = GeodesicService.create_geodesic_circle(longitude, latitude, radius_m)
-        coords = list(polygon.exterior.coords)
+    def _create_zone_path_from_polygon(polygon: Polygon) -> QPainterPath:
+        """Создание QPainterPath из Shapely Polygon с преобразованием y = -y."""
         path = QPainterPath()
-        if coords:
-            # Преобразование координат сцены: x = lon, y = -lat
-            path.moveTo(coords[0][0], -coords[0][1])
-            for lon, lat in coords[1:]:
-                path.lineTo(lon, -lat)
+        path.setFillRule(Qt.FillRule.OddEvenFill)
+        if polygon is None or polygon.is_empty:
+            return path
+
+        exterior_coords = list(polygon.exterior.coords)
+        if exterior_coords:
+            path.moveTo(exterior_coords[0][0], -exterior_coords[0][1])
+            for x, y in exterior_coords[1:]:
+                path.lineTo(x, -y)
             path.closeSubpath()
+
+        for interior in polygon.interiors:
+            interior_coords = list(interior.coords)
+            if interior_coords:
+                path.moveTo(interior_coords[0][0], -interior_coords[0][1])
+                for x, y in interior_coords[1:]:
+                    path.lineTo(x, -y)
+                path.closeSubpath()
+
         return path
 
-    def update_point_zone(self, point: MapPoint) -> None:
-        """Отображение или обновление геодезической зоны радиуса вокруг точки.
+    @staticmethod
+    def _create_zone_path(longitude: float, latitude: float, radius_m: float) -> QPainterPath:
+        """Создание QPainterPath для геодезической зоны радиуса в WGS84 (lon/lat)."""
+        polygon = GeodesicService.create_geodesic_circle(longitude, latitude, radius_m)
+        return MapCanvas._create_zone_path_from_polygon(polygon)
+
+    def update_point_zone(
+        self,
+        point: MapPoint,
+        zone_polygon: Polygon | None = None,
+        map_coords: tuple[float, float] | None = None,
+    ) -> None:
+        """Отображение или обновление зоны радиуса вокруг точки в активном CRS карты.
 
         Зона располагается на Z=90.0 (между дорогами и маркером) и масштабируется
         вместе с картой (ItemIgnoresTransformations = False).
@@ -314,7 +363,10 @@ class MapCanvas(QGraphicsView):
             self.remove_point_zone(point.id)
             return
 
-        path = self._create_zone_path(point.longitude, point.latitude, point.radius_m)
+        if zone_polygon is not None:
+            path = self._create_zone_path_from_polygon(zone_polygon)
+        else:
+            path = self._create_zone_path(point.longitude, point.latitude, point.radius_m)
 
         alpha = int(point.zone_opacity * 255 / 100.0)
         brush_color = QColor(point.zone_red, point.zone_green, point.zone_blue, alpha)
@@ -381,6 +433,18 @@ class MapCanvas(QGraphicsView):
         """Проверка наличия маркера точки на холсте."""
         return point_id in self._user_point_items
 
+    def center_on_map_coordinates(
+        self,
+        map_x: float,
+        map_y: float,
+    ) -> None:
+        """Центрирование карты на координатах активной системы координат карты."""
+        scene_pos = QPointF(map_x, -map_y)
+        self.centerOn(scene_pos)
+        logger.info(
+            "Карта отцентрирована на координатах: map_x=%s, map_y=%s (scene=%s)",
+            map_x, map_y, scene_pos,
+        )
 
     def center_on_coordinates(
         self,
@@ -388,7 +452,7 @@ class MapCanvas(QGraphicsView):
         latitude: float,
         min_zoom: float = 350.0,
     ) -> None:
-        """Центрирование карты на заданных географических координатах.
+        """Центрирование карты на заданных географических координатах (обратная совместимость).
 
         Если текущий масштаб слишком мелкий, выполняется умеренное приближение
         для комфортного детального обзора точки.
