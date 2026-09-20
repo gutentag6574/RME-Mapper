@@ -82,6 +82,16 @@ class MapController(QObject):
         self._active_profile = profile
 
     @property
+    def current_profile(self) -> MapProfile | None:
+        """Текущий профиль карты."""
+        return self._active_profile
+
+    @property
+    def has_map(self) -> bool:
+        """Загружена ли карта (офлайн или онлайн)."""
+        return self._active_profile is not None
+
+    @property
     def map_path(self) -> Path | None:
         return self._map_path
 
@@ -191,8 +201,111 @@ class MapController(QObject):
         if self._on_map_unloaded:
             self._on_map_unloaded()
 
+    def load_online_map(
+        self,
+        profile: MapProfile | None = None,
+        provider: Any = None,
+        api_key: str | None = None,
+    ) -> bool:
+        """Подключение онлайн-подложки карты (XYZ Web Mercator)."""
+        from rme_mapper.models.online_provider import ProviderRegistry, OnlineTileProvider
+
+        # 1. Определяем провайдера
+        if provider is None and profile is not None:
+            pid = profile.provider_id or "osm_standard"
+            provider = ProviderRegistry.get_provider(pid)
+            if provider is None and profile.source_path:
+                provider = ProviderRegistry.create_custom_provider(
+                    id=profile.provider_id or f"custom_{uuid.uuid4().hex[:6]}",
+                    name=profile.name or "Custom XYZ",
+                    url_template=profile.source_path,
+                )
+
+        if provider is None:
+            provider = ProviderRegistry.get_provider("osm_standard")
+
+        if provider is None:
+            logger.error("Не удалось найти провайдера онлайн-карты")
+            return False
+
+        # 2. Получаем API-ключ, если требуется
+        effective_key = api_key
+        if not effective_key and self._settings_service:
+            effective_key = self._settings_service.get_provider_api_key(provider.id)
+        if not effective_key:
+            effective_key = provider.get_effective_api_key()
+
+        # 3. Закрываем локальный растровый бэкенд, если был открыт
+        if self._map_path:
+            try:
+                if BackendFactory.supports_geotiff():
+                    rb = get_raster_backend()
+                    rb.close(self._map_path)
+            except Exception as e:
+                logger.debug("Ошибка при закрытии растрового бэкенда: %s", e)
+
+        # 4. Сбрасываем векторные и растровые слои предыдущей карты
+        for item in list(self._map_canvas._layer_items.values()):
+            if item.scene() == self._map_canvas._scene:
+                self._map_canvas._scene.removeItem(item)
+        self._map_canvas._layer_items.clear()
+        if self._map_canvas._raster_item is not None:
+            if self._map_canvas._raster_item.scene() == self._map_canvas._scene:
+                self._map_canvas._scene.removeItem(self._map_canvas._raster_item)
+            self._map_canvas._raster_item = None
+        if self._map_canvas._raster_window_item is not None:
+            if self._map_canvas._raster_window_item.scene() == self._map_canvas._scene:
+                self._map_canvas._scene.removeItem(self._map_canvas._raster_window_item)
+            self._map_canvas._raster_window_item = None
+        self._map_canvas._boundary_bounds = None
+        self._loaded_layers.clear()
+        self._layers_panel.clear_layers()
+
+        # 5. Устанавливаем онлайн-подложку на холст
+        self._active_crs = "EPSG:3857"
+        self._map_path = None
+        self._boundary_geometry = None
+        self._active_profile = profile or MapProfile(
+            id=f"online_{provider.id}",
+            name=provider.name,
+            source_type="online_xyz",
+            source_path=provider.url_template,
+            crs="EPSG:3857",
+            provider_id=provider.id,
+            map_type=provider.map_type.value,
+        )
+
+        self._map_canvas.set_online_basemap(provider, api_key=effective_key)
+
+        # 6. Обновляем статус и заголовок
+        self._update_title(f"Карта: {provider.name}")
+        status_text = f"Онлайн-карта: {provider.name} | EPSG:3857"
+        self._set_status(status_text)
+        self._points_panel.set_buttons_enabled(add=True)
+
+        # 7. Оповещаем о смене CRS (пересчет координат пользовательских точек)
+        self._on_map_loaded(self._active_crs)
+
+        # 8. Центрирование / подгонка
+        if self._point_service and len(self._point_service) > 0:
+            self._map_canvas.zoom_to_group(list(self._point_service))
+        else:
+            self._map_canvas.center_on_map_coordinates(4180000.0, 7500000.0)
+
+        if self._settings_service:
+            self._settings_service.set_last_online_provider(provider.id)
+
+        if self._is_project_active and self._is_project_active():
+            self._on_modified()
+
+        return True
+
     def load_map(self, map_target: MapProfile | Path | str) -> None:
         """Загрузка слоев карты из MapProfile или пути к файлу."""
+        if isinstance(map_target, MapProfile) and getattr(map_target, "source_type", "") == "online_xyz":
+            self.load_online_map(profile=map_target)
+            return
+
         profile: MapProfile | None = None
         if isinstance(map_target, MapProfile):
             profile = map_target
@@ -213,6 +326,10 @@ class MapController(QObject):
             self._map_canvas.set_error(err_msg)
             self._set_status(tr("status.error_map_not_found"))
             return
+
+        # Если ранее была активна онлайн-подложка, отключаем её
+        if hasattr(self._map_canvas, "clear_online_basemap"):
+            self._map_canvas.clear_online_basemap()
 
         is_geotiff = (
             (profile is not None and getattr(profile, "source_type", "") == "geotiff")

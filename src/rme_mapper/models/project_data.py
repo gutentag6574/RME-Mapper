@@ -44,9 +44,15 @@ class ProjectMapData:
     crs: str | None = None
     boundary_layer: str | None = None
     layers: list[dict[str, Any]] = field(default_factory=list)
+    provider_id: str | None = None
+    map_type: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """Преобразование в словарь для JSON-сериализации."""
+        """Преобразование в словарь для JSON-сериализации.
+
+        Безопасность: API-ключи и учетные данные картографических провайдеров
+        НИКОГДА не сохраняются в файл проекта (*.gpmap).
+        """
         res: dict[str, Any] = {
             "map_id": self.map_id,
         }
@@ -62,6 +68,10 @@ class ProjectMapData:
             res["boundary_layer"] = self.boundary_layer
         if self.layers:
             res["layers"] = [dict(l) for l in self.layers]
+        if self.provider_id:
+            res["provider_id"] = self.provider_id
+        if self.map_type:
+            res["map_type"] = self.map_type
         return res
 
     @classmethod
@@ -79,6 +89,8 @@ class ProjectMapData:
             crs=data.get("crs"),
             boundary_layer=data.get("boundary_layer"),
             layers=layers_list,
+            provider_id=data.get("provider_id"),
+            map_type=data.get("map_type"),
         )
 
 

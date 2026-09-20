@@ -7,7 +7,7 @@ from typing import Any
 
 logger = logging.getLogger("rme_mapper.models.map_profile")
 
-SUPPORTED_SOURCE_TYPES = {"geopackage", "geotiff"}
+SUPPORTED_SOURCE_TYPES = {"geopackage", "geotiff", "online_xyz"}
 
 
 @dataclass
@@ -30,6 +30,9 @@ class MapProfile:
     layers: list[dict[str, Any]] = field(default_factory=list)
     extent: dict[str, float] | None = None
 
+    provider_id: str | None = None
+    map_type: str | None = None
+
     metadata_version: int = 1
 
     def get_absolute_source_path(self, root_dir: Path | None = None) -> Path:
@@ -38,6 +41,9 @@ class MapProfile:
         Разрешает относительные пути с учетом директории расположения metadata.json (base_dir)
         или корневой директории проекта.
         """
+        if self.source_type == "online_xyz":
+            return Path(self.source_path or "")
+
         p = Path(self.source_path)
         if p.is_absolute() and p.exists():
             return p
@@ -61,15 +67,21 @@ class MapProfile:
 
     def to_dict(self) -> dict[str, Any]:
         """Преобразование профиля в словарь метаданных metadata.json."""
+        source_dict: dict[str, Any] = {
+            "type": self.source_type,
+            "path": self.source_path,
+        }
+        if self.provider_id:
+            source_dict["provider_id"] = self.provider_id
+        if self.map_type:
+            source_dict["map_type"] = self.map_type
+
         data: dict[str, Any] = {
             "schema_version": self.metadata_version,
             "id": self.id,
             "name": self.name,
             "description": self.description,
-            "source": {
-                "type": self.source_type,
-                "path": self.source_path,
-            },
+            "source": source_dict,
             "crs": self.crs,
             "boundary": {
                 "layer": self.boundary_layer,
@@ -97,10 +109,14 @@ class MapProfile:
             description = str(description).strip()
 
         # Источник данных
+        provider_id: str | None = None
+        map_type: str | None = None
         source_info = data.get("source")
         if isinstance(source_info, dict):
             source_type = str(source_info.get("type", "geopackage")).lower().strip()
             source_path = str(source_info.get("path") or "").strip()
+            provider_id = source_info.get("provider_id")
+            map_type = source_info.get("map_type")
         else:
             source_type = "geopackage"
             source_path = str(data.get("prepared_file") or data.get("source_path") or "").strip()
@@ -174,5 +190,7 @@ class MapProfile:
             boundary_required=boundary_required,
             layers=layers,
             extent=extent,
+            provider_id=provider_id,
+            map_type=map_type,
             metadata_version=version,
         )

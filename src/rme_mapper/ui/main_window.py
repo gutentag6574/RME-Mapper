@@ -200,6 +200,8 @@ class MainWindow(QMainWindow):
         self.map_canvas.measurement_updated.connect(self._on_measurement_updated)
         self.map_canvas.measurement_finished.connect(self._on_measurement_finished)
         self.map_canvas.measurement_cancelled.connect(self._on_measurement_cancelled)
+        self.map_canvas.online_tiles_progress.connect(self._on_online_tiles_progress)
+        self.map_canvas.online_tiles_auth_error.connect(self._on_online_tiles_auth_error)
 
         # Тема оформления
         self._theme_manager = get_theme_manager()
@@ -307,6 +309,28 @@ class MainWindow(QMainWindow):
         self.close_map_action = QAction(self)
         self.close_map_action.triggered.connect(lambda: self.close_map())
         self.map_menu.addAction(self.close_map_action)
+
+        self.map_menu.addSeparator()
+
+        # Этап 20: Онлайн-карты
+        self.online_map_menu = self.map_menu.addMenu("")
+        self.online_standard_action = QAction(self)
+        self.online_standard_action.triggered.connect(self.load_online_standard_map)
+        self.online_map_menu.addAction(self.online_standard_action)
+
+        self.online_satellite_action = QAction(self)
+        self.online_satellite_action.triggered.connect(self.load_online_satellite_map)
+        self.online_map_menu.addAction(self.online_satellite_action)
+
+        self.online_hybrid_action = QAction(self)
+        self.online_hybrid_action.triggered.connect(self.load_online_hybrid_map)
+        self.online_map_menu.addAction(self.online_hybrid_action)
+
+        self.online_map_menu.addSeparator()
+
+        self.select_online_basemap_action = QAction(self)
+        self.select_online_basemap_action.triggered.connect(self.open_online_basemap_dialog)
+        self.online_map_menu.addAction(self.select_online_basemap_action)
 
         self.map_menu.addSeparator()
 
@@ -522,6 +546,11 @@ class MainWindow(QMainWindow):
             self.lang_en_action.setChecked(True)
         else:
             self.lang_ru_action.setChecked(True)
+
+        self.settings_menu.addSeparator()
+        self.clear_tile_cache_action = QAction(self)
+        self.clear_tile_cache_action.triggered.connect(self.clear_online_tile_cache)
+        self.settings_menu.addAction(self.clear_tile_cache_action)
 
         # Меню: Справка
         self.help_menu = menu_bar.addMenu("")
@@ -1216,6 +1245,21 @@ class MainWindow(QMainWindow):
         if hasattr(self, "recent_maps_menu"):
             self.recent_maps_menu.setTitle(tr("menu.recent_maps"))
         self.close_map_action.setText(tr("action.close_map"))
+
+        if hasattr(self, "online_map_menu"):
+            self.online_map_menu.setTitle(tr("menu.online_map"))
+        if hasattr(self, "online_standard_action"):
+            self.online_standard_action.setText(tr("action.online_standard"))
+        if hasattr(self, "online_satellite_action"):
+            self.online_satellite_action.setText(tr("action.online_satellite"))
+        if hasattr(self, "online_hybrid_action"):
+            self.online_hybrid_action.setText(tr("action.online_hybrid"))
+        if hasattr(self, "select_online_basemap_action"):
+            self.select_online_basemap_action.setText(tr("action.select_online_basemap"))
+        if hasattr(self, "clear_tile_cache_action"):
+            self.clear_tile_cache_action.setText(tr("action.clear_tile_cache"))
+            self.clear_tile_cache_action.setStatusTip(tr("action.clear_tile_cache_tip"))
+
         if hasattr(self, "fit_map_action"):
             self.fit_map_action.setText(tr("action.fit_map"))
             self.fit_map_action.setToolTip(tr("tooltip.fit_map"))
@@ -1596,6 +1640,95 @@ class MainWindow(QMainWindow):
 
     def delete_selected_point(self, confirm: bool = False) -> None:
         self.point_controller.delete_point_workflow(confirm=confirm)
+
+    # -------------------------------------------------------------------------
+    # Этап 20: Управление онлайн-картами
+    # -------------------------------------------------------------------------
+
+    def load_online_standard_map(self) -> None:
+        """Загрузка стандартной онлайн-карты OpenStreetMap."""
+        from rme_mapper.models.online_provider import ProviderRegistry
+        provider = ProviderRegistry.get_provider("osm_standard")
+        if provider:
+            self.map_controller.load_online_map(provider=provider)
+
+    def load_online_satellite_map(self) -> None:
+        """Загрузка спутниковой онлайн-карты."""
+        from rme_mapper.models.online_provider import ProviderRegistry
+        provider = ProviderRegistry.get_provider("mapbox_satellite")
+        if not provider:
+            return
+        effective_key = None
+        if self._settings_service:
+            effective_key = self._settings_service.get_provider_api_key(provider.id)
+        if not effective_key:
+            effective_key = provider.get_effective_api_key()
+
+        if not effective_key:
+            self.open_online_basemap_dialog(current_provider=provider)
+        else:
+            self.map_controller.load_online_map(provider=provider, api_key=effective_key)
+
+    def load_online_hybrid_map(self) -> None:
+        """Загрузка гибридной онлайн-карты."""
+        from rme_mapper.models.online_provider import ProviderRegistry
+        provider = ProviderRegistry.get_provider("mapbox_hybrid")
+        if not provider:
+            return
+        effective_key = None
+        if self._settings_service:
+            effective_key = self._settings_service.get_provider_api_key(provider.id)
+        if not effective_key:
+            effective_key = provider.get_effective_api_key()
+
+        if not effective_key:
+            self.open_online_basemap_dialog(current_provider=provider)
+        else:
+            self.map_controller.load_online_map(provider=provider, api_key=effective_key)
+
+    def open_online_basemap_dialog(self, current_provider: Any = None) -> None:
+        """Открытие диалога выбора онлайн-подложки."""
+        from rme_mapper.ui.online_basemap_dialog import OnlineBasemapDialog
+        active_provider = current_provider or (
+            self.map_canvas.online_tile_manager().provider
+            if hasattr(self.map_canvas, "online_tile_manager")
+            else None
+        )
+        dialog = OnlineBasemapDialog(
+            parent=self,
+            settings_service=self._settings_service,
+            current_provider=active_provider,
+        )
+        if dialog.exec():
+            provider = dialog.get_selected_provider()
+            key = dialog.get_api_key()
+            if provider:
+                self.map_controller.load_online_map(provider=provider, api_key=key)
+
+    def clear_online_tile_cache(self) -> None:
+        """Очистка дискового кэша тайлов онлайн-карт."""
+        from rme_mapper.services.tile_cache import TileDiskCache
+        cache = TileDiskCache()
+        total_size = cache.get_total_size_bytes()
+        formatted = TileDiskCache.format_size(total_size)
+        reply = QMessageBox.question(
+            self,
+            tr("action.clear_tile_cache"),
+            tr("dialog.online_map.clear_cache_confirm", size=formatted),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            cache.clear_cache()
+            self.statusBar().showMessage(tr("status.tile_cache_cleared", size=formatted), 4000)
+
+    def _on_online_tiles_progress(self, pending_count: int) -> None:
+        if pending_count > 0:
+            self.statusBar().showMessage(tr("status.tile_loading", count=pending_count), 1500)
+
+    def _on_online_tiles_auth_error(self, provider_name: str) -> None:
+        msg = tr("dialog.online_map.auth_error_msg", name=provider_name)
+        self.statusBar().showMessage(msg, 5000)
+
 
 
     def _add_point_to_table(self, point: MapPoint) -> None:

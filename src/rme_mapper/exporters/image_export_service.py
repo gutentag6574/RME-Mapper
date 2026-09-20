@@ -30,6 +30,8 @@ class ImageExportService:
         raster_source: Path | str | None = None,
         is_raster_visible: bool = True,
         hidden_group_ids: set[str] | None = None,
+        online_tile_manager: Any = None,
+        attribution_text: str | None = None,
     ) -> Path:
         """Рендеринг и сохранение изображения в файл с гарантией атомарности.
 
@@ -70,6 +72,8 @@ class ImageExportService:
             raster_source=raster_source,
             is_raster_visible=is_raster_visible,
             hidden_group_ids=hidden_group_ids,
+            online_tile_manager=online_tile_manager,
+            attribution_text=attribution_text,
         )
 
         if image.isNull():

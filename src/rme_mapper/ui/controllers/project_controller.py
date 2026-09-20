@@ -96,6 +96,19 @@ class ProjectController(QObject):
     def project_loaded(self, loaded: bool) -> None:
         self._project_loaded = loaded
 
+    @property
+    def is_project_active(self) -> bool:
+        """Активен ли проект."""
+        return self._project_loaded
+
+    def new_project(self) -> bool:
+        """Алиас для new_project_workflow."""
+        return self.new_project_workflow()
+
+    def open_project_from_path(self, file_path: Path | str) -> bool:
+        """Алиас для open_project_workflow с заданным путем."""
+        return self.open_project_workflow(file_path=file_path)
+
     def _set_status(self, text: str, timeout: int = 0) -> None:
         if self._set_status_message:
             self._set_status_message(text, timeout)
@@ -321,6 +334,20 @@ class ProjectController(QObject):
 
     def _resolve_and_apply_project(self, project: ProjectData, path: Path | None) -> bool:
         """Разрешение связанных слоев карты и применение структуры проекта."""
+        if project.map.source_type == "online_xyz":
+            online_prof = MapProfile(
+                id=project.map.map_id or f"online_{project.map.provider_id or 'osm_standard'}",
+                name=project.map.name or "Online Map",
+                source_type="online_xyz",
+                source_path="",
+                crs="EPSG:3857",
+                provider_id=project.map.provider_id or "osm_standard",
+                map_type=project.map.map_type,
+            )
+            self._map_controller.load_map(online_prof)
+            self.apply_project_data(project)
+            return True
+
         target_map_path: Path | None = None
         target_profile: MapProfile | None = None
 

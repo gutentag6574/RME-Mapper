@@ -477,3 +477,47 @@ class MapDecorationRenderer:
         # Белый фон с легкой прозрачностью (242/255) для контраста поверх любых карт
         painter.setBrush(QBrush(QColor(255, 255, 255, 242)))
         painter.drawRoundedRect(rect, radius, radius)
+
+    @classmethod
+    def render_attribution(
+        cls,
+        painter: QPainter,
+        attribution_text: str,
+        image_rect: QRectF,
+        scale_factor: float,
+        margin: float,
+    ) -> QRectF:
+        """Отрисовка копирайта/атрибуции онлайн-провайдера в правом нижнем углу изображения."""
+        clean_text = (attribution_text or "").strip()
+        if not clean_text:
+            return QRectF()
+
+        import re
+        display_text = re.sub(r"<[^>]+>", "", clean_text).strip()
+
+        font_size = max(8, round(9.0 * scale_factor))
+        font = QFont("Segoe UI", font_size)
+        painter.setFont(font)
+
+        fm = painter.fontMetrics()
+        text_w = fm.horizontalAdvance(display_text)
+        text_h = fm.height()
+
+        pad_x = 8.0 * scale_factor
+        pad_y = 4.0 * scale_factor
+        badge_w = text_w + pad_x * 2.0
+        badge_h = text_h + pad_y * 2.0
+
+        x = image_rect.width() - badge_w - margin
+        y = image_rect.height() - badge_h - margin
+        badge_rect = QRectF(x, y, badge_w, badge_h)
+
+        radius = 4.0 * scale_factor
+        painter.setPen(QPen(QColor(15, 23, 42, 50), max(1.0, 1.0 * scale_factor)))
+        painter.setBrush(QBrush(QColor(255, 255, 255, 215)))
+        painter.drawRoundedRect(badge_rect, radius, radius)
+
+        painter.setPen(QPen(QColor("#334155")))
+        painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, display_text)
+        return badge_rect
+

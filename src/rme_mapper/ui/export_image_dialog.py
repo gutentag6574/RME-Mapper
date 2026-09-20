@@ -66,6 +66,8 @@ class ExportImageDialog(QDialog):
         loaded_layers_render_data: list[Any] | None = None,
         raster_source: Path | str | None = None,
         is_raster_visible: bool = True,
+        online_tile_manager: Any = None,
+        attribution_text: str | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("exportImageDialog")
@@ -82,6 +84,8 @@ class ExportImageDialog(QDialog):
         self._loaded_layers_render_data = loaded_layers_render_data or []
         self._raster_source = raster_source
         self._is_raster_visible = is_raster_visible
+        self._online_tile_manager = online_tile_manager
+        self._attribution_text = attribution_text
 
         # Предрасчет охватов точек
         self._all_points_extent = self._calculate_points_extent(self._points)
@@ -425,6 +429,12 @@ class ExportImageDialog(QDialog):
         self.chk_grid.setChecked(False)
         grid.addWidget(self.chk_grid, 4, 0)
 
+        # Атрибуция подложки
+        self.chk_attribution = QCheckBox(tr("export.include_attribution"), box)
+        self.chk_attribution.setObjectName("chkExportAttribution")
+        self.chk_attribution.setChecked(True)
+        grid.addWidget(self.chk_attribution, 4, 1)
+
         return box
 
     def _create_quality_section(self) -> QGroupBox:
@@ -669,6 +679,8 @@ class ExportImageDialog(QDialog):
                 selected_point_ids=self._selected_point_ids,
                 raster_source=self._raster_source,
                 is_raster_visible=self._is_raster_visible,
+                online_tile_manager=self._online_tile_manager,
+                attribution_text=self._attribution_text,
             )
 
             # Отображаем эскиз в модальном окне
@@ -776,6 +788,7 @@ class ExportImageDialog(QDialog):
             include_scale_bar=self.chk_scale_bar.isChecked(),
             include_north_arrow=self.chk_north_arrow.isChecked(),
             include_grid=self.chk_grid.isChecked(),
+            include_attribution=self.chk_attribution.isChecked() if hasattr(self, "chk_attribution") else True,
             background_color="#FFFFFF" if is_transparent else bg_val,
             transparent_background=is_transparent,
             jpeg_quality=self.quality_spin.value(),

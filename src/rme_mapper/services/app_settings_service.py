@@ -51,6 +51,10 @@ class AppSettingsService:
     KEY_SHOW_ZONES_VISIBLE = "ui/show_zones_visible"
     KEY_SHOW_SCALE_INDICATOR = "ui/show_scale_indicator"
     KEY_SHOW_COORDINATE_GRID = "ui/show_coordinate_grid"
+    KEY_ONLINE_CACHE_MAX_MB = "online_maps/cache_max_mb"
+    KEY_LAST_ONLINE_PROVIDER = "online_maps/last_provider"
+    KEY_ONLINE_API_KEYS = "online_maps/api_keys"
+    KEY_CUSTOM_XYZ_PROVIDERS = "online_maps/custom_providers"
     MAX_RECENT_ITEMS = 10
 
     def __init__(self, settings: Any = _AUTO) -> None:
@@ -592,4 +596,83 @@ class AppSettingsService:
             if hasattr(self._settings, "sync"):
                 self._settings.sync()
         self._memory_fallback.clear()
+
+    # --- Online Maps Settings ---
+    def get_online_cache_max_mb(self) -> int:
+        """Получить максимальный размер дискового кэша тайлов в МБ (по умолчанию 256)."""
+        val = self._get_str(self.KEY_ONLINE_CACHE_MAX_MB, "256")
+        try:
+            return max(16, int(val))
+        except (ValueError, TypeError):
+            return 256
+
+    def set_online_cache_max_mb(self, mb: int) -> None:
+        """Установить максимальный размер дискового кэша тайлов в МБ."""
+        self._set_str(self.KEY_ONLINE_CACHE_MAX_MB, str(max(16, mb)))
+
+    def get_last_online_provider(self) -> str:
+        """Получить ID последнего выбранного онлайн-провайдера."""
+        return self._get_str(self.KEY_LAST_ONLINE_PROVIDER, "osm_standard")
+
+    def set_last_online_provider(self, provider_id: str) -> None:
+        """Сохранить ID последнего выбранного онлайн-провайдера."""
+        self._set_str(self.KEY_LAST_ONLINE_PROVIDER, provider_id)
+
+    def get_provider_api_key(self, provider_id: str) -> str:
+        """Получить локально сохраненный API-ключ для провайдера."""
+        import json
+        raw = self._get_str(self.KEY_ONLINE_API_KEYS, "{}")
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                return str(data.get(provider_id) or "")
+        except Exception:
+            pass
+        return ""
+
+    def set_provider_api_key(self, provider_id: str, key: str) -> None:
+        """Сохранить локальный API-ключ для провайдера."""
+        import json
+        raw = self._get_str(self.KEY_ONLINE_API_KEYS, "{}")
+        try:
+            data = json.loads(raw)
+            if not isinstance(data, dict):
+                data = {}
+        except Exception:
+            data = {}
+        if key.strip():
+            data[provider_id] = key.strip()
+        else:
+            data.pop(provider_id, None)
+        self._set_str(self.KEY_ONLINE_API_KEYS, json.dumps(data))
+
+    def get_custom_providers(self) -> list[dict[str, Any]]:
+        """Получить список пользовательских XYZ-провайдеров."""
+        import json
+        raw = self._get_str(self.KEY_CUSTOM_XYZ_PROVIDERS, "[]")
+        try:
+            data = json.loads(raw)
+            return data if isinstance(data, list) else []
+        except Exception:
+            return []
+
+    def save_custom_provider(self, provider_data: dict[str, Any]) -> None:
+        """Сохранить или обновить конфигурацию пользовательского XYZ-провайдера."""
+        import json
+        providers = self.get_custom_providers()
+        pid = provider_data.get("id")
+        providers = [p for p in providers if p.get("id") != pid]
+        providers.append(provider_data)
+        self._set_str(self.KEY_CUSTOM_XYZ_PROVIDERS, json.dumps(providers, ensure_ascii=False))
+
+    def delete_custom_provider(self, provider_id: str) -> bool:
+        """Удалить пользовательского XYZ-провайдера."""
+        import json
+        providers = self.get_custom_providers()
+        initial_len = len(providers)
+        providers = [p for p in providers if p.get("id") != provider_id]
+        if len(providers) < initial_len:
+            self._set_str(self.KEY_CUSTOM_XYZ_PROVIDERS, json.dumps(providers, ensure_ascii=False))
+            return True
+        return False
 

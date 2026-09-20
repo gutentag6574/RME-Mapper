@@ -148,6 +148,8 @@ class MapRenderer:
         raster_source: Path | str | None = None,
         is_raster_visible: bool = True,
         hidden_group_ids: set[str] | None = None,
+        online_tile_manager: Any = None,
+        attribution_text: str | None = None,
     ) -> QImage:
         """Полный рендер карты в QImage заданного разрешения."""
         errors = options.validate()
@@ -190,6 +192,19 @@ class MapRenderer:
         )
 
         try:
+            # 3.4 Отрисовка подложки онлайн-карт (XYZ Web Mercator)
+            if online_tile_manager and getattr(online_tile_manager, "is_active", False):
+                cls._render_online_tiles(
+                    painter=painter,
+                    online_tile_manager=online_tile_manager,
+                    target_extent=adj_extent,
+                    width=width,
+                    height=height,
+                    min_x=min_x,
+                    max_y=max_y,
+                    scale=scale,
+                )
+
             # 3.5 Отрисовка растровой подложки GeoTIFF (до векторных слоев и точек)
             if raster_source and is_raster_visible:
                 cls._render_raster_layer(
@@ -333,10 +348,87 @@ class MapRenderer:
                     margin=margin,
                 )
 
+            # Атрибуция картографического провайдера
+            if getattr(options, "include_attribution", True):
+                attr_to_render = attribution_text
+                if not attr_to_render and online_tile_manager and getattr(online_tile_manager, "is_active", False):
+                    prov = getattr(online_tile_manager, "provider", None)
+                    if prov:
+                        attr_to_render = getattr(prov, "attribution", "")
+
+                if attr_to_render:
+                    MapDecorationRenderer.render_attribution(
+                        painter=painter,
+                        attribution_text=attr_to_render,
+                        image_rect=image_rect,
+                        scale_factor=scale_factor,
+                        margin=margin,
+                    )
+
         finally:
             painter.end()
 
         return image
+
+    @classmethod
+    def _render_online_tiles(
+        cls,
+        painter: QPainter,
+        online_tile_manager: Any,
+        target_extent: tuple[float, float, float, float],
+        width: int,
+        height: int,
+        min_x: float,
+        max_y: float,
+        scale: float,
+    ) -> None:
+        """Отрисовка доступных тайлов онлайн-подложки на экспортируемое изображение."""
+        provider = getattr(online_tile_manager, "provider", None)
+        if not provider:
+            return
+
+        from rme_mapper.services.tile_math import (
+            extent_to_tile_range,
+            meters_per_pixel_to_zoom,
+            tile_to_mercator_bounds,
+        )
+
+        min_ex, min_ey, max_ex, max_ey = target_extent
+        extent_w = max_ex - min_ex
+        m_per_px = extent_w / max(1, width)
+
+        zoom = meters_per_pixel_to_zoom(
+            m_per_px,
+            min_zoom=provider.min_zoom,
+            max_zoom=provider.max_zoom,
+        )
+
+        tile_bounds = extent_to_tile_range(min_ex, min_ey, max_ex, max_ey, zoom)
+        if tile_bounds is None:
+            return
+
+        t_min_x, t_min_y, t_max_x, t_max_y = tile_bounds
+        cache = getattr(online_tile_manager, "_cache", None)
+
+        for tx in range(t_min_x, t_max_x + 1):
+            for ty in range(t_min_y, t_max_y + 1):
+                pixmap = online_tile_manager._get_mem_cache(provider.id, zoom, tx, ty)
+                if pixmap is None and cache is not None:
+                    data = cache.get_tile(provider.id, zoom, tx, ty)
+                    if data:
+                        from PySide6.QtGui import QPixmap
+                        pix = QPixmap()
+                        if pix.loadFromData(data):
+                            online_tile_manager._put_mem_cache(provider.id, zoom, tx, ty, pix)
+                            pixmap = pix
+
+                if pixmap is not None and not pixmap.isNull():
+                    t_min_xm, t_min_ym, t_max_xm, t_max_ym = tile_to_mercator_bounds(tx, ty, zoom)
+                    px = (t_min_xm - min_x) * scale
+                    py = (max_y - t_max_ym) * scale
+                    pw = (t_max_xm - t_min_xm) * scale
+                    ph = (t_max_ym - t_min_ym) * scale
+                    painter.drawPixmap(QRectF(px, py, pw, ph).toRect(), pixmap)
 
     @classmethod
     def _render_raster_layer(

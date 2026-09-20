@@ -50,10 +50,13 @@ from shapely.geometry import (
 )
 
 from rme_mapper.i18n import tr
+from rme_mapper.maps.attribution_overlay import AttributionOverlayWidget
+from rme_mapper.maps.online_tile_manager import OnlineTileManager
 from rme_mapper.maps.scale_overlay import ScaleOverlayWidget
 from rme_mapper.models.map_layer import LayerRole, MapLayer
 from rme_mapper.models.map_point import MapPoint
 from rme_mapper.models.object_group import ObjectGroup
+from rme_mapper.models.online_provider import OnlineTileProvider
 from rme_mapper.services.coordinate_service import CoordinateService
 from rme_mapper.services.geodesic_service import GeodesicService
 from rme_mapper.services.grid_calculator import GridCalculator
@@ -98,6 +101,8 @@ class MapCanvas(QGraphicsView):
     measurement_updated = Signal(str)
     measurement_finished = Signal(str)
     measurement_cancelled = Signal()
+    online_tiles_progress = Signal(int)
+    online_tiles_auth_error = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -174,6 +179,17 @@ class MapCanvas(QGraphicsView):
         # Состояние панорамирования средней кнопкой
         self._is_middle_panning: bool = False
         self._middle_pan_last_pos: QPointF | None = None
+
+        # Этап 20: Онлайн-карты (XYZ Web Mercator)
+        self._online_tile_manager = OnlineTileManager(self._scene, parent=self)
+        self._online_tile_manager.tiles_updated.connect(self._on_online_tiles_updated)
+        self._online_tile_manager.loading_progress.connect(self.online_tiles_progress.emit)
+        self._online_tile_manager.auth_error.connect(self.online_tiles_auth_error.emit)
+        self._attribution_overlay = AttributionOverlayWidget(self.viewport())
+        self._online_tile_debounce_timer = QTimer(self)
+        self._online_tile_debounce_timer.setSingleShot(True)
+        self._online_tile_debounce_timer.setInterval(50)
+        self._online_tile_debounce_timer.timeout.connect(self._update_online_tiles_viewport)
 
         self._setup_view_properties()
         self._create_controls()
@@ -852,6 +868,8 @@ class MapCanvas(QGraphicsView):
         self.update_scale_indicator()
         if self._show_coordinate_grid:
             self._grid_debounce_timer.start()
+        if self.is_online_map_active():
+            self._online_tile_debounce_timer.start()
 
     def _render_coordinate_grid(self) -> None:
         """Расчет и перерисовка линий и подписей координатной сетки."""
@@ -859,7 +877,7 @@ class MapCanvas(QGraphicsView):
             self._clear_coordinate_grid()
             return
 
-        if not self._boundary_bounds and not self._layer_items and not self._raster_item:
+        if not self._boundary_bounds and not self._layer_items and not self._raster_item and not self.is_online_map_active():
             self._clear_coordinate_grid()
             return
 
@@ -1075,6 +1093,7 @@ class MapCanvas(QGraphicsView):
 
     def clear_map(self) -> None:
         """Полная очистка карты (слои, границы, точки, зоны, растр, сетка, измерения)."""
+        self.clear_online_basemap()
         self.clear_measurements()
         self._clear_coordinate_grid()
         if hasattr(self, "_scale_overlay"):
@@ -2166,6 +2185,8 @@ class MapCanvas(QGraphicsView):
                 self._grid_debounce_timer.start()
             if self._raster_provider and self._raster_item and self._raster_item.isVisible():
                 self._raster_debounce_timer.start()
+            if self.is_online_map_active():
+                self._online_tile_debounce_timer.start()
             event.accept()
         else:
             event.ignore()
@@ -2190,6 +2211,7 @@ class MapCanvas(QGraphicsView):
 
         if hasattr(self, "_scale_overlay"):
             self._scale_overlay.move(12, 12)
+        self._update_attribution_position()
         self.update_scale_indicator()
         if self._show_coordinate_grid:
             if self._grid_item_group is None:
@@ -2197,8 +2219,94 @@ class MapCanvas(QGraphicsView):
             else:
                 self._grid_debounce_timer.start()
 
+        if self.is_online_map_active():
+            self._online_tile_debounce_timer.start()
+
         if hasattr(self, "empty_overlay"):
             self.empty_overlay.setGeometry(0, 0, self.viewport().width(), self.viewport().height())
 
         if not self._initial_fit_done and (self._boundary_bounds or self._layer_items):
             self.fit_to_view()
+
+    # -------------------------------------------------------------------------
+    # Этап 20: Методы управления онлайн-картой
+    # -------------------------------------------------------------------------
+
+    def is_online_map_active(self) -> bool:
+        """Проверка активности онлайн-подложки."""
+        return hasattr(self, "_online_tile_manager") and self._online_tile_manager.is_active
+
+    def online_tile_manager(self) -> OnlineTileManager:
+        """Получить экземпляр менеджера онлайн-тайлов."""
+        return self._online_tile_manager
+
+    @property
+    def attribution_overlay(self) -> Any:
+        """Получить оверлей копирайта провайдера."""
+        return getattr(self, "_attribution_overlay", None)
+
+    def set_online_basemap(self, provider: OnlineTileProvider | None, api_key: str | None = None) -> None:
+        """Подключение или отключение онлайн-подложки карты."""
+        if provider is None:
+            self.clear_online_basemap()
+            return
+
+        self.hide_empty_state()
+        self._active_crs = "EPSG:3857"
+        self._online_tile_manager.set_provider(provider, api_key=api_key)
+        self._attribution_overlay.set_attribution(provider.attribution)
+        self._attribution_overlay.set_map_active(True)
+        self._update_attribution_position()
+
+        if hasattr(self, "_scale_overlay"):
+            self._scale_overlay.set_map_loaded(True)
+            self.update_scale_indicator()
+
+        if self._show_coordinate_grid:
+            self._grid_debounce_timer.start()
+
+        self._update_online_tiles_viewport()
+
+    def clear_online_basemap(self) -> None:
+        """Отключение онлайн-подложки и скрытие оверлея атрибуции."""
+        if hasattr(self, "_online_tile_manager"):
+            self._online_tile_manager.clear()
+            self._online_tile_manager.set_provider(None)
+        if hasattr(self, "_attribution_overlay"):
+            self._attribution_overlay.set_map_active(False)
+            self._attribution_overlay.set_attribution("")
+
+    def _on_online_tiles_updated(self) -> None:
+        """Обработка добавления/обновления тайлов."""
+        self.viewport().update()
+
+    def _update_online_tiles_viewport(self) -> None:
+        """Перерасчет видимого прямоугольника и запрос необходимых тайлов."""
+        if not self.is_online_map_active():
+            return
+        vp = self.viewport()
+        vp_w = vp.width() if vp and vp.width() > 50 else self.width()
+        vp_h = vp.height() if vp and vp.height() > 50 else self.height()
+        if vp_w < 50 or vp_h < 50:
+            return
+
+        top_left = self.mapToScene(0, 0)
+        bottom_right = self.mapToScene(vp_w, vp_h)
+        scene_rect = QRectF(top_left, bottom_right)
+
+        scale_x = self.transform().m11()
+        m_per_px = (1.0 / scale_x) if scale_x > 0 else 1.0
+        self._online_tile_manager.update_viewport(scene_rect, m_per_px)
+
+    def _update_attribution_position(self) -> None:
+        """Позиционирование виджета копирайта/атрибуции в правом нижнем углу холста."""
+        if hasattr(self, "_attribution_overlay") and self._attribution_overlay.is_map_active():
+            attr_w = self._attribution_overlay.width()
+            attr_h = self._attribution_overlay.height()
+            vp_w = self.viewport().width()
+            vp_h = self.viewport().height()
+            self._attribution_overlay.move(
+                max(0, vp_w - attr_w - 8),
+                max(0, vp_h - attr_h - 8),
+            )
+            self._attribution_overlay.raise_()

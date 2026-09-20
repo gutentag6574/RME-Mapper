@@ -441,11 +441,11 @@ class ProjectService:
             if not boundary_layer:
                 boundary_layer = getattr(map_profile, "boundary_layer", None)
             source_type = getattr(map_profile, "source_type", "geopackage")
-            if not map_path:
+            if source_type != "online_xyz" and not map_path:
                 map_path = map_profile.get_absolute_source_path()
 
         rel_path = ""
-        if map_path:
+        if map_path and source_type != "online_xyz":
             path_obj = Path(map_path)
             posix_str = path_obj.as_posix()
             if "maps/" in posix_str:
@@ -465,6 +465,9 @@ class ProjectService:
         if map_profile and getattr(map_profile, "layers", None):
             profile_layers_meta = [dict(l) for l in map_profile.layers]
 
+        provider_id = getattr(map_profile, "provider_id", None) if map_profile else None
+        map_type = getattr(map_profile, "map_type", None) if map_profile else None
+
         map_data = ProjectMapData(
             map_id=map_id,
             relative_path=rel_path,
@@ -473,6 +476,8 @@ class ProjectService:
             crs=crs,
             boundary_layer=boundary_layer,
             layers=profile_layers_meta,
+            provider_id=provider_id,
+            map_type=map_type,
         )
 
         layers_state = {layer.id: layer.visible for layer in (layers or [])}

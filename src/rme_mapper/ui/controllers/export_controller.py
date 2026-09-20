@@ -63,7 +63,11 @@ class ExportController(QObject):
 
     def has_active_map(self) -> bool:
         """Проверка наличия активной карты в приложении."""
-        return self._get_active_profile() is not None or self._get_map_path() is not None
+        return (
+            self._get_active_profile() is not None
+            or self._get_map_path() is not None
+            or (hasattr(self._map_canvas, "is_online_map_active") and self._map_canvas.is_online_map_active())
+        )
 
     def get_current_view_extent(self) -> tuple[float, float, float, float] | None:
         """Расчет географического охвата текущего вида холста без изменения зума."""
@@ -114,6 +118,24 @@ class ExportController(QObject):
                     combined = combined.united(item.boundingRect())
             if combined.isValid() and not combined.isEmpty():
                 return (combined.left(), -combined.bottom(), combined.right(), -combined.top())
+
+        # Для онлайн-карт при отсутствии границ берем охват точек или текущий вид
+        if hasattr(self._map_canvas, "is_online_map_active") and self._map_canvas.is_online_map_active():
+            pts = self._point_service.get_points()
+            if pts:
+                coords = []
+                for p in pts:
+                    try:
+                        mx, my = CoordinateService.transform_xy(p.longitude, p.latitude, p.source_crs, "EPSG:3857")
+                        coords.append((mx, my))
+                    except Exception:
+                        pass
+                if coords:
+                    xs = [c[0] for c in coords]
+                    ys = [c[1] for c in coords]
+                    margin = max(100.0, (max(xs) - min(xs)) * 0.1)
+                    return (min(xs) - margin, min(ys) - margin, max(xs) + margin, max(ys) + margin)
+            return self.get_current_view_extent()
 
         return None
 
@@ -169,6 +191,14 @@ class ExportController(QObject):
         elif hasattr(self._map_canvas, "_raster_item") and self._map_canvas._raster_item:
             is_raster_visible = self._map_canvas._raster_item.isVisible()
 
+        # Онлайн-подложка
+        online_tile_manager = None
+        attribution_text = None
+        if hasattr(self._map_canvas, "is_online_map_active") and self._map_canvas.is_online_map_active():
+            online_tile_manager = self._map_canvas.online_tile_manager()
+            if online_tile_manager and online_tile_manager.provider:
+                attribution_text = online_tile_manager.provider.attribution
+
         dialog = ExportImageDialog(
             parent=self._parent,
             active_crs=active_crs,
@@ -181,6 +211,8 @@ class ExportController(QObject):
             loaded_layers_render_data=layers_render_data,
             raster_source=raster_source,
             is_raster_visible=is_raster_visible,
+            online_tile_manager=online_tile_manager,
+            attribution_text=attribution_text,
         )
 
         if not dialog.exec():
@@ -216,6 +248,8 @@ class ExportController(QObject):
                 raster_source=raster_source,
                 is_raster_visible=is_raster_visible,
                 hidden_group_ids=hidden_gids,
+                online_tile_manager=online_tile_manager,
+                attribution_text=attribution_text,
             )
 
             success_msg = tr("export.status_success", path=str(out_path))

@@ -42,6 +42,7 @@ class ImageExportOptions:
     include_scale_bar: bool = True
     include_north_arrow: bool = True
     include_grid: bool = False
+    include_attribution: bool = True
 
     # Фон и качество
     background_color: str = "#FFFFFF"
