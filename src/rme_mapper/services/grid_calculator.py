@@ -181,7 +181,7 @@ class GridCalculator:
         is_geo, units = cls.get_crs_info(crs_str)
 
         # Проверка неметровых спроецированных CRS (футы и т.д.)
-        if not is_geo and units not in ("metre", "meter", "m", "unknown"):
+        if not is_geo and units not in ("metre", "meter", "m"):
             logger.info("Проекция использует единицы '%s', отличные от метров; сетка отключена", units)
             return None
 

@@ -264,3 +264,30 @@ def test_15_measurement_does_not_dirty_project(qapp, default_gpkg):
     assert window.point_controller.undo_manager.can_undo is False
 
     window.close()
+
+
+def test_16_high_latitude_distance():
+    """Тест 16: Геодезическое расстояние на высокой широте (75° N) учитывает схождение меридианов."""
+    # 10 градусов долготы на широте 75° N и на экваторе (0°)
+    dist_75n = GeodesicService.calculate_distance(10.0, 75.0, 20.0, 75.0)
+    dist_eq = GeodesicService.calculate_distance(10.0, 0.0, 20.0, 0.0)
+
+    # На экваторе 10 градусов ~ 1113 км
+    assert 1_110_000.0 < dist_eq < 1_120_000.0
+
+    # На 75° N 10 градусов ~ 288.7 км (cos(75°) ~ 0.2588)
+    assert 285_000.0 < dist_75n < 292_000.0
+
+    # Отношение расстояний должно соответствовать сферическому/эллипсоидальному закону, а не наивной константе
+    ratio = dist_75n / dist_eq
+    assert 0.25 < ratio < 0.27
+
+
+def test_17_dateline_crossing_distance():
+    """Тест 17: Расстояние через линию перемены дат (+180°/-180°) идет по кратчайшей ортодромии."""
+    # Точки по разные стороны 180 меридиана на экваторе: 179° E и 179° W (-179°)
+    dist_dateline = GeodesicService.calculate_distance(179.0, 0.0, -179.0, 0.0)
+
+    # Кратчайший геодезический путь = 2 градуса (~222.6 км), а не 358 градусов (~39 800 км)
+    assert 220_000.0 < dist_dateline < 225_000.0
+

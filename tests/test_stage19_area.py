@@ -247,3 +247,22 @@ def test_29_measurement_does_not_dirty_project(qapp, default_gpkg):
     assert window.point_controller.undo_manager.can_undo is False
 
     window.close()
+
+
+def test_30_cw_and_ccw_area_orientation_identical():
+    """Тест 30: Обход вершин полигона по часовой (CW) и против часовой (CCW) стрелки дает одинаковую положительную площадь."""
+    # Вершины квадрата
+    cw_lons = [37.0, 38.0, 38.0, 37.0, 37.0]
+    cw_lats = [55.0, 55.0, 56.0, 56.0, 55.0]
+
+    ccw_lons = [37.0, 37.0, 38.0, 38.0, 37.0]
+    ccw_lats = [55.0, 56.0, 56.0, 55.0, 55.0]
+
+    area_cw, perim_cw = GeodesicService.calculate_area_perimeter(cw_lons, cw_lats)
+    area_ccw, perim_ccw = GeodesicService.calculate_area_perimeter(ccw_lons, ccw_lats)
+
+    assert area_cw > 0
+    assert area_ccw > 0
+    assert abs(area_cw - area_ccw) < 1e-6, f"Площади CW ({area_cw}) и CCW ({area_ccw}) должны быть строго равны"
+    assert abs(perim_cw - perim_ccw) < 1e-6, f"Периметры CW ({perim_cw}) и CCW ({perim_ccw}) должны быть равны"
+

@@ -284,10 +284,15 @@ def test_57_grid_rendering_on_rotated_geotiff(qapp, geotiff_rotated):
 
 def test_58_non_meter_projected_crs_handled_safely():
     """Тест 58: Проекция с неметровыми единицами (футы) безопасно отключает сетку."""
-    # US Survey Feet (EPSG:2227)
-    res = GridCalculator.calculate_grid((100000.0, 100000.0, 200000.0, 200000.0), "EPSG:2227")
-    # Либо None, либо безопасная обработка без притворства метрами
-    assert res is None or res.units == "us survey foot"
+    # US Survey Feet (EPSG:2227 и EPSG:2263)
+    res_2227 = GridCalculator.calculate_grid((100000.0, 100000.0, 200000.0, 200000.0), "EPSG:2227")
+    res_2263 = GridCalculator.calculate_grid((900000.0, 100000.0, 1000000.0, 200000.0), "EPSG:2263")
+    res_unknown = GridCalculator.calculate_grid((100.0, 100.0, 200.0, 200.0), "EPSG:999999")
+
+    # Сетка должна быть безопасно отключена (None) без притворства метрами
+    assert res_2227 is None
+    assert res_2263 is None
+    assert res_unknown is None
 
 
 def test_59_map_unload_clears_grid(qapp, default_gpkg):

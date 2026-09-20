@@ -111,9 +111,11 @@ def test_71_middle_click_pan_does_not_add_vertex(qapp, default_gpkg):
     assert len(canvas._measure_points) == 0
 
     # Эмулируем клик средней кнопкой мыши
+    mid_pos = QPointF(200.0, 200.0)
     mid_event = QMouseEvent(
         QMouseEvent.Type.MouseButtonPress,
-        QPointF(200.0, 200.0),
+        mid_pos,
+        mid_pos,
         Qt.MouseButton.MiddleButton,
         Qt.MouseButton.MiddleButton,
         Qt.KeyboardModifier.NoModifier,
@@ -181,9 +183,11 @@ def test_73_clicking_on_point_during_measurement_adds_vertex(qapp, default_gpkg,
     view_pos = canvas.mapFromScene(pt_scene_pos)
 
     # Кликаем левой кнопкой мыши ровно по точке
+    click_pos = QPointF(view_pos.x(), view_pos.y())
     click_event = QMouseEvent(
         QMouseEvent.Type.MouseButtonPress,
-        QPointF(view_pos.x(), view_pos.y()),
+        click_pos,
+        click_pos,
         Qt.MouseButton.LeftButton,
         Qt.MouseButton.LeftButton,
         Qt.KeyboardModifier.NoModifier,

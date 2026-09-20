@@ -222,4 +222,64 @@ def test_42_scale_overlay_position_top_left(qapp):
     pos = canvas._scale_overlay.pos()
     assert 8 <= pos.x() <= 20
     assert 8 <= pos.y() <= 20
-    assert 8 <= pos.y() <= 20
+
+
+def test_43_qsettings_multi_instance_persistence():
+    """Тест 43: Проверка реального сохранения настроек в QSettings между отдельными экземплярами сервиса."""
+    s1 = AppSettingsService()
+    orig_scale = s1.get_show_scale_indicator()
+    orig_grid = s1.get_show_coordinate_grid()
+
+    try:
+        # Шаг 2 и 3: выставляем тестовые значения
+        s1.set_show_scale_indicator(False)
+        s1.set_show_coordinate_grid(True)
+
+        # Шаг 4: создаем совершенно новый экземпляр сервиса
+        s2 = AppSettingsService()
+
+        # Шаг 5: проверяем, что настройки прочитаны из QSettings
+        assert s2.get_show_scale_indicator() is False
+        assert s2.get_show_coordinate_grid() is True
+    finally:
+        # Шаг 6: очистка / восстановление
+        s1.set_show_scale_indicator(orig_scale)
+        s1.set_show_coordinate_grid(orig_grid)
+
+
+def test_44_scale_at_high_latitude_vs_equator():
+    """Тест 44: Scale Indicator при разных широтах (0° vs 75° N) рассчитывает физическое расстояние без фиксированной константы."""
+    # Одинаковый горизонтальный угловой интервал (1 градус) при одинаковой экранной ширине (100 px)
+    res_eq = ScaleService.calculate_scale_for_span(0.0, 1.0, 0.0, 100.0, "OGC:CRS84", target_bar_pixels=100.0)
+    res_75n = ScaleService.calculate_scale_for_span(0.0, 1.0, 75.0, 100.0, "OGC:CRS84", target_bar_pixels=100.0)
+
+    assert res_eq is not None
+    assert res_75n is not None
+    dist_eq, px_eq, _ = res_eq
+    dist_75n, px_75n, _ = res_75n
+
+    # Физическое расстояние в метрах на пиксель на 75° N должно быть примерно в 3.86 раза меньше (1/cos(75°))
+    m_per_px_eq = dist_eq / px_eq
+    m_per_px_75n = dist_75n / px_75n
+    ratio = m_per_px_75n / m_per_px_eq
+
+    assert 0.25 < ratio < 0.27, f"Отношение масштабов {ratio} должно соответствовать cos(75°) ~ 0.2588"
+
+
+def test_45_scale_non_meter_projected_crs():
+    """Тест 45: В спроецированной CRS с неметровыми единицами (EPSG:2263 US survey foot) масштаб рассчитывается в реальных метрах."""
+    # Нью-Йорк, EPSG:2263. Координаты в футах США.
+    # 100 000 футов = 30 480.06 метров
+    x1 = 980_000.0
+    x2 = 1_080_000.0
+    y = 200_000.0
+    pixel_span = 500.0
+
+    res = ScaleService.calculate_scale_for_span(x1, x2, y, pixel_span, "EPSG:2263", target_bar_pixels=120.0)
+    assert res is not None
+    nice_dist, actual_px, label = res
+
+    # Проверяем, что результат в метрах (~5000 м или ~10 км), а не в 100 000 метрах
+    assert nice_dist < 50_000.0
+    assert "км" in label or "м" in label or "km" in label or "m" in label
+

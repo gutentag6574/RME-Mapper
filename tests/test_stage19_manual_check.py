@@ -180,9 +180,11 @@ def test_stage19_manual_check_comprehensive(qapp, default_gpkg, tmp_path):
     assert canvas.interaction_mode == "measure_area"
 
     # 2. Панорамирование средней кнопкой мыши
+    mid_pos = QPointF(300.0, 300.0)
     mid_event = QMouseEvent(
         QMouseEvent.Type.MouseButtonPress,
-        QPointF(300.0, 300.0),
+        mid_pos,
+        mid_pos,
         Qt.MouseButton.MiddleButton,
         Qt.MouseButton.MiddleButton,
         Qt.KeyboardModifier.NoModifier,
@@ -197,9 +199,11 @@ def test_stage19_manual_check_comprehensive(qapp, default_gpkg, tmp_path):
     canvas._selected_point_ids.clear()
 
     pt_view_pos = canvas.mapFromScene(QPointF(47.95, -56.65))
+    click_pos = QPointF(pt_view_pos.x(), pt_view_pos.y())
     left_click = QMouseEvent(
         QMouseEvent.Type.MouseButtonPress,
-        QPointF(pt_view_pos.x(), pt_view_pos.y()),
+        click_pos,
+        click_pos,
         Qt.MouseButton.LeftButton,
         Qt.MouseButton.LeftButton,
         Qt.KeyboardModifier.NoModifier,
