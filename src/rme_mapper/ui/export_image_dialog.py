@@ -433,6 +433,14 @@ class ExportImageDialog(QDialog):
         self.chk_attribution = QCheckBox(tr("export.include_attribution"), box)
         self.chk_attribution.setObjectName("chkExportAttribution")
         self.chk_attribution.setChecked(True)
+
+        # Если провайдер требует обязательную атрибуцию (OSM, Mapbox и т.д.), отключать ее запрещено
+        prov = getattr(self._online_tile_manager, "provider", None) if self._online_tile_manager and getattr(self._online_tile_manager, "is_active", False) else None
+        if prov and getattr(prov, "attribution_required", False):
+            self.chk_attribution.setChecked(True)
+            self.chk_attribution.setEnabled(False)
+            self.chk_attribution.setToolTip("Атрибуция обязательна для данного картографического провайдера и не может быть отключена.")
+
         grid.addWidget(self.chk_attribution, 4, 1)
 
         return box
@@ -665,6 +673,7 @@ class ExportImageDialog(QDialog):
             include_scale_bar=options.include_scale_bar,
             include_north_arrow=options.include_north_arrow,
             include_grid=options.include_grid,
+            include_attribution=options.include_attribution,
             background_color=options.background_color,
             transparent_background=options.transparent_background,
         )
@@ -788,7 +797,13 @@ class ExportImageDialog(QDialog):
             include_scale_bar=self.chk_scale_bar.isChecked(),
             include_north_arrow=self.chk_north_arrow.isChecked(),
             include_grid=self.chk_grid.isChecked(),
-            include_attribution=self.chk_attribution.isChecked() if hasattr(self, "chk_attribution") else True,
+            include_attribution=(
+                True
+                if (
+                    getattr(getattr(self._online_tile_manager, "provider", None), "attribution_required", False)
+                )
+                else (self.chk_attribution.isChecked() if hasattr(self, "chk_attribution") else True)
+            ),
             background_color="#FFFFFF" if is_transparent else bg_val,
             transparent_background=is_transparent,
             jpeg_quality=self.quality_spin.value(),

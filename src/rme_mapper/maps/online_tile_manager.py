@@ -47,7 +47,9 @@ class OnlineTileManager(QObject):
         super().__init__(parent)
         self._scene = scene
         self._cache = tile_cache or TileDiskCache()
-        self._loader = tile_loader or TileLoader(parent=self)
+        self._loader = tile_loader or TileLoader(parent=self, tile_cache=self._cache)
+        if tile_loader is not None and getattr(tile_loader, "_cache", None) is None:
+            tile_loader.set_tile_cache(self._cache)
 
         self._provider: OnlineTileProvider | None = None
         self._api_key: str | None = None
@@ -214,6 +216,12 @@ class OnlineTileManager(QObject):
                 if pix.loadFromData(disk_data):
                     self._put_mem_cache(self._provider.id, z, x, y, pix)
                     self._add_pixmap_item(z, x, y, rect, pix)
+
+                    # Если тайл просрочен по HTTP-заголовкам / minimum TTL (7 дней для OSM),
+                    # инициируем фоновый условный запрос (If-None-Match / If-Modified-Since)
+                    if self._cache.is_tile_expired(self._provider.id, z, x, y):
+                        url = self._provider.build_tile_url(z, x, y, api_key=self._api_key)
+                        self._loader.request_tile(self._provider.id, z, x, y, url, conditional=True)
                     continue
 
             # Тайла нет в кэше — ставим плейсхолдер и запрашиваем по сети

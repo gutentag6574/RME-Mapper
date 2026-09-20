@@ -97,6 +97,12 @@ class OnlineBasemapDialog(QDialog):
         self._url_edit.textChanged.connect(self._validate_dialog)
         form_layout.addRow(tr("dialog.online_map.url_template"), self._url_edit)
 
+        self._http_warning_label = QLabel(self)
+        self._http_warning_label.setStyleSheet("color: #D97706; font-size: 11px;")
+        self._http_warning_label.setWordWrap(True)
+        self._http_warning_label.hide()
+        form_layout.addRow("", self._http_warning_label)
+
         # Поле ввода API-ключа (токена)
         key_layout = QVBoxLayout()
         self._key_edit = QLineEdit(self)
@@ -126,6 +132,10 @@ class OnlineBasemapDialog(QDialog):
         self._attr_edit = QLineEdit(self)
         self._attr_edit.setPlaceholderText("© Provider Name")
         form_layout.addRow(tr("dialog.online_map.attribution"), self._attr_edit)
+
+        self._chk_mandatory_attr = QCheckBox("Обязательная атрибуция (нельзя отключить при экспорте)", self)
+        self._chk_mandatory_attr.setChecked(True)
+        form_layout.addRow("", self._chk_mandatory_attr)
 
         main_layout.addWidget(form_group_box)
 
@@ -247,20 +257,35 @@ class OnlineBasemapDialog(QDialog):
 
     def _validate_dialog(self) -> None:
         mtype = self._get_current_map_type()
+        key = self._key_edit.text().strip()
+
+        # Проверка на запрет секретных токенов Mapbox sk...
+        if key.startswith("sk."):
+            self._btn_ok.setEnabled(False)
+            self._key_tip_label.setText("<span style='color: #EF4444; font-weight: bold;'>Секретные токены (sk...) запрещены! Используйте публичный токен (pk...).</span>")
+            return
+
         if mtype is None:
-            # Custom
+            # Custom XYZ
             url = self._url_edit.text().strip()
             valid = OnlineTileProvider.validate_url_template(url)
+            if url.lower().startswith("http://"):
+                self._http_warning_label.setText("Внимание: используется незащищенное HTTP-соединение. Рекомендуется HTTPS.")
+                self._http_warning_label.show()
+            else:
+                self._http_warning_label.hide()
             self._btn_ok.setEnabled(valid)
         else:
+            self._http_warning_label.hide()
             pid = self._provider_combo.currentData()
             provider = ProviderRegistry.get_provider(str(pid)) if pid else None
             if provider and provider.requires_api_key:
-                # Если требует ключ, проверяем не пуст ли он
-                has_key = bool(self._key_edit.text().strip())
+                has_key = bool(key)
                 self._btn_ok.setEnabled(has_key)
+                self._key_tip_label.setText(tr("dialog.online_map.key_required"))
             else:
                 self._btn_ok.setEnabled(True)
+                self._key_tip_label.setText("Ключ не требуется")
 
     def _load_saved_values(self, current_provider: OnlineTileProvider | None) -> None:
         if current_provider:
@@ -282,15 +307,27 @@ class OnlineBasemapDialog(QDialog):
 
     def _on_accept(self) -> None:
         mtype = self._get_current_map_type()
+        key = self._key_edit.text().strip() or None
+
+        # Защита от секретных токенов sk...
+        if key and key.startswith("sk."):
+            QMessageBox.critical(
+                self,
+                tr("dialog.online_map.title"),
+                "Секретные токены Mapbox (sk...) запрещены в целях безопасности. Используйте только публичный токен (pk...).",
+            )
+            return
+
         if mtype is None:
             url = self._url_edit.text().strip()
             attr = self._attr_edit.text().strip() or "Custom XYZ"
-            key = self._key_edit.text().strip() or None
+            attr_req = self._chk_mandatory_attr.isChecked()
             provider = ProviderRegistry.create_custom_provider(
                 id=f"custom_{abs(hash(url)) % 1000000}",
                 name="Пользовательская карта",
                 url_template=url,
                 attribution=attr,
+                attribution_required=attr_req,
                 api_key_param_name="access_token" if "access_token" in url else "key",
             )
             self._selected_provider = provider
@@ -301,7 +338,6 @@ class OnlineBasemapDialog(QDialog):
             if provider is None:
                 self.reject()
                 return
-            key = self._key_edit.text().strip() or None
             if key and self._settings:
                 self._settings.set_provider_api_key(provider.id, key)
             self._selected_provider = provider

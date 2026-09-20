@@ -1,9 +1,12 @@
-"""Дисковый кэш тайлов онлайн-карт (TileDiskCache) с LRU-очисткой и валидацией."""
+"""Дисковый кэш тайлов онлайн-карт (TileDiskCache) с LRU-очисткой, валидацией и HTTP-метаданными."""
 
+import email.utils
+import json
 import logging
 import os
 from pathlib import Path
 import re
+import time
 from typing import Any
 
 from PySide6.QtCore import QStandardPaths
@@ -21,10 +24,11 @@ SAFE_PROVIDER_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 # Значения по умолчанию
 DEFAULT_MAX_CACHE_SIZE_BYTES = 256 * 1024 * 1024  # 256 MB
 EVICTION_TARGET_RATIO = 0.80  # Снижаем до 80% от лимита при вытеснении
+DEFAULT_TILE_TTL_SECONDS = 7 * 86400  # 7 дней (OSM Tile Usage Policy)
 
 
 class TileDiskCache:
-    """Управление локальным файловым кэшем тайлов онлайн-подложек."""
+    """Управление локальным файловым кэшем тайлов онлайн-подложек и их HTTP-метаданных."""
 
     def __init__(
         self,
@@ -62,6 +66,18 @@ class TileDiskCache:
         """Проверка магических байтов: отклонение невалидных данных и текстовых HTML-страниц ошибок."""
         if not data or len(data) < 8:
             return False
+
+        # Отклонение любых HTML / XML страниц ошибок (даже если сервер вернул статус 200)
+        snippet = data[:256].lower().strip()
+        if (
+            snippet.startswith(b"<!doctype")
+            or snippet.startswith(b"<html")
+            or snippet.startswith(b"<?xml")
+            or b"<html" in snippet
+            or b"<body" in snippet
+        ):
+            return False
+
         if data.startswith(PNG_MAGIC):
             return True
         if data.startswith(JPEG_MAGIC):
@@ -81,6 +97,11 @@ class TileDiskCache:
 
         tile_dir = self._cache_root / clean_id / str(z) / str(x)
         return tile_dir / f"{y}.tile"
+
+    def _get_meta_path(self, provider_id: str, z: int, x: int, y: int) -> Path:
+        """Построение безопасного пути к файлу HTTP-метаданных тайла."""
+        tile_path = self._get_tile_path(provider_id, z, x, y)
+        return tile_path.with_suffix(".meta")
 
     def has_tile(self, provider_id: str, z: int, x: int, y: int) -> bool:
         """Проверка наличия валидного тайла в кэше."""
@@ -106,6 +127,9 @@ class TileDiskCache:
                 logger.warning("Поврежденный тайл в кэше %s: невалидная сигнатура. Удаление.", path)
                 try:
                     path.unlink()
+                    meta_path = self._get_meta_path(provider_id, z, x, y)
+                    if meta_path.is_file():
+                        meta_path.unlink()
                 except OSError:
                     pass
                 return None
@@ -121,8 +145,104 @@ class TileDiskCache:
             logger.debug("Ошибка чтения тайла из кэша (%s/%s/%s/%s): %s", provider_id, z, x, y, e)
             return None
 
-    def save_tile(self, provider_id: str, z: int, x: int, y: int, data: bytes) -> bool:
-        """Сохранение байтов тайла в кэш с валидацией и контролем размера."""
+    def get_tile_metadata(self, provider_id: str, z: int, x: int, y: int) -> dict[str, Any] | None:
+        """Чтение HTTP-метаданных кэшированного тайла (ETag, Last-Modified, Cache-Control, stored_at)."""
+        try:
+            meta_path = self._get_meta_path(provider_id, z, x, y)
+            if not meta_path.is_file():
+                return None
+            return json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            logger.debug("Ошибка чтения метаданных тайла (%s/%s/%s/%s): %s", provider_id, z, x, y, e)
+            return None
+
+    def touch_tile_metadata(
+        self,
+        provider_id: str,
+        z: int,
+        x: int,
+        y: int,
+        new_headers: dict[str, Any] | None = None,
+    ) -> bool:
+        """Обновление времени сохранения и заголовков кэша (например, при ответе HTTP 304 Not Modified)."""
+        try:
+            path = self._get_tile_path(provider_id, z, x, y)
+            if not path.is_file():
+                return False
+
+            try:
+                os.utime(path, None)
+            except OSError:
+                pass
+
+            meta = self.get_tile_metadata(provider_id, z, x, y) or {}
+            meta["stored_at"] = time.time()
+            if new_headers:
+                for k, v in new_headers.items():
+                    if v is not None:
+                        meta[k] = v
+
+            meta_path = self._get_meta_path(provider_id, z, x, y)
+            meta_path.parent.mkdir(parents=True, exist_ok=True)
+            meta_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+            return True
+        except Exception as e:
+            logger.debug("Ошибка touch_tile_metadata: %s", e)
+            return False
+
+    def is_tile_expired(
+        self,
+        provider_id: str,
+        z: int,
+        x: int,
+        y: int,
+        default_ttl_seconds: float = DEFAULT_TILE_TTL_SECONDS,
+    ) -> bool:
+        """Проверка истечения срока годности тайла (TTL) согласно OSM policy и HTTP-заголовкам."""
+        try:
+            path = self._get_tile_path(provider_id, z, x, y)
+            if not path.is_file():
+                return True
+
+            meta = self.get_tile_metadata(provider_id, z, x, y)
+            now = time.time()
+
+            if meta:
+                stored_at = float(meta.get("stored_at") or 0.0)
+                max_age = meta.get("max_age")
+                if max_age is not None and isinstance(max_age, (int, float)):
+                    return (now - stored_at) > float(max_age)
+
+                expires_str = meta.get("expires")
+                if expires_str:
+                    try:
+                        exp_dt = email.utils.parsedate_to_datetime(str(expires_str))
+                        if exp_dt:
+                            return now > exp_dt.timestamp()
+                    except Exception:
+                        pass
+
+                if stored_at > 0:
+                    return (now - stored_at) > default_ttl_seconds
+
+            try:
+                mtime = path.stat().st_mtime
+                return (now - mtime) > default_ttl_seconds
+            except OSError:
+                return True
+        except Exception:
+            return True
+
+    def save_tile(
+        self,
+        provider_id: str,
+        z: int,
+        x: int,
+        y: int,
+        data: bytes,
+        metadata: dict[str, Any] | None = None,
+    ) -> bool:
+        """Сохранение байтов тайла и опциональных метаданных в кэш с валидацией и контролем размера."""
         if not self.is_valid_image(data):
             logger.debug("Отказ сохранения тайла: данные не являются поддерживаемым изображением")
             return False
@@ -135,6 +255,16 @@ class TileDiskCache:
             tmp_path = path.with_name(f"{path.name}.tmp_{os.getpid()}")
             tmp_path.write_bytes(data)
             tmp_path.replace(path)
+
+            # Запись метаданных (ETag, Last-Modified, Cache-Control, stored_at)
+            if metadata is not None:
+                meta = dict(metadata)
+                if "stored_at" not in meta:
+                    meta["stored_at"] = time.time()
+                meta_path = self._get_meta_path(provider_id, z, x, y)
+                tmp_meta = meta_path.with_name(f"{meta_path.name}.tmp_{os.getpid()}")
+                tmp_meta.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+                tmp_meta.replace(meta_path)
 
             # Проверка лимита размера кэша
             self._maybe_evict()
@@ -218,6 +348,15 @@ class TileDiskCache:
             try:
                 fpath.unlink()
                 removed_bytes += fsize
+                if fpath.suffix == ".tile":
+                    meta_p = fpath.with_suffix(".meta")
+                    if meta_p.is_file():
+                        try:
+                            meta_size = meta_p.stat().st_size
+                            meta_p.unlink()
+                            removed_bytes += meta_size
+                        except OSError:
+                            pass
             except OSError:
                 pass
 

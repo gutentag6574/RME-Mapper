@@ -349,12 +349,18 @@ class MapRenderer:
                 )
 
             # Атрибуция картографического провайдера
-            if getattr(options, "include_attribution", True):
+            prov = (
+                getattr(online_tile_manager, "provider", None)
+                if online_tile_manager and getattr(online_tile_manager, "is_active", False)
+                else None
+            )
+            is_mandatory = getattr(prov, "attribution_required", False) if prov else False
+            logo_required = getattr(prov, "logo_required", False) if prov else False
+
+            if is_mandatory or getattr(options, "include_attribution", True):
                 attr_to_render = attribution_text
-                if not attr_to_render and online_tile_manager and getattr(online_tile_manager, "is_active", False):
-                    prov = getattr(online_tile_manager, "provider", None)
-                    if prov:
-                        attr_to_render = getattr(prov, "attribution", "")
+                if not attr_to_render and prov:
+                    attr_to_render = getattr(prov, "attribution", "")
 
                 if attr_to_render:
                     MapDecorationRenderer.render_attribution(
@@ -363,6 +369,7 @@ class MapRenderer:
                         image_rect=image_rect,
                         scale_factor=scale_factor,
                         margin=margin,
+                        logo_required=logo_required,
                     )
 
         finally:

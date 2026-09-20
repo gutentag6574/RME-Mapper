@@ -619,7 +619,12 @@ class AppSettingsService:
         self._set_str(self.KEY_LAST_ONLINE_PROVIDER, provider_id)
 
     def get_provider_api_key(self, provider_id: str) -> str:
-        """Получить локально сохраненный API-ключ для провайдера."""
+        """Получить локально сохраненный публичный API-ключ для провайдера из пользовательских настроек.
+
+        Примечание по безопасности: QSettings является стандартным пользовательским
+        хранилищем настроек настольного приложения и не является защищенным секретным хранилищем
+        (secure secret storage). Секретные учетные данные (secret credentials) не поддерживаются.
+        """
         import json
         raw = self._get_str(self.KEY_ONLINE_API_KEYS, "{}")
         try:
@@ -631,7 +636,19 @@ class AppSettingsService:
         return ""
 
     def set_provider_api_key(self, provider_id: str, key: str) -> None:
-        """Сохранить локальный API-ключ для провайдера."""
+        """Сохранить локальный публичный токен для провайдера.
+
+        Секретные ключи Mapbox (sk...) строго отклоняются и не сохраняются.
+        """
+        clean_key = (key or "").strip()
+        if clean_key.startswith("sk."):
+            import logging
+            logging.getLogger("rme_mapper.services.app_settings").warning(
+                "Попытка сохранения секретного токена sk... для провайдера '%s' отклонена.",
+                provider_id,
+            )
+            return
+
         import json
         raw = self._get_str(self.KEY_ONLINE_API_KEYS, "{}")
         try:
@@ -640,8 +657,8 @@ class AppSettingsService:
                 data = {}
         except Exception:
             data = {}
-        if key.strip():
-            data[provider_id] = key.strip()
+        if clean_key:
+            data[provider_id] = clean_key
         else:
             data.pop(provider_id, None)
         self._set_str(self.KEY_ONLINE_API_KEYS, json.dumps(data))

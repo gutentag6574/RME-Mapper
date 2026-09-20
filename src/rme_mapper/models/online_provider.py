@@ -28,6 +28,9 @@ class OnlineTileProvider:
     max_zoom: int = 19
     tile_size: int = 256
     attribution: str = ""
+    attribution_required: bool = True
+    logo_required: bool = False
+    additional_attribution: str = ""
     requires_api_key: bool = False
     api_key_env_name: str | None = None
     api_key_param_name: str | None = None
@@ -38,6 +41,11 @@ class OnlineTileProvider:
     def name(self) -> str:
         """Псевдоним для display_name для единообразия API."""
         return self.display_name
+
+    @property
+    def attribution_text(self) -> str:
+        """Текст атрибуции провайдера (синоним для attribution)."""
+        return self.attribution
 
     @staticmethod
     def validate_url_template(template: str) -> bool:
@@ -52,13 +60,17 @@ class OnlineTileProvider:
 
     def get_effective_api_key(self, user_key: str | None = None) -> str | None:
         """Получение ключа: сначала пользовательский, затем из переменной окружения."""
+        key = None
         if user_key and user_key.strip():
-            return user_key.strip()
-        if self.api_key_env_name:
+            key = user_key.strip()
+        elif self.api_key_env_name:
             env_val = os.environ.get(self.api_key_env_name, "").strip()
             if env_val:
-                return env_val
-        return None
+                key = env_val
+
+        if key and key.startswith("sk."):
+            raise ValueError("Mapbox secret tokens (sk...) are strictly forbidden in client applications.")
+        return key
 
     def build_tile_url(self, z: int, x: int, y: int, api_key: str | None = None) -> str:
         """Построение итогового URL для скачивания тайла (z, x, y)."""
@@ -72,6 +84,9 @@ class OnlineTileProvider:
             subdomain = self.subdomains[idx]
 
         effective_key = self.get_effective_api_key(api_key) or ""
+        if effective_key.startswith("sk."):
+            raise ValueError("Mapbox secret tokens (sk...) are strictly forbidden in client applications.")
+
         url = self.url_template.replace("{z}", str(z)).replace("{x}", str(x)).replace("{y}", str(y))
         if "{s}" in url:
             url = url.replace("{s}", subdomain)
@@ -96,6 +111,10 @@ class OnlineTileProvider:
             "max_zoom": self.max_zoom,
             "tile_size": self.tile_size,
             "attribution": self.attribution,
+            "attribution_text": self.attribution,
+            "attribution_required": self.attribution_required,
+            "logo_required": self.logo_required,
+            "additional_attribution": self.additional_attribution,
             "requires_api_key": self.requires_api_key,
             "api_key_env_name": self.api_key_env_name,
             "api_key_param_name": self.api_key_param_name,
@@ -112,6 +131,7 @@ class OnlineTileProvider:
         except ValueError:
             map_type = MapType.STANDARD
 
+        attr = str(data.get("attribution_text") or data.get("attribution", ""))
         return cls(
             id=str(data["id"]),
             display_name=str(data.get("display_name") or data["id"]),
@@ -120,7 +140,10 @@ class OnlineTileProvider:
             min_zoom=int(data.get("min_zoom", 0)),
             max_zoom=int(data.get("max_zoom", 19)),
             tile_size=int(data.get("tile_size", 256)),
-            attribution=str(data.get("attribution", "")),
+            attribution=attr,
+            attribution_required=bool(data.get("attribution_required", True)),
+            logo_required=bool(data.get("logo_required", False)),
+            additional_attribution=str(data.get("additional_attribution", "")),
             requires_api_key=bool(data.get("requires_api_key", False)),
             api_key_env_name=data.get("api_key_env_name"),
             subdomains=list(data.get("subdomains", [])),
@@ -142,6 +165,9 @@ OSM_STANDARD = OnlineTileProvider(
     max_zoom=19,
     tile_size=256,
     attribution="© OpenStreetMap contributors",
+    attribution_required=True,
+    logo_required=False,
+    additional_attribution="",
     requires_api_key=False,
     api_key_env_name=None,
     subdomains=[],
@@ -157,7 +183,10 @@ MAPBOX_SATELLITE = OnlineTileProvider(
     min_zoom=0,
     max_zoom=22,
     tile_size=256,
-    attribution="© Mapbox © OpenStreetMap",
+    attribution="© Mapbox © OpenStreetMap © Maxar",
+    attribution_required=True,
+    logo_required=True,
+    additional_attribution="© Maxar",
     requires_api_key=True,
     api_key_env_name="MAPBOX_API_KEY",
     subdomains=[],
@@ -173,6 +202,9 @@ MAPBOX_HYBRID = OnlineTileProvider(
     max_zoom=22,
     tile_size=256,
     attribution="© Mapbox © OpenStreetMap",
+    attribution_required=True,
+    logo_required=True,
+    additional_attribution="",
     requires_api_key=True,
     api_key_env_name="MAPBOX_API_KEY",
     subdomains=[],
@@ -218,6 +250,9 @@ class ProviderRegistry:
         url_template: str,
         map_type: MapType = MapType.CUSTOM,
         attribution: str = "",
+        attribution_required: bool = True,
+        logo_required: bool = False,
+        additional_attribution: str = "",
         min_zoom: int = 0,
         max_zoom: int = 19,
         requires_api_key: bool = False,
@@ -235,6 +270,9 @@ class ProviderRegistry:
             max_zoom=max_zoom,
             tile_size=256,
             attribution=attribution.strip(),
+            attribution_required=attribution_required,
+            logo_required=logo_required,
+            additional_attribution=additional_attribution.strip(),
             requires_api_key=requires_api_key,
             api_key_param_name=api_key_param_name,
             is_custom=True,

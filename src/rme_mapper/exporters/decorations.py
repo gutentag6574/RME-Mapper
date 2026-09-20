@@ -486,6 +486,7 @@ class MapDecorationRenderer:
         image_rect: QRectF,
         scale_factor: float,
         margin: float,
+        logo_required: bool = False,
     ) -> QRectF:
         """Отрисовка копирайта/атрибуции онлайн-провайдера в правом нижнем углу изображения."""
         clean_text = (attribution_text or "").strip()
@@ -494,6 +495,10 @@ class MapDecorationRenderer:
 
         import re
         display_text = re.sub(r"<[^>]+>", "", clean_text).strip()
+        if logo_required and "mapbox" in display_text.lower():
+            # Если требуется логотип Mapbox, форматируем аккуратную плашку с указанием провайдера
+            if not display_text.startswith("mapbox"):
+                display_text = f"mapbox | {display_text}"
 
         font_size = max(8, round(9.0 * scale_factor))
         font = QFont("Segoe UI", font_size)
