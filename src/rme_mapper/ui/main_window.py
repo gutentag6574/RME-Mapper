@@ -404,6 +404,11 @@ class MainWindow(QMainWindow):
         self.export_map_image_action.setEnabled(False)
         self.export_menu.addAction(self.export_map_image_action)
 
+        self.export_objects_action = QAction(self)
+        self.export_objects_action.triggered.connect(lambda: self.export_controller.open_export_objects_dialog())
+        self.export_objects_action.setEnabled(False)
+        self.export_menu.addAction(self.export_objects_action)
+
         # Меню: Инструменты
         self.tools_menu = menu_bar.addMenu("")
         self.measure_distance_action = QAction(self)
@@ -798,6 +803,9 @@ class MainWindow(QMainWindow):
 
     def _on_points_count_changed(self, total: int, shown: int) -> None:
         """Обновление счетчика точек в строке состояния."""
+        if hasattr(self, "export_objects_action"):
+            self.export_objects_action.setEnabled(total > 0)
+
         if self.map_controller.active_profile is None and self.map_controller.map_path is None:
             if hasattr(self, "status_points_label"):
                 self.status_points_label.setVisible(False)
@@ -1236,6 +1244,10 @@ class MainWindow(QMainWindow):
             self.export_map_image_action.setText(tr("action.export_map_image"))
             self.export_map_image_action.setToolTip(tr("tooltip.export_map_image"))
             self.export_map_image_action.setStatusTip(tr("action.export_map_image_tip"))
+        if hasattr(self, "export_objects_action"):
+            self.export_objects_action.setText(tr("action.export_objects"))
+            self.export_objects_action.setToolTip(tr("tooltip.export_objects"))
+            self.export_objects_action.setStatusTip(tr("action.export_objects_tip"))
         if hasattr(self, "view_menu"):
             self.view_menu.setTitle(tr("menu.view"))
         self.settings_menu.setTitle(tr("menu.settings"))

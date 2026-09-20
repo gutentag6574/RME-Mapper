@@ -14,8 +14,10 @@ from rme_mapper.i18n import tr
 from rme_mapper.maps.map_canvas import MapCanvas
 from rme_mapper.models.map_profile import MapProfile
 from rme_mapper.services.app_settings_service import AppSettingsService
+from rme_mapper.services.object_export_service import ObjectExportService
 from rme_mapper.services.point_service import PointService
 from rme_mapper.ui.export_image_dialog import ExportImageDialog
+from rme_mapper.ui.export_objects_dialog import ExportObjectsDialog
 from rme_mapper.ui.panels.layers_panel import LayersPanel
 from rme_mapper.ui.panels.points_panel import PointsPanel
 
@@ -271,6 +273,64 @@ class ExportController(QObject):
                 self._parent,
                 tr("dialog.export_map_title"),
                 err_text,
+            )
+            self._set_status(tr("status.error"), 3000)
+            return False
+
+    def open_export_objects_dialog(self) -> bool:
+        """Открытие диалога экспорта объектов (CSV/XLSX/TXT/GeoJSON) и запуск экспорта."""
+        all_points = self._point_service.get_points()
+        if not all_points:
+            QMessageBox.information(
+                self._parent,
+                tr("dialog.export_objects.title"),
+                tr("export_objects.no_objects"),
+            )
+            return False
+
+        selected_ids = set(self._points_panel.selected_point_ids())
+        active_crs = self._get_active_crs() or "EPSG:3857"
+
+        dialog = ExportObjectsDialog(
+            points=all_points,
+            selected_ids=selected_ids,
+            group_service=self._group_service,
+            active_crs=active_crs,
+            settings_service=self._settings_service,
+            parent=self._parent,
+        )
+
+        if not dialog.exec():
+            return False
+
+        options, target_path = dialog.get_export_options()
+
+        try:
+            self._set_status("Экспорт объектов...", 0)
+            exported_count = ObjectExportService.export_points(
+                points=all_points,
+                options=options,
+                output_path=target_path,
+                selected_ids=selected_ids,
+                group_service=self._group_service,
+            )
+
+            msg = tr("export_objects.success", count=exported_count)
+            self._set_status(msg, 4000)
+            logger.info("Успешный экспорт %d объектов в %s", exported_count, target_path)
+            QMessageBox.information(
+                self._parent,
+                tr("dialog.export_objects.title"),
+                f"{msg}\n\n{target_path}",
+            )
+            return True
+        except Exception as e:
+            err_msg = tr("export_objects.failed", error=str(e))
+            logger.exception("Ошибка экспорта объектов: %s", e)
+            QMessageBox.critical(
+                self._parent,
+                tr("dialog.export_objects.title"),
+                err_msg,
             )
             self._set_status(tr("status.error"), 3000)
             return False

@@ -55,6 +55,14 @@ class AppSettingsService:
     KEY_LAST_ONLINE_PROVIDER = "online_maps/last_provider"
     KEY_ONLINE_API_KEYS = "online_maps/api_keys"
     KEY_CUSTOM_XYZ_PROVIDERS = "online_maps/custom_providers"
+    KEY_OBJECT_EXPORT_FORMAT = "object_export/format"
+    KEY_OBJECT_EXPORT_SCOPE = "object_export/scope"
+    KEY_OBJECT_EXPORT_FIELDS = "object_export/fields"
+    KEY_OBJECT_EXPORT_TARGET_CRS = "object_export/target_crs"
+    KEY_OBJECT_EXPORT_DD_PRECISION = "object_export/dd_precision"
+    KEY_OBJECT_EXPORT_PROJECTED_PRECISION = "object_export/projected_precision"
+    KEY_OBJECT_EXPORT_DELIMITER = "object_export/delimiter"
+    KEY_OBJECT_EXPORT_BOM = "object_export/bom"
     MAX_RECENT_ITEMS = 10
 
     def __init__(self, settings: Any = _AUTO) -> None:
@@ -692,4 +700,84 @@ class AppSettingsService:
             self._set_str(self.KEY_CUSTOM_XYZ_PROVIDERS, json.dumps(providers, ensure_ascii=False))
             return True
         return False
+
+    def get_object_export_format(self, default: str = "csv") -> str:
+        """Получить сохраненный формат экспорта объектов."""
+        val = self._get_str(self.KEY_OBJECT_EXPORT_FORMAT, default).lower()
+        return val if val in ("csv", "xlsx", "txt", "geojson") else default
+
+    def set_object_export_format(self, fmt: str) -> None:
+        """Сохранить формат экспорта объектов."""
+        clean = fmt.strip().lower()
+        if clean in ("csv", "xlsx", "txt", "geojson"):
+            self._set_str(self.KEY_OBJECT_EXPORT_FORMAT, clean)
+
+    def get_object_export_scope(self, default: str = "all") -> str:
+        """Получить сохраненную область экспорта объектов."""
+        val = self._get_str(self.KEY_OBJECT_EXPORT_SCOPE, default).lower()
+        return val if val in ("all", "selected", "visible") else default
+
+    def set_object_export_scope(self, scope: str) -> None:
+        """Сохранить область экспорта объектов."""
+        clean = scope.strip().lower()
+        if clean in ("all", "selected", "visible"):
+            self._set_str(self.KEY_OBJECT_EXPORT_SCOPE, clean)
+
+    def get_object_export_fields(self, default: list[str] | None = None) -> list[str] | None:
+        """Получить сохраненный список выбранных полей экспорта."""
+        import json
+        raw = self._get_str(self.KEY_OBJECT_EXPORT_FIELDS, "")
+        if not raw:
+            return default
+        try:
+            val = json.loads(raw)
+            return val if isinstance(val, list) else default
+        except Exception:
+            return default
+
+    def set_object_export_fields(self, fields: list[str]) -> None:
+        """Сохранить список выбранных полей экспорта."""
+        import json
+        self._set_str(self.KEY_OBJECT_EXPORT_FIELDS, json.dumps(fields))
+
+    def get_object_export_target_crs(self, default: str = "EPSG:3857") -> str:
+        """Получить целевую CRS для экспорта спроецированных координат."""
+        return self._get_str(self.KEY_OBJECT_EXPORT_TARGET_CRS, default)
+
+    def set_object_export_target_crs(self, crs_str: str) -> None:
+        """Сохранить целевую CRS для экспорта."""
+        self._set_str(self.KEY_OBJECT_EXPORT_TARGET_CRS, crs_str.strip())
+
+    def get_object_export_dd_precision(self, default: int = 6) -> int:
+        """Получить точность десятичных градусов (количество знаков)."""
+        raw = self._get_str(self.KEY_OBJECT_EXPORT_DD_PRECISION, str(default))
+        try:
+            val = int(raw)
+            return val if 2 <= val <= 10 else default
+        except (ValueError, TypeError):
+            return default
+
+    def set_object_export_dd_precision(self, prec: int) -> None:
+        """Сохранить точность десятичных градусов."""
+        if 2 <= prec <= 10:
+            self._set_str(self.KEY_OBJECT_EXPORT_DD_PRECISION, str(prec))
+
+    def get_object_export_delimiter(self, default: str = ",") -> str:
+        """Получить разделитель полей для CSV/TXT."""
+        val = self._get_str(self.KEY_OBJECT_EXPORT_DELIMITER, default)
+        return val if val in (",", ";", "\t") else default
+
+    def set_object_export_delimiter(self, delim: str) -> None:
+        """Сохранить разделитель полей."""
+        if delim in (",", ";", "\t"):
+            self._set_str(self.KEY_OBJECT_EXPORT_DELIMITER, delim)
+
+    def get_object_export_bom(self, default: bool = True) -> bool:
+        """Получить флаг включения UTF-8 BOM."""
+        return self._get_bool(self.KEY_OBJECT_EXPORT_BOM, default)
+
+    def set_object_export_bom(self, enabled: bool) -> None:
+        """Сохранить флаг включения UTF-8 BOM."""
+        self._set_bool(self.KEY_OBJECT_EXPORT_BOM, enabled)
+
 
