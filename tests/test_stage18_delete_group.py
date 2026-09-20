@@ -78,3 +78,45 @@ def test_delete_group_safe_policy_and_undo_redo():
     assert gs.get_group(group.id) is None
     assert ps.get_point(p1.id).group_id is None
     assert ps.get_point(p2.id).group_id is None
+
+
+def test_delete_hidden_group_preserves_visible_state_and_description_on_undo():
+    """Проверка, что удаление скрытой группы (visible=False) при Undo восстанавливает visible=False, описание и точки."""
+    gs = GroupService()
+    ps = PointService()
+    undo_mgr = UndoManager()
+
+    group = gs.create_group("Скрытая группа", description="Секретные объекты", visible=False)
+    p1 = ps.add_point(name="Объект 1", latitude=56.0, longitude=47.0, group_id=group.id)
+
+    affected_point_ids = [p1.id]
+
+    def restore_group_fn(grp: ObjectGroup) -> None:
+        gs.add_existing_group(grp)
+
+    def remove_group_fn(gid: str) -> None:
+        gs.delete_group(gid)
+
+    def set_points_group_fn(pids: list[str], gid: str | None) -> None:
+        ps.set_points_group(pids, gid)
+
+    cmd = DeleteGroupCommand(
+        group=group,
+        affected_point_ids=affected_point_ids,
+        restore_group_fn=restore_group_fn,
+        remove_group_fn=remove_group_fn,
+        set_points_group_fn=set_points_group_fn,
+        description="Удалить скрытую группу",
+    )
+
+    undo_mgr.push(cmd, execute=True)
+    assert gs.get_group(group.id) is None
+    assert ps.get_point(p1.id).group_id is None
+
+    undo_mgr.undo()
+    restored = gs.get_group(group.id)
+    assert restored is not None
+    assert restored.visible is False  # visible=False должно быть сохранено!
+    assert restored.description == "Секретные объекты"
+    assert ps.get_point(p1.id).group_id == group.id
+

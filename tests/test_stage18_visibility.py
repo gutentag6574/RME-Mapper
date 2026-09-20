@@ -100,3 +100,78 @@ def test_export_respects_hidden_group_ids(qapp):
     assert len(pts_to_render) == 2
     assert {p.id for p in pts_to_render} == {"p2", "p3"}
 
+
+def test_multilevel_visibility_combinations_matrix(qapp):
+    """Проверка всех комбинаций глобальной, групповой и точечной видимости (Points 6, 7, 8).
+
+    Ни одна UI-операция видимости не должна менять флаги другого уровня!
+    """
+    canvas = MapCanvas()
+    gs = GroupService()
+    g1 = gs.create_group("Зона 1", visible=True)
+
+    pt = MapPoint(
+        id="p-test",
+        name="Точка Тест",
+        latitude=56.0,
+        longitude=47.0,
+        group_id=g1.id,
+        visible=True,
+        zone_enabled=True,
+        radius_m=200.0,
+    )
+
+    canvas.set_groups(gs.list_groups())
+    canvas.add_point(pt)
+
+    # 1. Проверка независимости: point.visible=True, group.visible=False
+    canvas.set_group_visibility(g1.id, False)
+    assert pt.visible is True  # point.visible НЕ изменился!
+    assert canvas.is_group_visible(g1.id) is False
+    assert canvas._marker_items["p-test"].isVisible() is False
+    assert canvas._zone_items["p-test"].isVisible() is False
+
+    # Show group возвращает видимость
+    canvas.set_group_visibility(g1.id, True)
+    assert canvas._marker_items["p-test"].isVisible() is True
+    assert canvas._zone_items["p-test"].isVisible() is True
+
+    # 2. Проверка комбинаций видимости маркеров:
+    # effective = global_pts AND group.visible AND pt.visible
+    for g_pts in (True, False):
+        for grp_vis in (True, False):
+            for pt_vis in (True, False):
+                canvas.set_all_points_visible(g_pts)
+                canvas.set_group_visibility(g1.id, grp_vis)
+                pt.visible = pt_vis
+                canvas.update_point(pt)
+
+                expected_marker_vis = g_pts and grp_vis and pt_vis
+                assert canvas._marker_items["p-test"].isVisible() == expected_marker_vis, (
+                    f"Mismatch for g_pts={g_pts}, grp_vis={grp_vis}, pt_vis={pt_vis}"
+                )
+
+    # 3. Проверка комбинаций видимости зон:
+    # effective_zone = global_zones AND group.visible AND pt.visible AND zone_enabled AND radius > 0
+    canvas.set_all_points_visible(True)
+    for g_zones in (True, False):
+        for grp_vis in (True, False):
+            for pt_vis in (True, False):
+                for z_en in (True, False):
+                    canvas.set_all_zones_visible(g_zones)
+                    canvas.set_group_visibility(g1.id, grp_vis)
+                    pt.visible = pt_vis
+                    pt.zone_enabled = z_en
+                    canvas.update_point(pt)
+
+                    expected_zone_vis = g_zones and grp_vis and pt_vis and z_en
+                    actual_vis = (
+                        canvas._zone_items["p-test"].isVisible()
+                        if "p-test" in canvas._zone_items
+                        else False
+                    )
+                    assert actual_vis == expected_zone_vis, (
+                        f"Zone mismatch for g_zones={g_zones}, grp={grp_vis}, pt={pt_vis}, zen={z_en}"
+                    )
+
+

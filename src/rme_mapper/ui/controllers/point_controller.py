@@ -473,14 +473,17 @@ class PointController(QObject):
         self._set_status(tr("status.point_deleted"), 3000)
         logger.info("Точка с ID %s успешно удалена", point_id)
 
-    def bulk_edit_style_workflow(self) -> None:
-        """Сценарий массового редактирования стиля выбранных точек."""
-        selected_ids = self._get_selected_point_ids()
-        if not selected_ids:
-            return
+    def bulk_edit_style_workflow(self, points: list[MapPoint] | None = None) -> None:
+        """Сценарий массового редактирования стиля выбранных точек или переданного списка точек группы."""
+        if points is not None:
+            valid_points = [p for p in points if p is not None]
+        else:
+            selected_ids = self._get_selected_point_ids()
+            if not selected_ids:
+                return
+            points_list = [self._point_service.get_point(pid) for pid in selected_ids]
+            valid_points = [p for p in points_list if p is not None]
 
-        points = [self._point_service.get_point(pid) for pid in selected_ids]
-        valid_points = [p for p in points if p is not None]
         if not valid_points:
             return
 

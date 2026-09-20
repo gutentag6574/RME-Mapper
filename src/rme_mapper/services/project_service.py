@@ -267,6 +267,8 @@ class ProjectService:
                     logger.warning("Группа №%d имеет пустое название, пропущена", g_idx + 1)
                     continue
                 if gid in seen_group_ids:
+                    # Детерминированная безопасность: первая группа сохраняет оригинальный ID;
+                    # последующим дубликатам генерируется новый UUID, чтобы они не перехватывали чужие точки.
                     logger.warning("duplicate_group_id: группа '%s' имеет дублирующийся ID '%s', сгенерирован новый", gname, gid)
                     gid = uuid4().hex
                 seen_group_ids.add(gid)

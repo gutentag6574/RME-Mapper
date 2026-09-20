@@ -99,3 +99,49 @@ def test_point_dialog_group_combo(qapp):
     # Проверка предустановки существующего group_id
     dlg_edit = PointDialog(groups=groups, group_id=g2.id)
     assert dlg_edit.group_id_result == g2.id
+
+
+def test_point_dialog_no_automatic_group_creation(qapp):
+    """Проверка, что диалог точки не создает новые группы автоматически (Point 15)."""
+    gs = GroupService()
+    g1 = gs.create_group("Существующая")
+    groups_before = len(gs)
+
+    # Открываем диалог для точки без группы
+    pt = MapPoint(name="Новая", latitude=56.0, longitude=47.0)
+    dlg = PointDialog(groups=gs.list_groups(), point=pt, mode="EDIT")
+
+    # Переключаем комбобокс на "Существующая"
+    dlg.group_combo.setCurrentIndex(1)
+    assert dlg.group_id_result == g1.id
+
+    # Переключаем обратно на "Без группы"
+    dlg.group_combo.setCurrentIndex(0)
+    assert dlg.group_id_result is None
+
+    # Количество групп в GroupService не изменилось
+    assert len(gs) == groups_before
+
+
+def test_properties_panel_group_label_never_shows_uuid(qapp):
+    """Проверка, что PropertiesPanel показывает человекочитаемое имя или 'Без группы', никогда не UUID (Point 16)."""
+    panel = PropertiesPanel()
+    gs = GroupService()
+    g = gs.create_group("Лесной сектор")
+
+    # С резолвером
+    panel.set_group_name_resolver(
+        lambda gid: gs.get_group(gid).name if gid and gs.get_group(gid) else "Без группы"
+    )
+
+    pt = MapPoint(name="П1", latitude=56.0, longitude=47.0, group_id=g.id)
+    panel.update_properties(pt)
+    assert panel.prop_group_val.text() == "Лесной сектор"
+    assert g.id not in panel.prop_group_val.text()
+
+    # Для точки без группы
+    pt_no_grp = MapPoint(name="П2", latitude=56.0, longitude=47.0, group_id=None)
+    panel.update_properties(pt_no_grp)
+    assert panel.prop_group_val.text() == "Без группы"
+    assert "uuid" not in panel.prop_group_val.text().lower()
+

@@ -120,3 +120,15 @@ def test_map_point_group_id_default():
 
     pt2 = MapPoint(name="Точка 2", latitude=56.0, longitude=47.0, group_id="grp-123")
     assert pt2.group_id == "grp-123"
+
+
+def test_unique_group_ids_and_html_description_check():
+    """Проверка уникальности ID по умолчанию и запрета HTML в описании."""
+    g1 = ObjectGroup(name="Группа 1")
+    g2 = ObjectGroup(name="Группа 2")
+    assert g1.id != g2.id
+    assert len(g1.id) >= 10
+
+    # Проверка отклонения HTML-тегов в описании
+    with pytest.raises(ValueError, match="HTML"):
+        validate_group_description("Описание с <b>жирным</b> текстом")

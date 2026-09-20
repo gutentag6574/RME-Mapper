@@ -365,8 +365,9 @@ class PointsPanel(QWidget):
         self.points_table.setItem(row, 4, shape_item)
         self.points_table.setItem(row, 5, radius_item)
         self._apply_filter_to_row(row)
-        self._update_category_combo_items()
-        self._update_counter()
+        if not self.points_table.signalsBlocked():
+            self._update_category_combo_items()
+            self._update_counter()
         return row
 
     def add_point(self, point: Any) -> int:
@@ -407,7 +408,8 @@ class PointsPanel(QWidget):
     ) -> int:
         """Вставка строки по заданному индексу (для восстановления в Undo)."""
         target_row = max(0, min(row, self.points_table.rowCount()))
-        self.points_table.insertRow(target_row)
+        if target_row >= self.points_table.rowCount():
+            self.points_table.insertRow(target_row)
 
         num_item = QTableWidgetItem(num)
         num_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -437,16 +439,18 @@ class PointsPanel(QWidget):
         self.points_table.setItem(target_row, 4, shape_item)
         self.points_table.setItem(target_row, 5, radius_item)
 
-        # Пересчет номеров строк (с сохранением пользовательских номеров)
-        for r in range(self.points_table.rowCount()):
-            it = self.points_table.item(r, 0)
-            if it:
-                custom_num = it.data(Qt.ItemDataRole.UserRole + 1)
-                it.setText(str(custom_num) if custom_num else str(r + 1))
+        # Пересчет номеров строк (только при вставке в середину таблицы)
+        if target_row < self.points_table.rowCount() - 1:
+            for r in range(target_row + 1, self.points_table.rowCount()):
+                it = self.points_table.item(r, 0)
+                if it:
+                    custom_num = it.data(Qt.ItemDataRole.UserRole + 1)
+                    it.setText(str(custom_num) if custom_num else str(r + 1))
 
         self._apply_filter_to_row(target_row)
-        self._update_category_combo_items()
-        self._update_counter()
+        if not self.points_table.signalsBlocked():
+            self._update_category_combo_items()
+            self._update_counter()
         return target_row
 
     def update_row(

@@ -127,3 +127,90 @@ def test_duplicate_group_id_handling():
     assert data.groups[0].id == "duplicate-id"
     assert data.groups[1].id != "duplicate-id"
     assert len(data.groups[1].id) > 0
+
+
+def test_duplicate_group_id_with_points_deterministic_assignment(caplog):
+    """Критическая проверка (Point 20): при одинаковых ID групп в файле проекта:
+
+    - Программа не падает;
+    - Точки не теряются;
+    - Первая группа детерминированно сохраняет оригинальный ID;
+    - Точка с этим group_id остается закрепленной за первой группой;
+    - Вторая группа получает новый уникальный ID и НЕ перехватывает чужие точки;
+    - Событие регистрируется в журнале с уровнем warning.
+    """
+    import logging
+    proj_service = ProjectService()
+
+    corrupt_json = {
+        "format": "GeoPoint Mapper Project",
+        "version": 1,
+        "map": {},
+        "layers": {},
+        "groups": [
+            {"id": "shared-uuid-123", "name": "Первая группа А"},
+            {"id": "shared-uuid-123", "name": "Вторая группа Б"},
+        ],
+        "points": [
+            {
+                "id": "pt-1",
+                "name": "Точка 1",
+                "latitude": 56.0,
+                "longitude": 47.0,
+                "group_id": "shared-uuid-123",
+            }
+        ],
+    }
+
+    with caplog.at_level(logging.WARNING):
+        data = proj_service._parse_project_dict(corrupt_json)
+
+    assert len(data.groups) == 2
+    first_grp = data.groups[0]
+    second_grp = data.groups[1]
+
+    # Первая сохраняет исходный ID
+    assert first_grp.id == "shared-uuid-123"
+    assert first_grp.name == "Первая группа А"
+
+    # Вторая получает новый уникальный ID
+    assert second_grp.id != "shared-uuid-123"
+    assert second_grp.name == "Вторая группа Б"
+    assert len(second_grp.id) > 0
+
+    # Точка детерминированно осталась за первой группой
+    assert len(data.points) == 1
+    pt = data.points[0]
+    assert pt.group_id == "shared-uuid-123"
+    assert pt.group_id == first_grp.id
+    assert pt.group_id != second_grp.id
+
+    # Предупреждение зафиксировано в журнале
+    assert any("duplicate_group_id" in rec.message for rec in caplog.records)
+
+
+def test_legacy_rmeproject_backward_compatibility():
+    """Проверка открытия старого формата .rmeproject без групп (Point 18)."""
+    proj_service = ProjectService()
+    legacy_json = {
+        "format": "RME-Mapper Project",
+        "version": 1,
+        "map": {"name": "legacy_map"},
+        "layers": {},
+        "points": [
+            {
+                "id": "legacy-pt",
+                "name": "Старая точка RME",
+                "latitude": 55.75,
+                "longitude": 37.61,
+            }
+        ],
+    }
+
+    data = proj_service._parse_project_dict(legacy_json)
+    assert data.groups == []
+    assert len(data.points) == 1
+    assert data.points[0].group_id is None
+    map_pt = data.points[0].to_map_point()
+    assert map_pt.group_id is None
+

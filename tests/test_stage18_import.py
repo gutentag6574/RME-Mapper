@@ -133,3 +133,115 @@ def test_import_undo_redo_rolls_back_new_groups():
     assert len(gs) == 2
     assert gs.get_group("g1") is not None
     assert gs.get_group("g2") is not None
+
+
+def test_import_create_missing_groups_off(tmp_path: Path):
+    """Проверка импорта при выключенной опции создания недостающих групп (Point 21).
+
+    При create_missing_groups=False точка с неизвестной группой переходит в Ungrouped (None).
+    """
+    csv_content = (
+        "name,latitude,longitude,group\n"
+        "Точка 1,56.0,47.0,Неизвестная Группа\n"
+    )
+    csv_file = tmp_path / "missing_groups_off.csv"
+    csv_file.write_text(csv_content, encoding="utf-8")
+
+    opts = ImportOptions(
+        create_missing_groups=False,
+        group_name_to_id={},
+    )
+
+    service = ImportService()
+    result = service.validate_file(csv_file, opts)
+
+    assert result.valid_rows == 1
+    point = result.points[0]
+    # При create_missing_groups=False группа не создается, group_id = None
+    assert point.group_id is None
+    assert len(result.new_groups) == 0
+
+
+def test_import_group_name_collision_case_insensitive(tmp_path: Path):
+    """Проверка коллизии названий: 'Forest' и существующая 'forest' не создают дубликат (Point 23)."""
+    csv_content = (
+        "name,latitude,longitude,group\n"
+        "Объект 1,56.0,47.0,Forest\n"
+        "Объект 2,56.1,47.1,forest\n"
+    )
+    csv_file = tmp_path / "case_collision.csv"
+    csv_file.write_text(csv_content, encoding="utf-8")
+
+    # Существующая группа "forest" с id="grp-forest"
+    opts = ImportOptions(
+        create_missing_groups=True,
+        group_name_to_id={"forest": "grp-forest"},
+    )
+
+    service = ImportService()
+    result = service.validate_file(csv_file, opts)
+
+    assert result.valid_rows == 2
+    p1 = result.points[0]
+    p2 = result.points[1]
+
+    # Обе точки ссылаются на существующую группу
+    assert p1.group_id == "grp-forest"
+    assert p2.group_id == "grp-forest"
+    # Никаких новых групп не создано
+    assert len(result.new_groups) == 0
+
+
+def test_import_undo_preserves_pre_existing_groups():
+    """Проверка транзакции импорта (Point 22): при Undo существующие группы не удаляются!"""
+    gs = GroupService()
+    ps = PointService()
+    undo_mgr = UndoManager()
+
+    existing_grp = gs.create_group("Существующая группа", group_id="grp-existing")
+    new_grp = ObjectGroup(id="grp-new", name="Новая группа", visible=True)
+    p_imported = ps.add_point(name="Импорт 1", latitude=56.0, longitude=47.0, group_id="grp-new")
+
+    def add_points_fn(points):
+        for p in points:
+            ps._points[p.id] = p
+
+    def remove_points_fn(pids):
+        for pid in pids:
+            ps.remove_point(pid)
+
+    def add_groups_fn(grps):
+        for g in grps:
+            gs.add_existing_group(g)
+
+    def remove_groups_fn(gids):
+        for gid in gids:
+            try:
+                gs.delete_group(gid)
+            except KeyError:
+                pass
+
+    cmd = ImportPointsCommand(
+        points=[p_imported],
+        add_fn=add_points_fn,
+        remove_fn=remove_points_fn,
+        created_groups=[new_grp],
+        add_groups_fn=add_groups_fn,
+        remove_groups_fn=remove_groups_fn,
+        description="Импорт с новой группой",
+    )
+
+    undo_mgr.push(cmd, execute=True)
+    assert len(gs) == 2
+    assert gs.get_group("grp-existing") is not None
+    assert gs.get_group("grp-new") is not None
+
+    # Undo
+    undo_mgr.undo()
+
+    # Новая группа удалена, а существовавшая до импорта ОБЯЗАНА остаться!
+    assert gs.get_group("grp-new") is None
+    assert gs.get_group("grp-existing") is not None
+    assert len(gs) == 1
+    assert len(ps) == 0
+
