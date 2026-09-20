@@ -7,7 +7,7 @@ from typing import Any
 
 logger = logging.getLogger("rme_mapper.models.map_profile")
 
-SUPPORTED_SOURCE_TYPES = {"geopackage", "geotiff", "online_xyz"}
+SUPPORTED_SOURCE_TYPES = {"geopackage", "geotiff", "online_xyz", "georeferenced_image"}
 
 
 @dataclass
@@ -32,6 +32,11 @@ class MapProfile:
 
     provider_id: str | None = None
     map_type: str | None = None
+
+    # Поля для ручной геопривязки изображений (Stage 21: georeferenced_image)
+    affine_transform: tuple[float, float, float, float, float, float] | list[float] | None = None
+    control_points: list[dict[str, Any]] | None = None
+    transformation_type: str = "affine"
 
     metadata_version: int = 1
 
@@ -75,6 +80,14 @@ class MapProfile:
             source_dict["provider_id"] = self.provider_id
         if self.map_type:
             source_dict["map_type"] = self.map_type
+        if self.affine_transform is not None:
+            source_dict["affine_transform"] = list(self.affine_transform)
+        if self.control_points is not None:
+            source_dict["control_points"] = [
+                cp.to_dict() if hasattr(cp, "to_dict") else dict(cp) for cp in self.control_points
+            ]
+        if self.transformation_type:
+            source_dict["transformation_type"] = self.transformation_type
 
         data: dict[str, Any] = {
             "schema_version": self.metadata_version,
@@ -111,15 +124,37 @@ class MapProfile:
         # Источник данных
         provider_id: str | None = None
         map_type: str | None = None
+        affine_transform: tuple[float, ...] | list[float] | None = None
+        control_points: list[dict[str, Any]] | None = None
+        transformation_type: str = "affine"
+
         source_info = data.get("source")
         if isinstance(source_info, dict):
             source_type = str(source_info.get("type", "geopackage")).lower().strip()
             source_path = str(source_info.get("path") or "").strip()
             provider_id = source_info.get("provider_id")
             map_type = source_info.get("map_type")
+            if "affine_transform" in source_info and isinstance(source_info["affine_transform"], (list, tuple)):
+                affine_transform = tuple(float(x) for x in source_info["affine_transform"])
+            if "control_points" in source_info and isinstance(source_info["control_points"], list):
+                from rme_mapper.models.georeference import ControlPoint
+
+                control_points = [
+                    ControlPoint.from_dict(cp) if isinstance(cp, dict) else cp
+                    for cp in source_info["control_points"]
+                ]
+            if "transformation_type" in source_info:
+                transformation_type = str(source_info["transformation_type"])
         else:
             source_type = "geopackage"
             source_path = str(data.get("prepared_file") or data.get("source_path") or "").strip()
+
+        if affine_transform is None and "affine_transform" in data and isinstance(data["affine_transform"], (list, tuple)):
+            affine_transform = tuple(float(x) for x in data["affine_transform"])
+        if control_points is None and "control_points" in data and isinstance(data["control_points"], list):
+            control_points = [dict(cp) for cp in data["control_points"] if isinstance(cp, dict)]
+        if "transformation_type" in data:
+            transformation_type = str(data["transformation_type"])
 
         # Валидация поддерживаемых типов источника
         if source_type not in SUPPORTED_SOURCE_TYPES:
@@ -192,5 +227,8 @@ class MapProfile:
             extent=extent,
             provider_id=provider_id,
             map_type=map_type,
+            affine_transform=affine_transform,
+            control_points=control_points,
+            transformation_type=transformation_type,
             metadata_version=version,
         )

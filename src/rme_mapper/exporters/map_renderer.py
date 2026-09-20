@@ -150,6 +150,7 @@ class MapRenderer:
         hidden_group_ids: set[str] | None = None,
         online_tile_manager: Any = None,
         attribution_text: str | None = None,
+        raster_affine: tuple[float, float, float, float, float, float] | list[float] | None = None,
     ) -> QImage:
         """Полный рендер карты в QImage заданного разрешения."""
         errors = options.validate()
@@ -205,7 +206,7 @@ class MapRenderer:
                     scale=scale,
                 )
 
-            # 3.5 Отрисовка растровой подложки GeoTIFF (до векторных слоев и точек)
+            # 3.5 Отрисовка растровой подложки GeoTIFF / Georeferenced Image (до векторных слоев и точек)
             if raster_source and is_raster_visible:
                 cls._render_raster_layer(
                     painter=painter,
@@ -216,6 +217,7 @@ class MapRenderer:
                     min_x=min_x,
                     max_y=max_y,
                     scale=scale,
+                    raster_affine=raster_affine,
                 )
 
             # 4. Отрисовка базовых слоев карты
@@ -448,8 +450,32 @@ class MapRenderer:
         min_x: float,
         max_y: float,
         scale: float,
+        raster_affine: tuple[float, float, float, float, float, float] | list[float] | None = None,
     ) -> None:
-        """Рендеринг геопривязанной растровой подложки через windowed reading."""
+        """Рендеринг геопривязанной растровой подложки (GeoTIFF или Georeferenced Image)."""
+        p = Path(raster_source)
+        if raster_affine is not None:
+            from rme_mapper.services.georeference_service import GeoreferenceService
+            try:
+                qimg, _ = GeoreferenceService.load_full_image(p)
+                a, b, c_aff, d, e, f_aff = raster_affine
+                m11 = float(a * scale)
+                m12 = float(-d * scale)
+                m21 = float(b * scale)
+                m22 = float(-e * scale)
+                dx = float((c_aff - min_x) * scale)
+                dy = float((max_y - f_aff) * scale)
+                t_export = QTransform(m11, m12, m21, m22, dx, dy)
+
+                painter.save()
+                painter.setWorldTransform(t_export)
+                painter.drawImage(0, 0, qimg)
+                painter.restore()
+                return
+            except Exception as georef_err:
+                logger.warning("Ошибка рендеринга геопривязанного растра: %s", georef_err)
+                return
+
         from rme_mapper.backends.factory import BackendFactory, get_raster_backend
         if not BackendFactory.supports_geotiff():
             return

@@ -7,7 +7,7 @@ from typing import Any
 
 import uuid
 from PySide6.QtCore import QObject
-from PySide6.QtWidgets import QMessageBox, QWidget
+from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
 
 from rme_mapper.backends import MapDataBackend, BackendFactory, get_raster_backend
 from rme_mapper.i18n import tr
@@ -331,6 +331,13 @@ class MapController(QObject):
         if hasattr(self._map_canvas, "clear_online_basemap"):
             self._map_canvas.clear_online_basemap()
 
+        # -------------------------------------------------------------
+        # Специальная обработка геопривязанного растра (Stage 21: georeferenced_image)
+        # -------------------------------------------------------------
+        if profile is not None and getattr(profile, "source_type", "") == "georeferenced_image":
+            self.load_georeferenced_image(profile, path)
+            return
+
         is_geotiff = (
             (profile is not None and getattr(profile, "source_type", "") == "geotiff")
             or path.suffix.lower() in (".tif", ".tiff")
@@ -554,3 +561,147 @@ class MapController(QObject):
             layer.visible = True
             self._layers_panel.set_layer_checked(layer.id, True)
             self._map_canvas.set_layer_visibility(layer.id, True)
+
+    def load_georeferenced_image(self, profile: MapProfile, path: Path) -> None:
+        """Загрузка и отображение геопривязанного пользовательского растра (Stage 21)."""
+        from rme_mapper.services.georeference_service import GeoreferenceService
+
+        # 1. Закрываем предыдущий растровый бэкенд, если был
+        if self._map_path and BackendFactory.supports_geotiff():
+            try:
+                rb = get_raster_backend()
+                rb.close(self._map_path)
+            except Exception as e:
+                logger.debug("Ошибка закрытия растрового бэкенда: %s", e)
+
+        # 2. Если была онлайн-подложка, отключаем
+        if hasattr(self._map_canvas, "clear_online_basemap"):
+            self._map_canvas.clear_online_basemap()
+
+        try:
+            rgba_preview, full_size = GeoreferenceService.load_preview_image(path, max_dimension=4096)
+            affine_coeffs = tuple(profile.affine_transform) if profile.affine_transform else (1.0, 0.0, 0.0, 0.0, -1.0, float(full_size[1]))
+            crs_val = profile.crs or "EPSG:4326"
+
+            if not profile.extent:
+                w_px, h_px = full_size
+                a_c, b_c, c_c, d_c, e_c, f_c = affine_coeffs
+                corners_x = [c_c, a_c * w_px + c_c, a_c * w_px + b_c * h_px + c_c, b_c * h_px + c_c]
+                corners_y = [f_c, d_c * w_px + f_c, d_c * w_px + e_c * h_px + f_c, e_c * h_px + f_c]
+                profile.extent = {
+                    "xmin": min(corners_x),
+                    "ymin": min(corners_y),
+                    "xmax": max(corners_x),
+                    "ymax": max(corners_y),
+                }
+
+            display_name = profile.name or path.stem
+            lid = "raster_base"
+            vis = True
+            if profile.layers:
+                first_cfg = profile.layers[0]
+                display_name = str(first_cfg.get("display_name") or first_cfg.get("name") or display_name)
+                lid = str(first_cfg.get("id") or lid)
+                vis = bool(first_cfg.get("visible", True))
+
+            raster_layer = MapLayer(
+                id=lid,
+                source_name="raster",
+                display_name=display_name,
+                geometry_type="raster",
+                crs=crs_val,
+                visible=vis,
+                feature_count=1,
+                role=LayerRole.RASTER,
+                z_order=5,
+                style={"border_color": "#000000", "fill_color": None, "border_width": 0.0},
+            )
+
+            def raster_provider(win_extent, target_w, target_h):
+                return rgba_preview, {"transform": affine_coeffs, "crs": crs_val}
+
+            self._layers_panel.clear_layers()
+            self._map_canvas.add_raster_item(
+                layer=raster_layer,
+                image_or_array=rgba_preview,
+                affine_coeffs=affine_coeffs,
+                full_size=full_size,
+                raster_provider=raster_provider,
+            )
+
+            self._loaded_layers = [raster_layer]
+            self._active_crs = crs_val
+            self._boundary_geometry = None
+            self._active_profile = profile
+            self._map_path = path
+
+            self._layers_panel.set_layers([raster_layer])
+            self._update_title(f"Карта: {display_name}")
+            status_text = f"Изображение: {display_name} | {self._active_crs} | {full_size[0]}×{full_size[1]}"
+            self._set_status(status_text)
+            self._points_panel.set_buttons_enabled(add=True)
+            logger.info("Геопривязанное изображение успешно загружено: %s", status_text)
+
+            self._on_map_loaded(self._active_crs)
+            self._map_canvas.fit_to_view()
+
+            if self._settings_service:
+                self._settings_service.add_recent_map(str(path))
+                self._settings_service.set_last_map_directory(str(path))
+
+        except Exception as e:
+            logger.exception("Ошибка при загрузке геопривязанного изображения %s: %s", path, e)
+            self._map_canvas.set_error(f"Ошибка чтения изображения:\n{e}")
+            self._set_status("Ошибка загрузки изображения")
+
+    def edit_georeferencing(self, on_applied: Any = None, undo_manager: Any = None) -> bool:
+        """Открытие диалога повторного редактирования геопривязки текущей карты (Stage 21)."""
+        if not self._active_profile or self._active_profile.source_type != "georeferenced_image":
+            return False
+
+        from rme_mapper.ui.georeference_dialog import GeoreferenceDialog
+        from rme_mapper.services.undo_manager import EditGeoreferencingCommand
+
+        path = self._map_path or self._active_profile.get_absolute_source_path()
+        dlg = GeoreferenceDialog(
+            path,
+            existing_points=self._active_profile.control_points,
+            existing_crs=self._active_profile.crs,
+        )
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return False
+
+        before_affine = tuple(self._active_profile.affine_transform) if self._active_profile.affine_transform else (1.0, 0.0, 0.0, 0.0, -1.0, 0.0)
+        before_cps = list(self._active_profile.control_points or [])
+        before_crs = str(self._active_profile.crs or "EPSG:4326")
+
+        after_affine = dlg.get_affine_transform()
+        after_cps = [p.to_dict() for p in dlg.get_control_points()]
+        after_crs = dlg.get_crs()
+        new_extent = dlg.get_extent()
+
+        def apply_fn(aff, cps, crs):
+            self._active_profile.affine_transform = list(aff)
+            self._active_profile.control_points = cps
+            self._active_profile.crs = crs
+            self._active_profile.extent = new_extent
+            self.load_georeferenced_image(self._active_profile, Path(path))
+            if on_applied:
+                on_applied()
+            self._on_modified()
+
+        if undo_manager is not None:
+            cmd = EditGeoreferencingCommand(
+                apply_fn=apply_fn,
+                before_affine=before_affine,
+                before_control_points=before_cps,
+                before_crs=before_crs,
+                after_affine=after_affine,
+                after_control_points=after_cps,
+                after_crs=after_crs,
+            )
+            undo_manager.push(cmd, execute=True)
+        else:
+            apply_fn(after_affine, after_cps, after_crs)
+
+        return True

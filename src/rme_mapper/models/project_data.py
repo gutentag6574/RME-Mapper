@@ -46,6 +46,9 @@ class ProjectMapData:
     layers: list[dict[str, Any]] = field(default_factory=list)
     provider_id: str | None = None
     map_type: str | None = None
+    affine_transform: list[float] | None = None
+    control_points: list[dict[str, Any]] | None = None
+    transformation_type: str = "affine"
 
     def to_dict(self) -> dict[str, Any]:
         """Преобразование в словарь для JSON-сериализации.
@@ -72,6 +75,12 @@ class ProjectMapData:
             res["provider_id"] = self.provider_id
         if self.map_type:
             res["map_type"] = self.map_type
+        if self.affine_transform is not None:
+            res["affine_transform"] = list(self.affine_transform)
+        if self.control_points is not None:
+            res["control_points"] = [dict(cp) for cp in self.control_points]
+        if self.transformation_type:
+            res["transformation_type"] = self.transformation_type
         return res
 
     @classmethod
@@ -81,6 +90,17 @@ class ProjectMapData:
             return cls()
         raw_layers = data.get("layers", [])
         layers_list = [dict(l) for l in raw_layers if isinstance(l, dict)]
+
+        raw_affine = data.get("affine_transform")
+        affine_list: list[float] | None = None
+        if isinstance(raw_affine, (list, tuple)):
+            affine_list = [float(x) for x in raw_affine]
+
+        raw_cps = data.get("control_points")
+        cps_list: list[dict[str, Any]] | None = None
+        if isinstance(raw_cps, list):
+            cps_list = [dict(cp) for cp in raw_cps if isinstance(cp, dict)]
+
         return cls(
             map_id=str(data.get("map_id") or ""),
             relative_path=str(data.get("relative_path") or data.get("path") or ""),
@@ -91,6 +111,9 @@ class ProjectMapData:
             layers=layers_list,
             provider_id=data.get("provider_id"),
             map_type=data.get("map_type"),
+            affine_transform=affine_list,
+            control_points=cps_list,
+            transformation_type=str(data.get("transformation_type") or "affine"),
         )
 
 

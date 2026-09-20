@@ -467,6 +467,9 @@ class ProjectService:
 
         provider_id = getattr(map_profile, "provider_id", None) if map_profile else None
         map_type = getattr(map_profile, "map_type", None) if map_profile else None
+        affine_transform = getattr(map_profile, "affine_transform", None) if map_profile else None
+        control_points = getattr(map_profile, "control_points", None) if map_profile else None
+        transformation_type = getattr(map_profile, "transformation_type", "affine") if map_profile else "affine"
 
         map_data = ProjectMapData(
             map_id=map_id,
@@ -478,6 +481,11 @@ class ProjectService:
             layers=profile_layers_meta,
             provider_id=provider_id,
             map_type=map_type,
+            affine_transform=list(affine_transform) if affine_transform is not None else None,
+            control_points=[
+                cp.to_dict() if hasattr(cp, "to_dict") else dict(cp) for cp in control_points
+            ] if control_points is not None else None,
+            transformation_type=transformation_type,
         )
 
         layers_state = {layer.id: layer.visible for layer in (layers or [])}

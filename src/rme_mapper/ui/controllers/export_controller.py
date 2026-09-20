@@ -180,10 +180,15 @@ class ExportController(QObject):
 
         # Определение растрового источника и видимости для экспорта
         raster_source: Path | None = None
-        if profile and getattr(profile, "source_type", "") == "geotiff":
+        raster_affine: tuple[float, float, float, float, float, float] | list[float] | None = None
+        if profile and getattr(profile, "source_type", "") in ("geotiff", "georeferenced_image"):
             raster_source = profile.get_absolute_source_path()
-        elif map_path and map_path.suffix.lower() in (".tif", ".tiff"):
+            if getattr(profile, "source_type", "") == "georeferenced_image":
+                raster_affine = getattr(profile, "affine_transform", None)
+        elif map_path and map_path.suffix.lower() in (".tif", ".tiff", ".png", ".jpg", ".jpeg"):
             raster_source = map_path
+            if profile and getattr(profile, "affine_transform", None):
+                raster_affine = profile.affine_transform
 
         is_raster_visible = True
         if hasattr(self._map_canvas, "is_layer_visible") and "raster_base" in getattr(self._map_canvas, "_layer_items", {}):
@@ -213,6 +218,7 @@ class ExportController(QObject):
             is_raster_visible=is_raster_visible,
             online_tile_manager=online_tile_manager,
             attribution_text=attribution_text,
+            raster_affine=raster_affine,
         )
 
         if not dialog.exec():
@@ -250,6 +256,7 @@ class ExportController(QObject):
                 hidden_group_ids=hidden_gids,
                 online_tile_manager=online_tile_manager,
                 attribution_text=attribution_text,
+                raster_affine=raster_affine,
             )
 
             success_msg = tr("export.status_success", path=str(out_path))

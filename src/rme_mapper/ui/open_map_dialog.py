@@ -345,14 +345,51 @@ class OpenMapDialog(QDialog):
             self,
             "Выберите файл карты",
             root_dir,
-            "Файлы карт (*.gpkg *.tif *.tiff);;Файлы GeoPackage (*.gpkg);;Файлы GeoTIFF (*.tif *.tiff);;Все файлы (*.*)",
+            "Файлы карт и изображений (*.gpkg *.tif *.tiff *.png *.jpg *.jpeg);;Файлы GeoPackage (*.gpkg);;Файлы GeoTIFF (*.tif *.tiff);;Изображения (*.png *.jpg *.jpeg);;Все файлы (*.*)",
         )
         if file_path:
             self._set_file_path(Path(file_path))
 
+    def _launch_georeference_dialog(self, path: Path) -> None:
+        """Запуск интерактивного диалога геопривязки изображения."""
+        from uuid import uuid4
+        from rme_mapper.ui.georeference_dialog import GeoreferenceDialog
+        from rme_mapper.models.map_profile import MapProfile
+
+        dlg = GeoreferenceDialog(path, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            affine = dlg.get_affine_transform()
+            cps = [p.to_dict() for p in dlg.get_control_points()]
+            crs_val = dlg.get_crs()
+            extent_dict = dlg.get_extent()
+            profile = MapProfile(
+                id=f"georef_{uuid4().hex[:8]}",
+                name=path.stem,
+                source_type="georeferenced_image",
+                source_path=str(path.resolve()),
+                base_dir=path.parent,
+                crs=crs_val,
+                boundary_layer=None,
+                boundary_required=False,
+                extent=extent_dict,
+                affine_transform=list(affine),
+                control_points=cps,
+                transformation_type="affine",
+                layers=[{
+                    "id": "raster_base",
+                    "name": "raster",
+                    "source_name": "raster",
+                    "display_name": path.stem,
+                    "geometry_type": "raster",
+                    "visible": True,
+                    "crs": crs_val,
+                }],
+            )
+            self._selected_profile = profile
+            self.accept()
 
     def _set_file_path(self, path: Path) -> None:
-        """Исследование структуры файла карты (GeoPackage или GeoTIFF) и обновление интерфейса."""
+        """Исследование структуры файла карты (GeoPackage, GeoTIFF или растровые изображения) и обновление интерфейса."""
         from rme_mapper.i18n import tr
 
         if not path.is_file():
@@ -364,7 +401,21 @@ class OpenMapDialog(QDialog):
         ext = path.suffix.lower()
 
         # -------------------------------------------------------------
-        # 1. Обработка растровой карты GeoTIFF (*.tif, *.tiff)
+        # 1. Обработка обычных изображений без привязки (*.png, *.jpg, *.jpeg)
+        # -------------------------------------------------------------
+        if ext in (".png", ".jpg", ".jpeg"):
+            ret = QMessageBox.question(
+                self,
+                tr("msg.georef_offer_title") or "Геопривязка изображения",
+                (tr("msg.georef_offer_prompt") or "Файл «{name}» не содержит географической привязки.\n\nЖелаете геопривязать изображение вручную по контрольным точкам?").format(name=path.name),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if ret == QMessageBox.StandardButton.Yes:
+                self._launch_georeference_dialog(path)
+            return
+
+        # -------------------------------------------------------------
+        # 2. Обработка растровой карты GeoTIFF (*.tif, *.tiff)
         # -------------------------------------------------------------
         if ext in (".tif", ".tiff"):
             if not BackendFactory.supports_geotiff():
@@ -383,22 +434,16 @@ class OpenMapDialog(QDialog):
                 QMessageBox.critical(self, "Ошибка чтения GeoTIFF", f"Не удалось прочитать файл:\n{path}\n\n{e}")
                 return
 
-            # Проверка наличия CRS
-            if not info.get("crs"):
-                QMessageBox.critical(
+            # Проверка наличия CRS и геопривязки в GeoTIFF
+            if not info.get("crs") or not info.get("is_valid_georef"):
+                ret = QMessageBox.question(
                     self,
-                    "Ошибка",
-                    tr("msg.geotiff_no_crs") or "В файле отсутствует система координат.",
+                    tr("msg.georef_offer_title") or "Геопривязка изображения",
+                    (tr("msg.georef_offer_prompt") or "Файл «{name}» не содержит географической привязки.\n\nЖелаете геопривязать изображение вручную по контрольным точкам?").format(name=path.name),
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
-                return
-
-            # Проверка наличия валидной геопривязки
-            if not info.get("is_valid_georef"):
-                QMessageBox.critical(
-                    self,
-                    "Ошибка",
-                    tr("msg.geotiff_no_georef") or "Файл не содержит корректной географической привязки.",
-                )
+                if ret == QMessageBox.StandardButton.Yes:
+                    self._launch_georeference_dialog(path)
                 return
 
             self._is_raster = True

@@ -367,6 +367,36 @@ class BulkChangeCategoryCommand(UndoCommand):
         self._apply_fn(self.previous_categories)
 
 
+class EditGeoreferencingCommand(UndoCommand):
+    """Команда отмены/повтора изменения параметров геопривязки растра."""
+
+    def __init__(
+        self,
+        apply_fn: Callable[[tuple[float, float, float, float, float, float], list[dict[str, Any]], str], None],
+        before_affine: tuple[float, float, float, float, float, float],
+        before_control_points: list[dict[str, Any]],
+        before_crs: str,
+        after_affine: tuple[float, float, float, float, float, float],
+        after_control_points: list[dict[str, Any]],
+        after_crs: str,
+        description: str = "Редактировать геопривязку",
+    ) -> None:
+        super().__init__(description)
+        self.apply_fn = apply_fn
+        self.before_affine = before_affine
+        self.before_control_points = [dict(cp) for cp in before_control_points]
+        self.before_crs = before_crs
+        self.after_affine = after_affine
+        self.after_control_points = [dict(cp) for cp in after_control_points]
+        self.after_crs = after_crs
+
+    def execute(self) -> None:
+        self.apply_fn(self.after_affine, self.after_control_points, self.after_crs)
+
+    def undo(self) -> None:
+        self.apply_fn(self.before_affine, self.before_control_points, self.before_crs)
+
+
 class UndoManager:
     """Сервис управления историей действий (Undo / Redo)."""
 

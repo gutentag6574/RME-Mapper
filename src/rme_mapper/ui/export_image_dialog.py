@@ -68,6 +68,7 @@ class ExportImageDialog(QDialog):
         is_raster_visible: bool = True,
         online_tile_manager: Any = None,
         attribution_text: str | None = None,
+        raster_affine: tuple[float, float, float, float, float, float] | list[float] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("exportImageDialog")
@@ -86,6 +87,7 @@ class ExportImageDialog(QDialog):
         self._is_raster_visible = is_raster_visible
         self._online_tile_manager = online_tile_manager
         self._attribution_text = attribution_text
+        self._raster_affine = raster_affine
 
         # Предрасчет охватов точек
         self._all_points_extent = self._calculate_points_extent(self._points)
@@ -690,6 +692,7 @@ class ExportImageDialog(QDialog):
                 is_raster_visible=self._is_raster_visible,
                 online_tile_manager=self._online_tile_manager,
                 attribution_text=self._attribution_text,
+                raster_affine=self._raster_affine,
             )
 
             # Отображаем эскиз в модальном окне

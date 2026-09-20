@@ -32,6 +32,7 @@ class ImageExportService:
         hidden_group_ids: set[str] | None = None,
         online_tile_manager: Any = None,
         attribution_text: str | None = None,
+        raster_affine: tuple[float, float, float, float, float, float] | list[float] | None = None,
     ) -> Path:
         """Рендеринг и сохранение изображения в файл с гарантией атомарности.
 
@@ -74,6 +75,7 @@ class ImageExportService:
             hidden_group_ids=hidden_group_ids,
             online_tile_manager=online_tile_manager,
             attribution_text=attribution_text,
+            raster_affine=raster_affine,
         )
 
         if image.isNull():

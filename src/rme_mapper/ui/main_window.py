@@ -334,6 +334,18 @@ class MainWindow(QMainWindow):
 
         self.map_menu.addSeparator()
 
+        # Этап 21: Ручная геопривязка изображений
+        self.georeference_image_action = QAction(self)
+        self.georeference_image_action.triggered.connect(lambda: self.open_georeference_image_dialog())
+        self.map_menu.addAction(self.georeference_image_action)
+
+        self.edit_georeferencing_action = QAction(self)
+        self.edit_georeferencing_action.triggered.connect(self.edit_current_georeferencing)
+        self.edit_georeferencing_action.setEnabled(False)
+        self.map_menu.addAction(self.edit_georeferencing_action)
+
+        self.map_menu.addSeparator()
+
         self.fit_map_action = QAction(self)
         self.fit_map_action.setShortcut(QKeySequence("Ctrl+0"))
         self.fit_map_action.triggered.connect(lambda: self.map_canvas.fit_to_view())
@@ -831,6 +843,13 @@ class MainWindow(QMainWindow):
         if hasattr(self, "zoom_to_selected_action"):
             has_sel = len(self.points_panel.selected_point_ids()) > 0 if hasattr(self, "points_panel") else False
             self.zoom_to_selected_action.setEnabled(enabled and has_sel)
+        if hasattr(self, "edit_georeferencing_action"):
+            is_georef = (
+                enabled
+                and self.map_controller.active_profile is not None
+                and getattr(self.map_controller.active_profile, "source_type", "") == "georeferenced_image"
+            )
+            self.edit_georeferencing_action.setEnabled(is_georef)
         if hasattr(self, "measure_distance_action"):
             self.measure_distance_action.setEnabled(enabled)
             if not enabled and self.measure_distance_action.isChecked():
@@ -1259,6 +1278,10 @@ class MainWindow(QMainWindow):
         if hasattr(self, "clear_tile_cache_action"):
             self.clear_tile_cache_action.setText(tr("action.clear_tile_cache"))
             self.clear_tile_cache_action.setStatusTip(tr("action.clear_tile_cache_tip"))
+        if hasattr(self, "georeference_image_action"):
+            self.georeference_image_action.setText(tr("action.georeference_image"))
+        if hasattr(self, "edit_georeferencing_action"):
+            self.edit_georeferencing_action.setText(tr("action.edit_georeferencing"))
 
         if hasattr(self, "fit_map_action"):
             self.fit_map_action.setText(tr("action.fit_map"))
@@ -1728,6 +1751,69 @@ class MainWindow(QMainWindow):
     def _on_online_tiles_auth_error(self, provider_name: str) -> None:
         msg = tr("dialog.online_map.auth_error_msg", name=provider_name)
         self.statusBar().showMessage(msg, 5000)
+
+    def open_georeference_image_dialog(self, file_path: Path | str | None = None) -> None:
+        """Открытие диалога геопривязки изображения по контрольным точкам (Stage 21)."""
+        target_path = file_path
+        if not target_path:
+            last_dir = str(self._settings_service.get_last_map_directory() or Path.home())
+            selected, _ = QFileDialog.getOpenFileName(
+                self,
+                tr("dialog.georef.title"),
+                last_dir,
+                "Изображения (*.png *.jpg *.jpeg *.tif *.tiff);;Все файлы (*.*)",
+            )
+            if not selected:
+                return
+            target_path = Path(selected)
+        else:
+            target_path = Path(target_path)
+
+        from uuid import uuid4
+        from rme_mapper.ui.georeference_dialog import GeoreferenceDialog
+        from rme_mapper.models.map_profile import MapProfile
+
+        dlg = GeoreferenceDialog(target_path, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            affine = dlg.get_affine_transform()
+            cps = [p.to_dict() for p in dlg.get_control_points()]
+            crs_val = dlg.get_crs()
+            extent_dict = dlg.get_extent()
+            profile = MapProfile(
+                id=f"georef_{uuid4().hex[:8]}",
+                name=target_path.stem,
+                source_type="georeferenced_image",
+                source_path=str(target_path.resolve()),
+                base_dir=target_path.parent,
+                crs=crs_val,
+                boundary_layer=None,
+                boundary_required=False,
+                extent=extent_dict,
+                affine_transform=list(affine),
+                control_points=cps,
+                transformation_type="affine",
+                layers=[{
+                    "id": "raster_base",
+                    "name": "raster",
+                    "source_name": "raster",
+                    "display_name": target_path.stem,
+                    "geometry_type": "raster",
+                    "visible": True,
+                    "crs": crs_val,
+                }],
+            )
+            self.map_controller.load_georeferenced_image(profile, target_path)
+            self.project_controller.set_modified(True)
+            self._update_map_dependent_actions(True)
+
+    def edit_current_georeferencing(self) -> None:
+        """Редактирование геопривязки текущего активного растра (Stage 21)."""
+        success = self.map_controller.edit_georeferencing(
+            on_applied=lambda: self.project_controller.set_modified(True),
+            undo_manager=self.point_controller.undo_manager,
+        )
+        if success:
+            self._update_map_dependent_actions(True)
 
 
 
