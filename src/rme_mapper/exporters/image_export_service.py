@@ -27,6 +27,8 @@ class ImageExportService:
         loaded_layers_render_data: list[tuple[str, QPainterPath, QPen, QBrush, float, bool]] | None = None,
         points: list[MapPoint] | None = None,
         selected_point_ids: set[str] | None = None,
+        raster_source: Path | str | None = None,
+        is_raster_visible: bool = True,
     ) -> Path:
         """Рендеринг и сохранение изображения в файл с гарантией атомарности.
 
@@ -64,6 +66,8 @@ class ImageExportService:
             loaded_layers_render_data=loaded_layers_render_data,
             points=points,
             selected_point_ids=selected_point_ids,
+            raster_source=raster_source,
+            is_raster_visible=is_raster_visible,
         )
 
         if image.isNull():

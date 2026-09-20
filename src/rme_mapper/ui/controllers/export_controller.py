@@ -97,7 +97,11 @@ class ExportController(QObject):
             if bb.isValid() and not bb.isEmpty():
                 return (bb.left(), -bb.bottom(), bb.right(), -bb.top())
 
-        # Иначе вычисляем охват загруженных базовых слоев
+        if hasattr(self._map_canvas, "_raster_item") and self._map_canvas._raster_item:
+            sb = self._map_canvas._raster_item.sceneBoundingRect()
+            if sb.isValid() and not sb.isEmpty():
+                return (sb.left(), -sb.bottom(), sb.right(), -sb.top())
+
         if hasattr(self._map_canvas, "_layer_items") and self._map_canvas._layer_items:
             combined = QRectF()
             for item in self._map_canvas._layer_items.values():
@@ -147,6 +151,19 @@ class ExportController(QObject):
         selected_ids = set(self._points_panel.selected_point_ids())
         layers_render_data = self.collect_layer_render_data()
 
+        # Определение растрового источника и видимости для экспорта
+        raster_source: Path | None = None
+        if profile and getattr(profile, "source_type", "") == "geotiff":
+            raster_source = profile.get_absolute_source_path()
+        elif map_path and map_path.suffix.lower() in (".tif", ".tiff"):
+            raster_source = map_path
+
+        is_raster_visible = True
+        if hasattr(self._map_canvas, "is_layer_visible") and "raster_base" in getattr(self._map_canvas, "_layer_items", {}):
+            is_raster_visible = self._map_canvas.is_layer_visible("raster_base")
+        elif hasattr(self._map_canvas, "_raster_item") and self._map_canvas._raster_item:
+            is_raster_visible = self._map_canvas._raster_item.isVisible()
+
         dialog = ExportImageDialog(
             parent=self._parent,
             active_crs=active_crs,
@@ -157,6 +174,8 @@ class ExportController(QObject):
             selected_point_ids=selected_ids,
             settings_service=self._settings_service,
             loaded_layers_render_data=layers_render_data,
+            raster_source=raster_source,
+            is_raster_visible=is_raster_visible,
         )
 
         if not dialog.exec():
@@ -183,6 +202,8 @@ class ExportController(QObject):
                 loaded_layers_render_data=layers_render_data,
                 points=all_points,
                 selected_point_ids=selected_ids,
+                raster_source=raster_source,
+                is_raster_visible=is_raster_visible,
             )
 
             success_msg = tr("export.status_success", path=str(out_path))

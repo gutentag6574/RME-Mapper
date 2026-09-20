@@ -2,7 +2,9 @@
 
 import logging
 import math
+from pathlib import Path
 from typing import Any
+import numpy as np
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (
@@ -142,6 +144,8 @@ class MapRenderer:
         points: list[MapPoint] | None = None,
         selected_point_ids: set[str] | None = None,
         precomputed_zones: dict[str, Polygon] | None = None,
+        raster_source: Path | str | None = None,
+        is_raster_visible: bool = True,
     ) -> QImage:
         """Полный рендер карты в QImage заданного разрешения."""
         errors = options.validate()
@@ -184,6 +188,19 @@ class MapRenderer:
         )
 
         try:
+            # 3.5 Отрисовка растровой подложки GeoTIFF (до векторных слоев и точек)
+            if raster_source and is_raster_visible:
+                cls._render_raster_layer(
+                    painter=painter,
+                    raster_source=raster_source,
+                    target_extent=adj_extent,
+                    width=width,
+                    height=height,
+                    min_x=min_x,
+                    max_y=max_y,
+                    scale=scale,
+                )
+
             # 4. Отрисовка базовых слоев карты
             if loaded_layers_render_data:
                 cls._render_base_layers(
@@ -301,6 +318,59 @@ class MapRenderer:
             painter.end()
 
         return image
+
+    @classmethod
+    def _render_raster_layer(
+        cls,
+        painter: QPainter,
+        raster_source: Path | str,
+        target_extent: tuple[float, float, float, float],
+        width: int,
+        height: int,
+        min_x: float,
+        max_y: float,
+        scale: float,
+    ) -> None:
+        """Рендеринг геопривязанной растровой подложки через windowed reading."""
+        from rme_mapper.backends.factory import BackendFactory, get_raster_backend
+        if not BackendFactory.supports_geotiff():
+            return
+
+        try:
+            rb = get_raster_backend()
+            res = rb.read_window(raster_source, target_extent, width, height)
+            if res is None:
+                return
+
+            rgba, meta = res
+            h_r, w_r = rgba.shape[:2]
+            arr_c = np.ascontiguousarray(rgba)
+            qimg = QImage(arr_c.data, w_r, h_r, w_r * 4, QImage.Format.Format_RGBA8888)
+
+            win_t = meta.get("transform")
+            if not win_t:
+                return
+
+            a, b, c_aff, d, e, f_aff = win_t
+            # В системе координат изображения:
+            # X_img = (geo_x - min_x) * scale = (a * px + b * py + c_aff - min_x) * scale
+            # Y_img = (max_y - geo_y) * scale = (max_y - (d * px + e * py + f_aff)) * scale
+            m11 = float(a * scale)
+            m12 = float(-d * scale)
+            m21 = float(b * scale)
+            m22 = float(-e * scale)
+            dx = float((c_aff - min_x) * scale)
+            dy = float((max_y - f_aff) * scale)
+
+            t_export = QTransform(m11, m12, m21, m22, dx, dy)
+
+            painter.save()
+            painter.setWorldTransform(t_export)
+            painter.drawImage(0, 0, qimg)
+            painter.restore()
+
+        except Exception as e:
+            logger.warning("Ошибка рендеринга растровой подложки при экспорте: %s", e)
 
     @classmethod
     def _render_base_layers(

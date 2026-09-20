@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 )
 import pyproj
 
-from rme_mapper.backends import MapDataBackend, get_backend
+from rme_mapper.backends import MapDataBackend, get_backend, BackendFactory, get_raster_backend
 from rme_mapper.maps.map_config import get_project_root
 from rme_mapper.models.map_profile import MapProfile
 from rme_mapper.services.geopackage_service import GeoPackageService
@@ -118,11 +118,13 @@ class OpenMapDialog(QDialog):
         # Выбранный профиль в результате закрытия
         self._selected_profile: MapProfile | None = None
 
-        # Структура слоев выбранного GeoPackage: list of dict
+        # Структура слоев выбранного GeoPackage / GeoTIFF: list of dict
         self._inspected_layers: list[dict[str, Any]] = []
         self._inspected_crs_str: str = "OGC:CRS84"
         self._inspected_crs_raw: Any = None
         self._current_gpkg_path: Path | None = None
+        self._is_raster: bool = False
+        self._raster_info: dict[str, Any] = {}
 
         self._setup_ui()
         self.retranslate_ui()
@@ -333,7 +335,7 @@ class OpenMapDialog(QDialog):
             self.stack.setCurrentIndex(1)
 
     def _on_browse_clicked(self) -> None:
-        """Диалог выбора файла GeoPackage на диске."""
+        """Диалог выбора файла GeoPackage или GeoTIFF на диске."""
         root_dir = (
             str(self._initial_dir)
             if (self._initial_dir and self._initial_dir.is_dir())
@@ -343,20 +345,117 @@ class OpenMapDialog(QDialog):
             self,
             "Выберите файл карты",
             root_dir,
-            "Файлы GeoPackage (*.gpkg);;Все файлы (*.*)",
+            "Файлы карт (*.gpkg *.tif *.tiff);;Файлы GeoPackage (*.gpkg);;Файлы GeoTIFF (*.tif *.tiff);;Все файлы (*.*)",
         )
         if file_path:
             self._set_file_path(Path(file_path))
 
 
     def _set_file_path(self, path: Path) -> None:
-        """Исследование структуры GeoPackage и обновление интерфейса диалога."""
+        """Исследование структуры файла карты (GeoPackage или GeoTIFF) и обновление интерфейса."""
+        from rme_mapper.i18n import tr
+
         if not path.is_file():
             QMessageBox.warning(self, "Ошибка", f"Файл не существует:\n{path}")
             return
 
         self._current_gpkg_path = path
         self.file_path_edit.setText(str(path))
+        ext = path.suffix.lower()
+
+        # -------------------------------------------------------------
+        # 1. Обработка растровой карты GeoTIFF (*.tif, *.tiff)
+        # -------------------------------------------------------------
+        if ext in (".tif", ".tiff"):
+            if not BackendFactory.supports_geotiff():
+                QMessageBox.critical(
+                    self,
+                    "Ошибка",
+                    tr("msg.geotiff_backend_unavailable") or "Поддержка GeoTIFF недоступна в этой сборке.",
+                )
+                return
+
+            rb = get_raster_backend()
+            try:
+                info = rb.inspect_raster(path)
+            except Exception as e:
+                logger.exception("Ошибка инспекции GeoTIFF %s: %s", path, e)
+                QMessageBox.critical(self, "Ошибка чтения GeoTIFF", f"Не удалось прочитать файл:\n{path}\n\n{e}")
+                return
+
+            # Проверка наличия CRS
+            if not info.get("crs"):
+                QMessageBox.critical(
+                    self,
+                    "Ошибка",
+                    tr("msg.geotiff_no_crs") or "В файле отсутствует система координат.",
+                )
+                return
+
+            # Проверка наличия валидной геопривязки
+            if not info.get("is_valid_georef"):
+                QMessageBox.critical(
+                    self,
+                    "Ошибка",
+                    tr("msg.geotiff_no_georef") or "Файл не содержит корректной географической привязки.",
+                )
+                return
+
+            self._is_raster = True
+            self._raster_info = info
+            self._inspected_crs_raw = info["crs"]
+            self._inspected_crs_str = _format_crs_string(info["crs"])
+
+            # Отображение расширенной информации о растре
+            nd_val = info.get("nodata")
+            nd_disp = str(nd_val) if nd_val is not None else "—"
+            self.crs_info_label.setText(
+                f"Тип: GeoTIFF | Размер: {info['width']} × {info['height']} px | Каналы: {info['band_count']} | CRS: {self._inspected_crs_str} | NoData: {nd_disp}"
+            )
+
+            # Таблица слоев для растра (1 слой)
+            self._inspected_layers = [{
+                "name": "raster",
+                "geometry_type": "Растр",
+                "features_count": 1,
+                "crs": info["crs"],
+            }]
+            self.layers_table.setRowCount(0)
+            self.layers_table.insertRow(0)
+
+            chk = QCheckBox()
+            chk.setChecked(True)
+            chk_widget = QWidget()
+            chk_layout = QHBoxLayout(chk_widget)
+            chk_layout.addWidget(chk)
+            chk_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            chk_layout.setContentsMargins(0, 0, 0, 0)
+            self.layers_table.setCellWidget(0, 0, chk_widget)
+
+            name_item = QTableWidgetItem(path.stem)
+            name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.layers_table.setItem(0, 1, name_item)
+
+            geom_item = QTableWidgetItem("Растр")
+            geom_item.setFlags(geom_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.layers_table.setItem(0, 2, geom_item)
+
+            cnt_item = QTableWidgetItem(f"{info['width']} × {info['height']}")
+            cnt_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            cnt_item.setFlags(cnt_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.layers_table.setItem(0, 3, cnt_item)
+
+            self.boundary_combo.clear()
+            self.boundary_combo.addItem("— Не используется для растра —", None)
+            self.boundary_combo.setEnabled(False)
+            return
+
+        # -------------------------------------------------------------
+        # 2. Обработка векторной карты GeoPackage (*.gpkg)
+        # -------------------------------------------------------------
+        self._is_raster = False
+        self._raster_info.clear()
+        self.boundary_combo.setEnabled(True)
 
         try:
             raw_layers = self._backend.list_layers(path)
@@ -494,12 +593,56 @@ class OpenMapDialog(QDialog):
 
     def _on_accept_clicked(self) -> None:
         """Валидация выбора и формирование MapProfile."""
+        from rme_mapper.i18n import tr
+
         if self.rb_file.isChecked():
             if not self._current_gpkg_path or not self._current_gpkg_path.is_file():
-                QMessageBox.warning(self, "Файл не выбран", "Пожалуйста, выберите файл GeoPackage (*.gpkg).")
+                QMessageBox.warning(self, "Файл не выбран", "Пожалуйста, выберите файл карты.")
                 return
 
-            # Проверяем, какие слои выбраны
+            if self._is_raster:
+                # Проверяем выбран ли растровый слой
+                chk_widget = self.layers_table.cellWidget(0, 0)
+                if chk_widget:
+                    chk = chk_widget.findChild(QCheckBox)
+                    if chk and not chk.isChecked():
+                        QMessageBox.warning(
+                            self,
+                            "Слои не выбраны",
+                            "Выберите растровый слой для отображения на карте.",
+                        )
+                        return
+
+                runtime_id = f"runtime_{uuid.uuid4().hex[:8]}"
+                clean_crs = self._raster_info.get("crs") or "OGC:CRS84"
+
+                self._selected_profile = MapProfile(
+                    id=runtime_id,
+                    name=self._current_gpkg_path.stem,
+                    description=f"Пользовательская растровая карта из файла {self._current_gpkg_path.name}",
+                    source_type="geotiff",
+                    source_path=str(self._current_gpkg_path.resolve()),
+                    base_dir=self._current_gpkg_path.parent,
+                    crs=clean_crs,
+                    boundary_layer=None,
+                    boundary_required=False,
+                    extent=self._raster_info.get("extent"),
+                    layers=[{
+                        "id": "raster_base",
+                        "name": "raster",
+                        "source_name": "raster",
+                        "display_name": tr("layer.raster") or "Растр",
+                        "geometry_type": "raster",
+                        "role": "raster",
+                        "visible": True,
+                        "style": {"border_color": "#000000", "fill_color": None, "border_width": 0.0},
+                        "z_order": 5,
+                    }],
+                )
+                self.accept()
+                return
+
+            # Проверяем, какие слои выбраны (GeoPackage)
             selected_layer_names: list[str] = []
             for row in range(self.layers_table.rowCount()):
                 chk_widget = self.layers_table.cellWidget(row, 0)

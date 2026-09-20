@@ -632,5 +632,13 @@ TRANSLATIONS_RU: dict[str, str] = {
     "export.err_failed": "Ошибка при экспорте карты:\n{error}",
     "export.confirm_overwrite_title": "Файл уже существует",
     "export.confirm_overwrite_text": "Файл '{path}' уже существует.\nПерезаписать его?",
+
+    # Этап 16: Поддержка GeoTIFF
+    "msg.geotiff_no_crs": "В файле отсутствует система координат.",
+    "msg.geotiff_no_georef": "Файл не содержит корректной географической привязки.",
+    "msg.geotiff_backend_unavailable": "Поддержка GeoTIFF недоступна в этой сборке.",
+    "dialog.map.filter_maps": "Файлы карт (*.gpkg *.tif *.tiff);;Файлы GeoPackage (*.gpkg);;Файлы GeoTIFF (*.tif *.tiff);;Все файлы (*.*)",
+    "layer.raster": "Растр",
+    "dialog.map.raster_info": "Тип: GeoTIFF | Размер: {w} × {h} | Каналы: {bands} | CRS: {crs}",
 }
 

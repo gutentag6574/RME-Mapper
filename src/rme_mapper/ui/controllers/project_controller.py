@@ -343,11 +343,12 @@ class ProjectController(QObject):
                 return False
             elif clicked == btn_find:
                 dir_for_search = str(path.parent) if path else str(get_project_root())
+                map_filter = tr("dialog.map.filter_maps") or "Файлы карт (*.gpkg *.tif *.tiff);;Все файлы (*.*)"
                 chosen, _ = QFileDialog.getOpenFileName(
                     self._parent,
                     tr("dialog.locate_map_title"),
                     dir_for_search,
-                    tr("filter.geopackage_files"),
+                    map_filter,
                 )
                 if not chosen:
                     return False
@@ -360,11 +361,12 @@ class ProjectController(QObject):
         if target_profile:
             self._map_controller.load_map(target_profile)
         elif target_map_path and target_map_path.exists():
-            if project.map.layers:
+            s_type = project.map.source_type or ("geotiff" if target_map_path.suffix.lower() in (".tif", ".tiff") else "geopackage")
+            if project.map.layers or s_type == "geotiff":
                 runtime_prof = MapProfile(
                     id=project.map.map_id or f"runtime_{uuid.uuid4().hex[:8]}",
                     name=project.map.name or target_map_path.stem,
-                    source_type=project.map.source_type or "geopackage",
+                    source_type=s_type,
                     source_path=str(target_map_path),
                     base_dir=target_map_path.parent,
                     crs=project.map.crs,

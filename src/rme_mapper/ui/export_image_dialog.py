@@ -64,6 +64,8 @@ class ExportImageDialog(QDialog):
         selected_point_ids: set[str],
         settings_service: AppSettingsService | None = None,
         loaded_layers_render_data: list[Any] | None = None,
+        raster_source: Path | str | None = None,
+        is_raster_visible: bool = True,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("exportImageDialog")
@@ -78,6 +80,8 @@ class ExportImageDialog(QDialog):
         self._selected_point_ids = set(selected_point_ids)
         self._settings_service = settings_service or AppSettingsService()
         self._loaded_layers_render_data = loaded_layers_render_data or []
+        self._raster_source = raster_source
+        self._is_raster_visible = is_raster_visible
 
         # Предрасчет охватов точек
         self._all_points_extent = self._calculate_points_extent(self._points)
@@ -656,6 +660,8 @@ class ExportImageDialog(QDialog):
                 loaded_layers_render_data=self._loaded_layers_render_data,
                 points=self._points,
                 selected_point_ids=self._selected_point_ids,
+                raster_source=self._raster_source,
+                is_raster_visible=self._is_raster_visible,
             )
 
             # Отображаем эскиз в модальном окне

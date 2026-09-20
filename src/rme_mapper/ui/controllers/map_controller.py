@@ -5,10 +5,11 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import uuid
 from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QMessageBox, QWidget
 
-from rme_mapper.backends import MapDataBackend
+from rme_mapper.backends import MapDataBackend, BackendFactory, get_raster_backend
 from rme_mapper.i18n import tr
 from rme_mapper.maps.map_canvas import MapCanvas
 from rme_mapper.models.map_layer import LayerRole, MapLayer
@@ -169,6 +170,14 @@ class MapController(QObject):
 
     def unload_map(self) -> None:
         """Перевод приложения в состояние без активной карты."""
+        if self._map_path:
+            try:
+                if BackendFactory.supports_geotiff():
+                    rb = get_raster_backend()
+                    rb.close(self._map_path)
+            except Exception as e:
+                logger.debug("Ошибка при закрытии растрового бэкенда: %s", e)
+
         self._active_profile = None
         self._map_path = None
         self._boundary_geometry = None
@@ -198,13 +207,142 @@ class MapController(QObject):
         map_title = profile.name if profile else path.stem
         logger.info("Загрузка карты '%s' из: %s", map_title, path)
 
-        if not self._backend.exists(path):
+        if not path.is_file():
             err_msg = f"{tr('msg.map_file_not_found')}:\n{path}"
             logger.error("Файл карты не найден: %s", path)
             self._map_canvas.set_error(err_msg)
             self._set_status(tr("status.error_map_not_found"))
             return
 
+        is_geotiff = (
+            (profile is not None and getattr(profile, "source_type", "") == "geotiff")
+            or path.suffix.lower() in (".tif", ".tiff")
+        )
+
+        # -------------------------------------------------------------
+        # Специальная обработка растровой карты GeoTIFF
+        # -------------------------------------------------------------
+        if is_geotiff:
+            if not BackendFactory.supports_geotiff():
+                err_msg = tr("msg.geotiff_backend_unavailable") or "Поддержка GeoTIFF недоступна в этой сборке."
+                logger.error("Поддержка GeoTIFF недоступна для %s", path)
+                self._map_canvas.set_error(err_msg)
+                self._set_status(err_msg)
+                return
+
+            try:
+                rb = get_raster_backend()
+                info = rb.inspect_raster(path)
+                crs_val = info.get("crs")
+                if not crs_val:
+                    err_msg = tr("msg.geotiff_no_crs") or "В файле отсутствует система координат."
+                    logger.error(err_msg)
+                    self._map_canvas.set_error(err_msg)
+                    self._set_status(err_msg)
+                    return
+
+                if not info.get("is_valid_georef"):
+                    err_msg = tr("msg.geotiff_no_georef") or "Файл не содержит корректной географической привязки."
+                    logger.error(err_msg)
+                    self._map_canvas.set_error(err_msg)
+                    self._set_status(err_msg)
+                    return
+
+                rgba_preview, meta = rb.read_preview(path, max_dimension=4096)
+                affine_coeffs = meta["transform"]
+                full_size = (info["width"], info["height"])
+
+                display_name = tr("layer.raster") or "Растр"
+                lid = "raster_base"
+                vis = True
+                if profile and profile.layers:
+                    first_cfg = profile.layers[0]
+                    display_name = str(first_cfg.get("display_name") or first_cfg.get("name") or display_name)
+                    lid = str(first_cfg.get("id") or lid)
+                    vis = bool(first_cfg.get("visible", True))
+
+                raster_layer = MapLayer(
+                    id=lid,
+                    source_name="raster",
+                    display_name=display_name,
+                    geometry_type="raster",
+                    crs=crs_val,
+                    visible=vis,
+                    feature_count=1,
+                    role=LayerRole.RASTER,
+                    z_order=5,
+                    style={"border_color": "#000000", "fill_color": None, "border_width": 0.0},
+                )
+
+                def raster_provider(win_extent, target_w, target_h):
+                    return rb.read_window(path, win_extent, target_w, target_h)
+
+                self._layers_panel.clear_layers()
+                self._map_canvas.add_raster_item(
+                    layer=raster_layer,
+                    image_or_array=rgba_preview,
+                    affine_coeffs=affine_coeffs,
+                    full_size=full_size,
+                    raster_provider=raster_provider,
+                )
+
+                self._loaded_layers = [raster_layer]
+                self._active_crs = crs_val
+                self._boundary_geometry = None
+
+                if profile is not None:
+                    if not profile.extent:
+                        profile.extent = info.get("extent")
+                    if not profile.crs:
+                        profile.crs = crs_val
+                else:
+                    self._active_profile = MapProfile(
+                        id=f"runtime_{uuid.uuid4().hex[:8]}",
+                        name=path.stem,
+                        source_type="geotiff",
+                        source_path=str(path.resolve()),
+                        base_dir=path.parent,
+                        crs=crs_val,
+                        boundary_layer=None,
+                        boundary_required=False,
+                        extent=info.get("extent"),
+                        layers=[{
+                            "id": lid,
+                            "name": "raster",
+                            "source_name": "raster",
+                            "display_name": display_name,
+                            "geometry_type": "raster",
+                            "role": "raster",
+                            "visible": vis,
+                            "style": {"border_color": "#000000", "fill_color": None, "border_width": 0.0},
+                            "z_order": 5,
+                        }],
+                    )
+
+                self._layers_panel.set_layers([raster_layer])
+                self._update_title(f"Карта: {map_title}")
+                status_text = f"Карта: {map_title} | {self._active_crs} | Растр: {info['width']}×{info['height']}"
+                self._set_status(status_text)
+                self._points_panel.set_buttons_enabled(add=True)
+                logger.info("Растровая карта успешно загружена. %s", status_text)
+
+                self._on_map_loaded(self._active_crs)
+                self._map_canvas.fit_to_view()
+
+                if self._settings_service:
+                    self._settings_service.add_recent_map(str(path))
+                    self._settings_service.set_last_map_directory(str(path))
+                return
+
+            except Exception as raster_err:
+                logger.exception("Ошибка при загрузке растровой карты %s: %s", path, raster_err)
+                self._map_canvas.set_error(f"Ошибка чтения GeoTIFF:\n{raster_err}")
+                self._set_status("Ошибка загрузки GeoTIFF")
+                return
+
+        # -------------------------------------------------------------
+        # Обработка векторной карты GeoPackage
+        # -------------------------------------------------------------
         try:
             if profile:
                 discovered_layers = self._layer_service.load_profile_layers(profile)

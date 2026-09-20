@@ -19,7 +19,8 @@
 | **Архитектура** | x86-64 (AMD64) | x86 (32-bit) / x64 | x86 (32-bit) |
 | **Версия Python** | Python 3.12+ (актуальные релизы) | Python 3.8.x (последний официальный для Win7) | Python 3.4.4 (последний официальный для Win XP) |
 | **GUI Framework** | PySide6 (Qt 6.6+) | PyQt5 (Qt 5.15) или PySide2 (Qt 5.12) | PyQt4 (Qt 4.8) или PySide 1.2 |
-| **GIS стек** | GeoPandas 1.0+, Shapely 2.0+, pyproj 3.6+, pyogrio | GeoPandas 0.9/0.10, Shapely 1.8, pyproj 2.6/3.x | Custom SQLite3 GeoPackage reader / pure Python GIS |
+| **Векторный GIS стек** | GeoPandas 1.0+, Shapely 2.0+, pyproj 3.6+, pyogrio | GeoPandas 0.9/0.10, Shapely 1.8, pyproj 2.6/3.x | Custom SQLite3 GeoPackage reader / pure Python GIS |
+| **Растровый GIS стек** | `rasterio` (GDAL), `ModernGeoTiffBackend` | Планируется (PIL / libtiff / чистопитоновый TIFF) | `LegacyRasterBackend` (заглушка `NotImplementedError`) |
 | **Потребление RAM** | Не ограничено (64-битное адресное пространство) | Ограничено для x86 (до 2 ГБ) | Жесткий лимит: до 2 ГБ на процесс (до 3 ГБ с /3GB) |
 | **Формат проекта** | `*.gpmap` (UTF-8 JSON, v1) | `*.gpmap` (UTF-8 JSON, v1) | `*.gpmap` (UTF-8 JSON, v1) |
 

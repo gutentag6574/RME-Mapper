@@ -21,6 +21,7 @@ ROLE_DISPLAY_NAMES: dict[LayerRole, str] = {
     LayerRole.WATER: "Водоемы",
     LayerRole.WATERWAYS: "Реки",
     LayerRole.PLACES: "Населенные пункты",
+    LayerRole.RASTER: "Растр",
 }
 
 # Стили оформления по умолчанию для слоев
@@ -51,6 +52,11 @@ ROLE_STYLES: dict[LayerRole, dict[str, Any]] = {
         "border_width": 0.0,
         "point_radius": 3.0,
     },
+    LayerRole.RASTER: {
+        "border_color": "#000000",
+        "fill_color": None,
+        "border_width": 0.0,
+    },
 }
 
 
@@ -75,6 +81,31 @@ class LayerService:
         if not source_path.exists():
             logger.error("Файл данных карты не существует: %s", source_path)
             return []
+
+        # Специальная обработка растровой карты GeoTIFF
+        if profile.source_type == "geotiff" or source_path.suffix.lower() in (".tif", ".tiff"):
+            display_name = "Растр"
+            layer_id = "raster_base"
+            visible = True
+            if profile.layers:
+                first_cfg = profile.layers[0]
+                display_name = str(first_cfg.get("display_name") or first_cfg.get("name") or "Растр")
+                layer_id = str(first_cfg.get("id") or "raster_base")
+                visible = bool(first_cfg.get("visible", True))
+
+            raster_layer = MapLayer(
+                id=layer_id,
+                source_name="raster",
+                display_name=display_name,
+                geometry_type="raster",
+                crs=profile.crs or "OGC:CRS84",
+                visible=visible,
+                feature_count=1,
+                role=LayerRole.RASTER,
+                z_order=5,
+                style={"border_color": "#000000", "fill_color": None, "border_width": 0.0},
+            )
+            return [raster_layer]
 
         if not profile.layers:
             return self.discover_layers(source_path)
@@ -135,11 +166,29 @@ class LayerService:
         return discovered
 
     def discover_layers(self, gpkg_path: Path | str) -> list[MapLayer]:
-        """Обнаружение и классификация поддерживаемых слоев в GeoPackage.
+        """Обнаружение и классификация поддерживаемых слоев в файле карты.
 
         Возвращает список поддерживаемых слоев, отсортированных по z_order.
         """
         p = Path(gpkg_path)
+        if p.suffix.lower() in (".tif", ".tiff"):
+            from rme_mapper.backends.factory import get_raster_backend
+            rb = get_raster_backend()
+            crs_str = rb.get_crs(p) or "OGC:CRS84"
+            raster_layer = MapLayer(
+                id="raster_base",
+                source_name="raster",
+                display_name="Растр",
+                geometry_type="raster",
+                crs=crs_str,
+                visible=True,
+                feature_count=1,
+                role=LayerRole.RASTER,
+                z_order=5,
+                style={"border_color": "#000000", "fill_color": None, "border_width": 0.0},
+            )
+            return [raster_layer]
+
         raw_layers = self._backend.list_layers(p)
         logger.info("Анализ слоев в %s: %s", p.name, raw_layers)
 
@@ -241,6 +290,9 @@ class LayerService:
 
     def load_layer_data(self, gpkg_path: Path | str, layer: MapLayer) -> gpd.GeoDataFrame:
         """Загрузка данных слоя с использованием кэша в памяти."""
+        if layer.role == LayerRole.RASTER:
+            return gpd.GeoDataFrame()
+
         p = Path(gpkg_path)
         cache_key = f"{p.resolve()}:{layer.source_name}"
 

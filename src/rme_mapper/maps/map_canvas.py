@@ -3,17 +3,21 @@
 import logging
 from typing import Any
 
+import numpy as np
 import geopandas as gpd
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal, QTimer
 from PySide6.QtGui import (
     QBrush,
     QColor,
     QFont,
+    QImage,
     QPainter,
     QPainterPath,
     QPen,
+    QPixmap,
     QResizeEvent,
     QShowEvent,
+    QTransform,
     QWheelEvent,
 )
 from PySide6.QtWidgets import (
@@ -21,6 +25,7 @@ from PySide6.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsPathItem,
+    QGraphicsPixmapItem,
     QGraphicsScene,
     QGraphicsSimpleTextItem,
     QGraphicsTextItem,
@@ -86,6 +91,18 @@ class MapCanvas(QGraphicsView):
         # Глобальные флаги видимости точек и зон
         self._show_points_visible = True
         self._show_zones_visible = True
+
+        # Растровые слои (GeoTIFF)
+        self._raster_layer: MapLayer | None = None
+        self._raster_item: QGraphicsPixmapItem | None = None
+        self._raster_window_item: QGraphicsPixmapItem | None = None
+        self._raster_affine: tuple[float, ...] | None = None
+        self._raster_full_size: tuple[int, int] | None = None
+        self._raster_provider: Any = None
+        self._raster_debounce_timer = QTimer(self)
+        self._raster_debounce_timer.setSingleShot(True)
+        self._raster_debounce_timer.setInterval(250)
+        self._raster_debounce_timer.timeout.connect(self._on_raster_debounce_timeout)
 
         self._setup_view_properties()
         self._create_controls()
@@ -285,11 +302,25 @@ class MapCanvas(QGraphicsView):
             self.btn_fit.setVisible(True)
 
     def clear_map(self) -> None:
-        """Полная очистка карты (слои, границы, точки, зоны)."""
+        """Полная очистка карты (слои, границы, точки, зоны, растр)."""
         self.clear_user_points()
         for item in self._layer_items.values():
             self._scene.removeItem(item)
         self._layer_items.clear()
+        if self._raster_item is not None:
+            if self._raster_item.scene() == self._scene:
+                self._scene.removeItem(self._raster_item)
+            self._raster_item = None
+        if self._raster_window_item is not None:
+            if self._raster_window_item.scene() == self._scene:
+                self._scene.removeItem(self._raster_window_item)
+            self._raster_window_item = None
+        self._raster_layer = None
+        self._raster_affine = None
+        self._raster_full_size = None
+        self._raster_provider = None
+        self._raster_debounce_timer.stop()
+
         self._boundary_bounds = None
         self._scene.clear()
         self.resetTransform()
@@ -357,11 +388,165 @@ class MapCanvas(QGraphicsView):
             if not self._initial_fit_done:
                 self.fit_to_view()
 
+    def add_raster_item(
+        self,
+        layer: MapLayer,
+        image_or_array: Any,
+        affine_coeffs: tuple[float, ...],
+        full_size: tuple[int, int],
+        raster_provider: Any = None,
+    ) -> None:
+        """Создание и добавление графического элемента растрового слоя на сцену."""
+        self.hide_empty_state()
+        if layer.id in self._layer_items:
+            old_item = self._layer_items.pop(layer.id)
+            if old_item.scene() == self._scene:
+                self._scene.removeItem(old_item)
+        if self._raster_item is not None:
+            if self._raster_item.scene() == self._scene:
+                self._scene.removeItem(self._raster_item)
+            self._raster_item = None
+        if self._raster_window_item is not None:
+            if self._raster_window_item.scene() == self._scene:
+                self._scene.removeItem(self._raster_window_item)
+            self._raster_window_item = None
+
+        self._raster_layer = layer
+        self._raster_affine = affine_coeffs
+        self._raster_full_size = full_size
+        self._raster_provider = raster_provider
+
+        # Преобразование в QPixmap
+        if isinstance(image_or_array, QPixmap):
+            pixmap = image_or_array
+        elif isinstance(image_or_array, QImage):
+            pixmap = QPixmap.fromImage(image_or_array)
+        elif isinstance(image_or_array, np.ndarray):
+            h, w = image_or_array.shape[:2]
+            c = image_or_array.shape[2] if image_or_array.ndim >= 3 else 1
+            arr_contiguous = np.ascontiguousarray(image_or_array)
+            qimg = QImage(arr_contiguous.data, w, h, w * 4, QImage.Format.Format_RGBA8888)
+            pixmap = QPixmap.fromImage(qimg.copy())
+        else:
+            raise ValueError(f"Неподдерживаемый тип растрового изображения: {type(image_or_array)}")
+
+        preview_w = pixmap.width()
+        preview_h = pixmap.height()
+        full_w, full_h = full_size
+
+        sx = full_w / preview_w if preview_w > 0 else 1.0
+        sy = full_h / preview_h if preview_h > 0 else 1.0
+
+        a, b, c_aff, d, e, f_aff = affine_coeffs
+        # В QGraphicsScene: scene_x = map_x, scene_y = -map_y
+        # map_x = a * col + b * row + c
+        # map_y = d * col + e * row + f
+        # col = px * sx, row = py * sy
+        # scene_x = (a * sx) * px + (b * sy) * py + c
+        # scene_y = (-d * sx) * px + (-e * sy) * py - f
+        # В QTransform(m11, m12, m21, m22, dx, dy):
+        # x' = m11 * x + m21 * y + dx
+        # y' = m12 * x + m22 * y + dy
+        m11 = float(a * sx)
+        m12 = float(-d * sx)
+        m21 = float(b * sy)
+        m22 = float(-e * sy)
+        dx = float(c_aff)
+        dy = float(-f_aff)
+
+        transform = QTransform(m11, m12, m21, m22, dx, dy)
+
+        item = QGraphicsPixmapItem(pixmap)
+        item.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
+        item.setTransform(transform)
+        item.setZValue(layer.z_order)
+        item.setVisible(layer.visible)
+
+        self._scene.addItem(item)
+        self._layer_items[layer.id] = item
+        self._raster_item = item
+
+        # Настраиваем границы сцены по охвату растра
+        scene_bounds = item.sceneBoundingRect()
+        if scene_bounds.isValid() and not scene_bounds.isEmpty():
+            self._scene.setSceneRect(scene_bounds)
+            logger.info("Установлен охват сцены по растру: %s", scene_bounds)
+
+        # Автоподгонка
+        if self.viewport().width() > 100 and self.viewport().height() > 100:
+            if not self._initial_fit_done:
+                self.fit_to_view()
+
+    def _on_raster_debounce_timeout(self) -> None:
+        """Обновление разрешения видимого окна растра при завершении зума/панорамирования."""
+        if not self._raster_provider or not self._raster_item or not self._raster_item.isVisible():
+            return
+        if not self.viewport():
+            return
+
+        vp_rect = self.viewport().rect()
+        scene_poly = self.mapToScene(vp_rect)
+        scene_rect = scene_poly.boundingRect()
+        if not scene_rect.isValid() or scene_rect.isEmpty():
+            return
+
+        min_x = scene_rect.left()
+        max_x = scene_rect.right()
+        min_y = -scene_rect.bottom()
+        max_y = -scene_rect.top()
+        vp_w = max(64, self.viewport().width())
+        vp_h = max(64, self.viewport().height())
+
+        try:
+            res = self._raster_provider((min_x, min_y, max_x, max_y), vp_w, vp_h)
+            if res is not None:
+                rgba, meta = res
+                self._update_raster_window_item(rgba, meta)
+        except Exception as e:
+            logger.debug("Ошибка обновления растрового окна: %s", e)
+
+    def _update_raster_window_item(self, rgba: np.ndarray, meta: dict[str, Any]) -> None:
+        """Отображение высокодетализированного фрагмента растра поверх базового превью."""
+        if not self._raster_item or not self._raster_item.isVisible():
+            return
+
+        h, w = rgba.shape[:2]
+        arr_contiguous = np.ascontiguousarray(rgba)
+        qimg = QImage(arr_contiguous.data, w, h, w * 4, QImage.Format.Format_RGBA8888)
+        pixmap = QPixmap.fromImage(qimg.copy())
+
+        win_t = meta.get("transform")
+        if not win_t:
+            return
+
+        a, b, c_aff, d, e, f_aff = win_t
+        m11 = float(a)
+        m12 = float(-d)
+        m21 = float(b)
+        m22 = float(-e)
+        dx = float(c_aff)
+        dy = float(-f_aff)
+
+        transform = QTransform(m11, m12, m21, m22, dx, dy)
+
+        if self._raster_window_item is None:
+            self._raster_window_item = QGraphicsPixmapItem(pixmap)
+            self._raster_window_item.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
+            self._raster_window_item.setZValue(self._raster_item.zValue() + 0.1)
+            self._scene.addItem(self._raster_window_item)
+        else:
+            self._raster_window_item.setPixmap(pixmap)
+
+        self._raster_window_item.setTransform(transform)
+        self._raster_window_item.setVisible(self._raster_item.isVisible())
+
     def set_layer_visibility(self, layer_id: str, visible: bool) -> None:
         """Мгновенное переключение видимости слоя без перезагрузки данных."""
         if layer_id in self._layer_items:
             item = self._layer_items[layer_id]
             item.setVisible(visible)
+            if item == self._raster_item and self._raster_window_item:
+                self._raster_window_item.setVisible(visible)
             logger.info("Видимость слоя '%s' изменена на %s", layer_id, visible)
         else:
             logger.warning("Слой '%s' не найден на сцене для изменения видимости", layer_id)
@@ -898,9 +1083,16 @@ class MapCanvas(QGraphicsView):
         if self.MIN_ZOOM <= new_zoom <= self.MAX_ZOOM:
             self.scale(factor, factor)
             self._current_zoom = new_zoom
+            if self._raster_provider and self._raster_item and self._raster_item.isVisible():
+                self._raster_debounce_timer.start()
             event.accept()
         else:
             event.ignore()
+
+    def mouseReleaseEvent(self, event: Any) -> None:
+        super().mouseReleaseEvent(event)
+        if self._raster_provider and self._raster_item and self._raster_item.isVisible():
+            self._raster_debounce_timer.start()
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)

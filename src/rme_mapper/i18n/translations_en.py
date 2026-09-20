@@ -632,6 +632,14 @@ TRANSLATIONS_EN: dict[str, str] = {
     "export.err_failed": "Failed to export map:\n{error}",
     "export.confirm_overwrite_title": "File Already Exists",
     "export.confirm_overwrite_text": "File '{path}' already exists.\nOverwrite it?",
+
+    # Stage 16: GeoTIFF Support
+    "msg.geotiff_no_crs": "The file does not contain a coordinate reference system.",
+    "msg.geotiff_no_georef": "The file does not contain a valid georeference.",
+    "msg.geotiff_backend_unavailable": "GeoTIFF support is unavailable in this build.",
+    "dialog.map.filter_maps": "Map files (*.gpkg *.tif *.tiff);;GeoPackage files (*.gpkg);;GeoTIFF files (*.tif *.tiff);;All files (*.*)",
+    "layer.raster": "Raster",
+    "dialog.map.raster_info": "Type: GeoTIFF | Size: {w} × {h} | Bands: {bands} | CRS: {crs}",
 }
 
 

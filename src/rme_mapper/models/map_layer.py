@@ -13,11 +13,13 @@ class LayerRole(str, Enum):
     WATERWAYS = "waterways"      # Реки и каналы (линии)
     ROADS = "roads"              # Сеть автодорог (линии)
     PLACES = "places"            # Населенные пункты (точки/полигоны)
+    RASTER = "raster"            # Растровая подложка (GeoTIFF)
     UNKNOWN = "unknown"          # Неизвестный/неподдерживаемый слой
 
 
 # Порядок отрисовки по умолчанию (меньший Z рисуется раньше, то есть ниже)
 DEFAULT_Z_ORDERS: dict[LayerRole, int] = {
+    LayerRole.RASTER: 5,
     LayerRole.WATER: 10,
     LayerRole.BOUNDARY: 20,
     LayerRole.WATERWAYS: 30,

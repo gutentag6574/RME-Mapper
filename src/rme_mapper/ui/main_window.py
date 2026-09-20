@@ -1182,7 +1182,7 @@ class MainWindow(QMainWindow):
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
             has_supported = any(
-                url.toLocalFile().lower().endswith((".gpkg", ".gpmap", ".rmeproject", ".xlsx", ".csv", ".txt"))
+                url.toLocalFile().lower().endswith((".gpkg", ".tif", ".tiff", ".gpmap", ".rmeproject", ".xlsx", ".csv", ".txt"))
                 for url in urls
             )
             if has_supported:
@@ -1221,7 +1221,7 @@ class MainWindow(QMainWindow):
         first_path = local_paths[0]
         ext = first_path.suffix.lower()
 
-        if ext == ".gpkg":
+        if ext in (".gpkg", ".tif", ".tiff"):
             event.acceptProposedAction()
             self.map_controller.load_map(first_path)
         elif ext in (".gpmap", ".rmeproject"):
