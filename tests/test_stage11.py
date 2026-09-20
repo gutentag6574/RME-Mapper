@@ -335,12 +335,12 @@ def test_legacy_backend_placeholder():
 # ==============================================================================
 
 def test_app_name_and_version():
-    """9. APP_NAME == 'GeoPoint Mapper', 10. APP_VERSION == '0.11.0'."""
+    """9. APP_NAME == 'GeoPoint Mapper', 10. APP_VERSION == '0.12.0'."""
     assert APP_NAME == "GeoPoint Mapper"
-    assert APP_VERSION == "0.11.0"
+    assert APP_VERSION == "0.12.0"
     assert PRODUCT_NAME == "GeoPoint Mapper"
-    assert PRODUCT_VERSION == "0.11.0"
-    assert FILE_VERSION == "0.11.0"
+    assert PRODUCT_VERSION == "0.12.0"
+    assert FILE_VERSION == "0.12.0"
     assert COPYRIGHT_YEAR == "2026"
 
 
@@ -553,8 +553,8 @@ def test_current_gpmap_opens():
 
 
 def test_project_version_decoupled_from_app_version():
-    """26. Версия проекта (version: 1) не зависит от версии приложения (APP_VERSION: '0.11.0')."""
+    """26. Версия проекта (version: 1) не зависит от версии приложения (APP_VERSION: '0.12.0')."""
     proj = ProjectData()
     assert proj.version == 1
-    assert APP_VERSION == "0.11.0"
+    assert APP_VERSION == "0.12.0"
     assert str(proj.version) != APP_VERSION

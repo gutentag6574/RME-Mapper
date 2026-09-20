@@ -1,8 +1,21 @@
 """Общие фикстуры для тестирования приложения GeoPoint Mapper."""
 
 import os
+from pathlib import Path
+
 import pytest
 from rme_mapper.services.project_service import ProjectService
+
+# Изолируем дисковый кэш онлайн-карт от профиля пользователя. Значение
+# устанавливается до создания QApplication и импортов виджетов карты.
+os.environ.setdefault(
+    "RME_MAPPER_CACHE_DIR",
+    str(Path(__file__).resolve().parent.parent / "scratch" / "pytest" / "online_tiles"),
+)
+os.environ.setdefault(
+    "RME_MAPPER_SETTINGS_DIR",
+    str(Path(__file__).resolve().parent.parent / "scratch" / "pytest" / "settings"),
+)
 
 
 @pytest.fixture(autouse=True)
@@ -24,4 +37,3 @@ def qapp():
     if app is None:
         app = QApplication([])
     return app
-

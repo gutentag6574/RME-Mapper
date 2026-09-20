@@ -1,12 +1,16 @@
 """Сервис хранения пользовательских настроек приложения (AppSettingsService)."""
 
 import logging
+import os
+from pathlib import Path
 from typing import Any
 
 try:
     from PySide6.QtCore import QSettings
+    _QSETTINGS_INI_FORMAT = QSettings.Format.IniFormat
 except ImportError:
     QSettings = None  # type: ignore
+    _QSETTINGS_INI_FORMAT = None
 
 from rme_mapper.i18n import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES
 
@@ -68,7 +72,12 @@ class AppSettingsService:
     def __init__(self, settings: Any = _AUTO) -> None:
         if settings is _AUTO:
             if QSettings is not None:
-                self._settings = QSettings(self.ORGANIZATION_NAME, self.APPLICATION_NAME)
+                settings_dir = os.environ.get("RME_MAPPER_SETTINGS_DIR")
+                if settings_dir:
+                    settings_path = Path(settings_dir) / "settings.ini"
+                    self._settings = QSettings(str(settings_path), _QSETTINGS_INI_FORMAT)
+                else:
+                    self._settings = QSettings(self.ORGANIZATION_NAME, self.APPLICATION_NAME)
             else:
                 self._settings = None
         else:
@@ -77,7 +86,9 @@ class AppSettingsService:
 
     def get_language(self) -> str:
         """Получить сохраненный код языка приложения. По умолчанию 'ru'."""
-        if self._settings is not None:
+        if self.KEY_LANGUAGE in self._memory_fallback:
+            val = self._memory_fallback[self.KEY_LANGUAGE]
+        elif self._settings is not None:
             val = self._settings.value(self.KEY_LANGUAGE, DEFAULT_LANGUAGE)
         else:
             val = self._memory_fallback.get(self.KEY_LANGUAGE, DEFAULT_LANGUAGE)
@@ -100,7 +111,9 @@ class AppSettingsService:
             logger.warning("Попытка сохранить недопустимый язык: %s", language_code)
 
     def _get_string_list(self, key: str) -> list[str]:
-        if self._settings is not None:
+        if key in self._memory_fallback:
+            val = self._memory_fallback[key]
+        elif self._settings is not None:
             val = self._settings.value(key, [])
         else:
             val = self._memory_fallback.get(key, [])
@@ -120,7 +133,9 @@ class AppSettingsService:
         self._memory_fallback[key] = cleaned
 
     def _get_str(self, key: str, default: str = "") -> str:
-        if self._settings is not None:
+        if key in self._memory_fallback:
+            val = self._memory_fallback[key]
+        elif self._settings is not None:
             val = self._settings.value(key, default)
         else:
             val = self._memory_fallback.get(key, default)
@@ -381,7 +396,9 @@ class AppSettingsService:
 
     # --- UI State & Geometry ---
     def _get_bool(self, key: str, default: bool = True) -> bool:
-        if self._settings is not None:
+        if key in self._memory_fallback:
+            val = self._memory_fallback[key]
+        elif self._settings is not None:
             val = self._settings.value(key, default)
         else:
             val = self._memory_fallback.get(key, default)
@@ -779,5 +796,3 @@ class AppSettingsService:
     def set_object_export_bom(self, enabled: bool) -> None:
         """Сохранить флаг включения UTF-8 BOM."""
         self._set_bool(self.KEY_OBJECT_EXPORT_BOM, enabled)
-
-

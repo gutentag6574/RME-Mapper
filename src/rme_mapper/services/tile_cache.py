@@ -40,8 +40,11 @@ class TileDiskCache:
         if target_dir:
             self._cache_root = Path(target_dir)
         else:
+            configured_dir = os.environ.get("RME_MAPPER_CACHE_DIR")
             std_loc = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation)
-            if std_loc:
+            if configured_dir:
+                self._cache_root = Path(configured_dir)
+            elif std_loc:
                 self._cache_root = Path(std_loc) / "GeoPointMapper" / "online_tiles"
             else:
                 self._cache_root = Path.home() / ".cache" / "geopoint_mapper" / "online_tiles"

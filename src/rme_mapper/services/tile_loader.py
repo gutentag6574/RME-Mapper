@@ -14,7 +14,7 @@ from rme_mapper.services.tile_cache import TileDiskCache
 
 logger = logging.getLogger("rme_mapper.services.tile_loader")
 
-APP_USER_AGENT = "GeoPoint Mapper/0.11.0 (+https://github.com/gutentag6574/RME-Mapper)"
+APP_USER_AGENT = "GeoPoint Mapper/0.12.0 (+https://github.com/gutentag6574/RME-Mapper)"
 DEFAULT_MAX_CONCURRENCY = 4
 OSM_MAX_CONCURRENCY = 2  # Строгое соответствие OSM Tile Usage Policy (максимум 2 параллельных потока)
 REQUEST_TIMEOUT_MS = 10_000  # 10 секунд таймаут
