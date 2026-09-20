@@ -301,11 +301,11 @@ class ProjectService:
                     pt_dict.get("stroke_blue", 0),
                 )
                 sw = StyleValidator.validate_stroke_width(pt_dict.get("stroke_width", 1.0))
-                m_op = StyleValidator.validate_opacity(pt_dict.get("opacity", pt_dict.get("marker_opacity", 100)))
+                m_op = StyleValidator.validate_opacity(pt_dict.get("opacity", pt_dict.get("marker_opacity", 100.0)))
                 zbr, zbg, zbb = StyleValidator.validate_rgb(
-                    pt_dict.get("zone_border_red", zr),
-                    pt_dict.get("zone_border_green", zg),
-                    pt_dict.get("zone_border_blue", zb),
+                    pt_dict.get("zone_border_red", pt_dict.get("zone_red", 220)),
+                    pt_dict.get("zone_border_green", pt_dict.get("zone_green", 30)),
+                    pt_dict.get("zone_border_blue", pt_dict.get("zone_blue", 30)),
                 )
                 zbw = StyleValidator.validate_border_width(pt_dict.get("zone_border_width", 1.0))
                 zbs = StyleValidator.validate_border_style(pt_dict.get("zone_border_style", "solid"))

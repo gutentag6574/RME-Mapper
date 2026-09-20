@@ -815,23 +815,24 @@ class PointController(QObject):
 
     def reproject_all_points(self, target_crs: str) -> None:
         """Пересчет экранных координат всех точек и зон под новую CRS карты."""
-        for pt in self._point_service.get_points():
-            mx, my = CoordinateService.transform_xy(
-                pt.longitude, pt.latitude,
-                source_crs=pt.source_crs,
-                target_crs=target_crs,
-            )
-            zone_poly = None
-            if pt.zone_enabled and pt.radius_m > 0:
-                geo_circle = GeodesicService.create_geodesic_circle(
-                    pt.longitude, pt.latitude, pt.radius_m
-                )
-                zone_poly = CoordinateService.transform_polygon(
-                    geo_circle,
-                    source_crs="EPSG:4326",
+        with self._map_canvas.defer_labels_layout():
+            for pt in self._point_service.get_points():
+                mx, my = CoordinateService.transform_xy(
+                    pt.longitude, pt.latitude,
+                    source_crs=pt.source_crs,
                     target_crs=target_crs,
                 )
-            self._map_canvas.add_user_point(pt, map_x=mx, map_y=my, zone_polygon=zone_poly)
+                zone_poly = None
+                if pt.zone_enabled and pt.radius_m > 0:
+                    geo_circle = GeodesicService.create_geodesic_circle(
+                        pt.longitude, pt.latitude, pt.radius_m
+                    )
+                    zone_poly = CoordinateService.transform_polygon(
+                        geo_circle,
+                        source_crs="EPSG:4326",
+                        target_crs=target_crs,
+                    )
+                self._map_canvas.add_user_point(pt, map_x=mx, map_y=my, zone_polygon=zone_poly)
 
     def on_table_row_double_clicked(self, row: int, column: int) -> None:
         """Центрирование карты на выбранной точке."""

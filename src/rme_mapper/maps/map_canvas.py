@@ -117,6 +117,7 @@ class MapCanvas(QGraphicsView):
         self._labels_mode = "hidden"  # 'hidden', 'selected', 'all'
         self._label_content_mode = "name"  # 'name', 'number', 'number_name'
         self._selected_point_ids: set[str] = set()
+        self._defer_label_recalc: bool = False
 
         # Состояние перетаскивания точки мышью (Move Point)
         self._is_dragging_point: bool = False
@@ -201,26 +202,27 @@ class MapCanvas(QGraphicsView):
             pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
             scene_pt = self.mapToScene(pos)
 
-            # Проверяем клик по маркеру выбранной точки (или любой видимой)
+            # Проверяем клик по маркеру выбранной точки (или любой видимой), если выделено не более 1 точки
             target_pid = None
-            for pid in self._selected_point_ids:
-                item = self._user_point_items.get(pid)
-                pt = self._points_data.get(pid)
-                if item and pt and pt.visible and item.isVisible():
-                    dist = math.hypot(scene_pt.x() - item.pos().x(), scene_pt.y() - item.pos().y())
-                    if dist <= max(pt.size / 2.0, 10.0):
-                        target_pid = pid
-                        break
-
-            # Если выбранная точка не найдена под курсором, проверяем другие точки
-            if target_pid is None and len(self._selected_point_ids) <= 1:
-                for pid, item in self._user_point_items.items():
+            if len(self._selected_point_ids) <= 1:
+                for pid in self._selected_point_ids:
+                    item = self._user_point_items.get(pid)
                     pt = self._points_data.get(pid)
-                    if pt and pt.visible and item.isVisible():
+                    if item and pt and pt.visible and item.isVisible():
                         dist = math.hypot(scene_pt.x() - item.pos().x(), scene_pt.y() - item.pos().y())
                         if dist <= max(pt.size / 2.0, 10.0):
                             target_pid = pid
                             break
+
+                # Если выбранная точка не найдена под курсором, проверяем другие точки
+                if target_pid is None:
+                    for pid, item in self._user_point_items.items():
+                        pt = self._points_data.get(pid)
+                        if pt and pt.visible and item.isVisible():
+                            dist = math.hypot(scene_pt.x() - item.pos().x(), scene_pt.y() - item.pos().y())
+                            if dist <= max(pt.size / 2.0, 10.0):
+                                target_pid = pid
+                                break
 
             if target_pid is not None:
                 item = self._user_point_items[target_pid]
@@ -1103,7 +1105,23 @@ class MapCanvas(QGraphicsView):
         offset_x = (point.size / 2.0) + 4.0
         offset_y = -(point.size / 2.0)
         item.setPos(scene_x + offset_x, scene_y + offset_y)
-        self._recalculate_labels_layout()
+        if not self._defer_label_recalc:
+            self._recalculate_labels_layout()
+
+    def defer_labels_layout(self):
+        """Контекстный менеджер для отложенного пересчета подписей при пакетных операциях."""
+        canvas_self = self
+
+        class _DeferScope:
+            def __enter__(self):
+                canvas_self._defer_label_recalc = True
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                canvas_self._defer_label_recalc = False
+                canvas_self._recalculate_labels_layout()
+
+        return _DeferScope()
 
     def set_labels_mode(self, mode: str) -> None:
         """Установка режима отображения подписей: 'hidden', 'selected', 'all'."""
@@ -1142,6 +1160,14 @@ class MapCanvas(QGraphicsView):
 
     def _recalculate_labels_layout(self) -> None:
         """Пересчет позиций подписей точек с предотвращением взаимного перекрытия (4 позиции)."""
+        if self._defer_label_recalc:
+            return
+
+        if self._labels_mode == "hidden" or not self._show_points_visible:
+            for item in self._user_label_items.values():
+                item.setVisible(False)
+            return
+
         t = self.transform()
         scale_x = abs(t.m11()) if abs(t.m11()) > 1e-9 else 1.0
         scale_y = abs(t.m22()) if abs(t.m22()) > 1e-9 else 1.0
@@ -1166,7 +1192,30 @@ class MapCanvas(QGraphicsView):
 
         visible_points.sort(key=lambda x: (x[0], x[2].name, x[1]))
 
-        placed_rects: list[QRectF] = []
+        # Пространственный индекс (spatial grid) для быстрого разрешения коллизий за O(1)
+        grid_cell_size = 120.0
+        spatial_grid: dict[tuple[int, int], list[QRectF]] = {}
+
+        def _get_cells(rect: QRectF) -> list[tuple[int, int]]:
+            c1 = int(rect.left() // grid_cell_size)
+            c2 = int(rect.right() // grid_cell_size)
+            r1 = int(rect.top() // grid_cell_size)
+            r2 = int(rect.bottom() // grid_cell_size)
+            return [(c, r) for c in range(c1, c2 + 1) for r in range(r1, r2 + 1)]
+
+        def _has_collision(rect: QRectF) -> bool:
+            for cell in _get_cells(rect):
+                for other in spatial_grid.get(cell, []):
+                    if rect.intersects(other):
+                        return True
+            return False
+
+        def _add_placed(rect: QRectF) -> None:
+            for cell in _get_cells(rect):
+                if cell not in spatial_grid:
+                    spatial_grid[cell] = []
+                spatial_grid[cell].append(rect)
+
         for _, pid, pt, item in visible_points:
             pt_item = self._user_point_items[pid]
             scene_pt = pt_item.pos()
@@ -1191,8 +1240,7 @@ class MapCanvas(QGraphicsView):
 
             for dx_px, dy_px, rx, ry in candidates:
                 cand_rect = QRectF(rx, ry, w, h)
-                collides = any(cand_rect.intersects(other) for other in placed_rects)
-                if not collides:
+                if not _has_collision(cand_rect):
                     chosen_pos = (scene_pt.x() + (dx_px / scale_x), scene_pt.y() + (dy_px / scale_y))
                     chosen_rect = cand_rect
                     break
@@ -1202,7 +1250,7 @@ class MapCanvas(QGraphicsView):
                 chosen_pos = (scene_pt.x() + (dx_px / scale_x), scene_pt.y() + (dy_px / scale_y))
                 chosen_rect = QRectF(rx, ry, w, h)
 
-            placed_rects.append(chosen_rect)
+            _add_placed(chosen_rect)
             item.setPos(chosen_pos[0], chosen_pos[1])
             item.setVisible(True)
 

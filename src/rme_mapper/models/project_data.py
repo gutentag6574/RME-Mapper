@@ -83,7 +83,7 @@ class ProjectPointData:
     stroke_green: int = 0
     stroke_blue: int = 0
     stroke_width: float = 1.0
-    opacity: int = 100
+    opacity: float = 100.0
     zone_border_red: int = 220
     zone_border_green: int = 30
     zone_border_blue: int = 30
@@ -122,7 +122,7 @@ class ProjectPointData:
             stroke_green=int(data.get("stroke_green", 0)),
             stroke_blue=int(data.get("stroke_blue", 0)),
             stroke_width=float(data.get("stroke_width", 1.0)),
-            opacity=int(data.get("opacity", data.get("marker_opacity", 100))),
+            opacity=float(data.get("opacity", data.get("marker_opacity", 100.0))),
             zone_border_red=int(data.get("zone_border_red", data.get("zone_red", 220))),
             zone_border_green=int(data.get("zone_border_green", data.get("zone_green", 30))),
             zone_border_blue=int(data.get("zone_border_blue", data.get("zone_blue", 30))),
