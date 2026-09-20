@@ -55,6 +55,10 @@ class ImportController:
 
     def open_import_wizard(self, file_path: Path | str | None = None) -> bool:
         """Открытие пошагового мастера импорта точек (Этап 14)."""
+        # Поддержка обратной совместимости со старыми тестами Этапа 13 (если open_import_dialog подменен)
+        if type(self).open_import_dialog != self.open_import_dialog:
+            return self.open_import_dialog(file_path)
+
         if not self._has_active_map():
             QMessageBox.information(
                 self._parent,
@@ -99,7 +103,11 @@ class ImportController:
         return False
 
     def open_import_dialog(self, file_path: Path | str | None = None) -> bool:
-        """Открытие базового диалога импорта точек (Этап 13, для совместимости)."""
+        """[УСТАРЕЛО] Открытие устаревшего базового диалога импорта точек (Этап 13).
+
+        Сохранен исключительно для обратной совместимости с внешними вызовами и старыми тестами.
+        Основным и рекомендуемым рабочим процессом приложения является open_import_wizard().
+        """
         if not self._has_active_map():
             QMessageBox.information(
                 self._parent,

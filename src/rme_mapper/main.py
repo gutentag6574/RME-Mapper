@@ -11,6 +11,7 @@ if str(project_src) not in sys.path:
 
 from PySide6.QtWidgets import QApplication
 
+from rme_mapper.app_info import APP_NAME
 from rme_mapper.ui.main_window import MainWindow
 
 
@@ -27,11 +28,11 @@ def main() -> int:
     """Основная функция запуска приложения."""
     setup_logging()
     logger = logging.getLogger("rme_mapper")
-    logger.info("Запуск приложения RME-Mapper...")
+    logger.info("Запуск приложения %s...", APP_NAME)
 
     app = QApplication(sys.argv)
-    app.setApplicationName("RME-Mapper")
-    app.setApplicationDisplayName("RME Mapper")
+    app.setApplicationName(APP_NAME)
+    app.setApplicationDisplayName(APP_NAME)
 
     window = MainWindow()
     window.show()

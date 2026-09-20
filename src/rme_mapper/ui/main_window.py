@@ -1293,7 +1293,7 @@ class MainWindow(QMainWindow):
             self.project_controller.open_project_workflow(first_path)
         elif ext in (".xlsx", ".csv", ".txt"):
             event.acceptProposedAction()
-            self.import_controller.open_import_dialog(first_path)
+            self.import_controller.open_import_wizard(first_path)
         else:
             event.ignore()
             from PySide6.QtWidgets import QMessageBox

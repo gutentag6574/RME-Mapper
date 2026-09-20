@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rme-mapper"
 version = "0.11.0"
-description = "Настольное приложение для привязки и нанесения географических координат на карты Республики Марий Эл"
+description = "GeoPoint Mapper — универсальное настольное ГИС-приложение для работы с картами, координатами и геодезическими зонами"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [
-    { name = "RME-Mapper Team" }
+    { name = "Кульдеев Вадим Алексеевич", email = "zingeevruslan@gmail.com" }
 ]
 dependencies = [
     "PySide6>=6.6.0",
@@ -19,6 +19,9 @@ dependencies = [
     "shapely>=2.0.0",
     "pandas>=2.0.0",
     "openpyxl>=3.1.0",
+    "numpy>=1.26.0",
+    "pyogrio>=0.7.0",
+    "rasterio>=1.3.0",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +30,7 @@ dev = [
 ]
 
 [project.scripts]
+geopoint-mapper = "rme_mapper.main:main"
 rme-mapper = "rme_mapper.main:main"
 
 [tool.setuptools.packages.find]
