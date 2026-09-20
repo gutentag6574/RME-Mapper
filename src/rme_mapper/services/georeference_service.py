@@ -231,13 +231,23 @@ class GeoreferenceService:
         # 8. Определение типа CRS (географическая или спроецированная) для расчета невязок в метрах
         is_geographic = False
         geod = None
+        unit_to_meter = 1.0
         try:
             parsed_crs = pyproj.CRS.from_user_input(crs_str)
-            is_geographic = parsed_crs.is_geographic
-            if is_geographic:
+        except Exception as e:
+            raise ValueError(f"Недопустимая или неподдерживаемая CRS: '{crs_str}'") from e
+
+        is_geographic = parsed_crs.is_geographic
+        if is_geographic:
+            try:
+                geod = parsed_crs.get_geod()
+            except Exception:
                 geod = pyproj.Geod(ellps="WGS84")
-        except Exception:
-            is_geographic = False
+        else:
+            if parsed_crs.axis_info:
+                factor = getattr(parsed_crs.axis_info[0], "unit_conversion_factor", None)
+                if factor is not None and factor > 0:
+                    unit_to_meter = float(factor)
 
         # 9. Расчет невязок (Residuals) для каждой точки
         total_sq_err = 0.0
@@ -266,8 +276,8 @@ class GeoreferenceService:
                     # Резервный расчет через экваториальный градус (~111.32 км)
                     pt.residual_total = float(math.hypot(res_x, res_y) * 111_320.0)
             else:
-                # В спроецированной CRS координаты уже в метрах
-                pt.residual_total = float(math.hypot(res_x, res_y))
+                # В спроецированной CRS переводим единицы координат в метры (например, US Survey Foot)
+                pt.residual_total = float(math.hypot(res_x, res_y) * unit_to_meter)
 
             if pt.enabled:
                 total_sq_err += (pt.residual_total ** 2)
