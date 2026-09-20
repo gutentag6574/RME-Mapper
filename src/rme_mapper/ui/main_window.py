@@ -294,6 +294,12 @@ class MainWindow(QMainWindow):
         self.add_pt_map_action.toggled.connect(self._toggle_add_point_on_map)
         self.coords_menu.addAction(self.add_pt_map_action)
 
+        self.move_pt_action = QAction(self)
+        self.move_pt_action.setShortcut(QKeySequence("Ctrl+M"))
+        self.move_pt_action.triggered.connect(lambda: self.point_controller.start_move_point_mode())
+        self.move_pt_action.setEnabled(False)
+        self.coords_menu.addAction(self.move_pt_action)
+
         self.coords_menu.addSeparator()
 
         self.copy_selected_coords_action = QAction(self)
@@ -380,6 +386,30 @@ class MainWindow(QMainWindow):
         self.labels_group.addAction(self.labels_all_action)
         self.point_labels_menu.addAction(self.labels_all_action)
 
+        self.point_labels_menu.addSeparator()
+
+        self.labels_content_menu = self.point_labels_menu.addMenu("")
+        self.label_content_group = QActionGroup(self)
+        self.label_content_group.setExclusive(True)
+
+        self.label_content_name_action = QAction(self)
+        self.label_content_name_action.setCheckable(True)
+        self.label_content_name_action.triggered.connect(lambda: self._set_label_content_mode("name"))
+        self.label_content_group.addAction(self.label_content_name_action)
+        self.labels_content_menu.addAction(self.label_content_name_action)
+
+        self.label_content_number_action = QAction(self)
+        self.label_content_number_action.setCheckable(True)
+        self.label_content_number_action.triggered.connect(lambda: self._set_label_content_mode("number"))
+        self.label_content_group.addAction(self.label_content_number_action)
+        self.labels_content_menu.addAction(self.label_content_number_action)
+
+        self.label_content_both_action = QAction(self)
+        self.label_content_both_action.setCheckable(True)
+        self.label_content_both_action.triggered.connect(lambda: self._set_label_content_mode("number_name"))
+        self.label_content_group.addAction(self.label_content_both_action)
+        self.labels_content_menu.addAction(self.label_content_both_action)
+
         self.view_menu.addSeparator()
 
         self.show_points_action = QAction(self)
@@ -448,6 +478,7 @@ class MainWindow(QMainWindow):
             self.redo_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_ArrowForward))
             self.add_pt_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_FileDialogNewFolder))
             self.add_pt_map_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView))
+            self.move_pt_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_ArrowRight))
             self.fit_map_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_TitleBarMaxButton))
 
         # Добавление существующих действий в тулбар (без создания дубликатов)
@@ -460,6 +491,7 @@ class MainWindow(QMainWindow):
         self.main_toolbar.addSeparator()
         self.main_toolbar.addAction(self.add_pt_action)
         self.main_toolbar.addAction(self.add_pt_map_action)
+        self.main_toolbar.addAction(self.move_pt_action)
         self.main_toolbar.addAction(self.fit_map_action)
 
     def _create_central_layout(self) -> None:
@@ -659,6 +691,8 @@ class MainWindow(QMainWindow):
             self.add_pt_map_action.setEnabled(enabled)
             if not enabled and self.add_pt_map_action.isChecked():
                 self.add_pt_map_action.setChecked(False)
+        if hasattr(self, "move_pt_action"):
+            self.move_pt_action.setEnabled(enabled)
         if hasattr(self, "fit_map_action"):
             self.fit_map_action.setEnabled(enabled)
         if hasattr(self, "close_map_action"):
@@ -768,6 +802,21 @@ class MainWindow(QMainWindow):
         elif mode == "all" and hasattr(self, "labels_all_action"):
             self.labels_all_action.setChecked(True)
 
+    def _set_label_content_mode(self, mode: str) -> None:
+        """Переключение режима содержимого подписей ('name', 'number', 'number_name')."""
+        self._settings_service.set_point_label_content(mode)
+        self.map_canvas.set_label_content_mode(mode)
+        self._update_label_content_action_checked(mode)
+
+    def _update_label_content_action_checked(self, mode: str) -> None:
+        """Синхронизация радио-кнопок меню содержимого подписей."""
+        if mode == "name" and hasattr(self, "label_content_name_action"):
+            self.label_content_name_action.setChecked(True)
+        elif mode == "number" and hasattr(self, "label_content_number_action"):
+            self.label_content_number_action.setChecked(True)
+        elif mode == "number_name" and hasattr(self, "label_content_both_action"):
+            self.label_content_both_action.setChecked(True)
+
     def _toggle_show_points(self, checked: bool) -> None:
         """Глобальное переключение видимости маркеров точек."""
         self._settings_service.set_show_points_visible(checked)
@@ -853,6 +902,10 @@ class MainWindow(QMainWindow):
         labels_mode = self._settings_service.get_point_labels_mode()
         self._update_labels_action_checked(labels_mode)
         self.map_canvas.set_labels_mode(labels_mode)
+
+        content_mode = self._settings_service.get_point_label_content()
+        self._update_label_content_action_checked(content_mode)
+        self.map_canvas.set_label_content_mode(content_mode)
 
         show_pts = self._settings_service.get_show_points_visible()
         if hasattr(self, "show_points_action"):
@@ -945,6 +998,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, "add_pt_map_action"):
             self.add_pt_map_action.setText(tr("action.add_point_on_map"))
             self.add_pt_map_action.setToolTip(tr("tooltip.add_point_on_map"))
+        if hasattr(self, "move_pt_action"):
+            self.move_pt_action.setText(tr("action.move_point"))
+            self.move_pt_action.setToolTip(tr("tooltip.move_point"))
         if hasattr(self, "copy_selected_coords_action"):
             self.copy_selected_coords_action.setText(tr("action.copy_selected_coords"))
         if hasattr(self, "show_all_points_action"):
@@ -972,6 +1028,14 @@ class MainWindow(QMainWindow):
             self.labels_selected_action.setText(tr("action.labels_selected"))
         if hasattr(self, "labels_all_action"):
             self.labels_all_action.setText(tr("action.labels_all"))
+        if hasattr(self, "labels_content_menu"):
+            self.labels_content_menu.setTitle(tr("menu.point_labels_content"))
+        if hasattr(self, "label_content_name_action"):
+            self.label_content_name_action.setText(tr("label_content.name"))
+        if hasattr(self, "label_content_number_action"):
+            self.label_content_number_action.setText(tr("label_content.number"))
+        if hasattr(self, "label_content_both_action"):
+            self.label_content_both_action.setText(tr("label_content.number_name"))
         if hasattr(self, "show_points_action"):
             self.show_points_action.setText(tr("action.show_points"))
         if hasattr(self, "show_zones_action"):

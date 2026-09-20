@@ -33,6 +33,28 @@ class MapPoint:
     zone_green: int = 30
     zone_blue: int = 30
     zone_opacity: int = 30
+    object_number: str = ""
+    description: str = ""
+    category: str = ""
+    stroke_red: int = 0
+    stroke_green: int = 0
+    stroke_blue: int = 0
+    stroke_width: float = 1.0
+    opacity: int = 100
+    zone_border_red: int = 220
+    zone_border_green: int = 30
+    zone_border_blue: int = 30
+    zone_border_width: float = 1.0
+    zone_border_style: str = "solid"
+
+    @property
+    def marker_opacity(self) -> int:
+        """Псевдоним для прозрачности маркера (0..100)."""
+        return self.opacity
+
+    @marker_opacity.setter
+    def marker_opacity(self, val: int) -> None:
+        self.opacity = val
 
     @property
     def style(self) -> PointStyle:
@@ -43,6 +65,11 @@ class MapPoint:
             red=self.red,
             green=self.green,
             blue=self.blue,
+            stroke_red=self.stroke_red,
+            stroke_green=self.stroke_green,
+            stroke_blue=self.stroke_blue,
+            stroke_width=self.stroke_width,
+            opacity=self.opacity,
         )
 
     @property
@@ -55,4 +82,9 @@ class MapPoint:
             green=self.zone_green,
             blue=self.zone_blue,
             opacity=self.zone_opacity,
+            border_red=self.zone_border_red,
+            border_green=self.zone_border_green,
+            border_blue=self.zone_border_blue,
+            border_width=self.zone_border_width,
+            border_style=self.zone_border_style,
         )

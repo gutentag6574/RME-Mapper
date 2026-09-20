@@ -46,6 +46,7 @@ class AppSettingsService:
     KEY_TOOLBAR_VISIBLE = "ui/toolbar_visible"
     KEY_STATUSBAR_VISIBLE = "ui/statusbar_visible"
     KEY_POINT_LABELS_MODE = "ui/point_labels_mode"
+    KEY_POINT_LABEL_CONTENT = "ui/point_label_content"
     KEY_SHOW_POINTS_VISIBLE = "ui/show_points_visible"
     KEY_SHOW_ZONES_VISIBLE = "ui/show_zones_visible"
     MAX_RECENT_ITEMS = 10
@@ -483,6 +484,26 @@ class AppSettingsService:
                 self._settings.sync()
         else:
             self._memory_fallback[self.KEY_POINT_LABELS_MODE] = val
+
+    def get_point_label_content(self) -> str:
+        """Режим содержимого подписей точек: 'name', 'number', 'number_name'."""
+        if self._settings is not None:
+            val = self._settings.value(self.KEY_POINT_LABEL_CONTENT, "name")
+        else:
+            val = self._memory_fallback.get(self.KEY_POINT_LABEL_CONTENT, "name")
+        if isinstance(val, str) and val.lower() in {"name", "number", "number_name"}:
+            return val.lower()
+        return "name"
+
+    def set_point_label_content(self, content: str) -> None:
+        """Сохранить режим содержимого подписей точек."""
+        val = content.lower() if content.lower() in {"name", "number", "number_name"} else "name"
+        if self._settings is not None:
+            self._settings.setValue(self.KEY_POINT_LABEL_CONTENT, val)
+            if hasattr(self._settings, "sync"):
+                self._settings.sync()
+        else:
+            self._memory_fallback[self.KEY_POINT_LABEL_CONTENT] = val
 
     def get_show_points_visible(self) -> bool:
         """Глобальная видимость точек на холсте."""

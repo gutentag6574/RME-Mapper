@@ -253,6 +253,7 @@ class MapRenderer:
                     selected_point_ids=selected_point_ids or set(),
                     image_width=width,
                     image_height=height,
+                    label_content_mode=getattr(options, "label_content_mode", "name"),
                 )
 
             # 8. Отрисовка элементов картографического оформления
@@ -461,9 +462,22 @@ class MapRenderer:
             brush_color = QColor(pt.zone_red, pt.zone_green, pt.zone_blue, alpha)
             brush = QBrush(brush_color)
 
-            pen_color = QColor(pt.zone_red, pt.zone_green, pt.zone_blue, max(180, alpha))
-            pen = QPen(pen_color, 1.5)
-            pen.setCosmetic(True)
+            border_style_map = {
+                "solid": Qt.PenStyle.SolidLine,
+                "dash": Qt.PenStyle.DashLine,
+                "dot": Qt.PenStyle.DotLine,
+            }
+            pen_style = border_style_map.get(pt.zone_border_style, Qt.PenStyle.SolidLine)
+
+            if pt.zone_border_width > 0:
+                pen = QPen(
+                    QColor(pt.zone_border_red, pt.zone_border_green, pt.zone_border_blue),
+                    float(pt.zone_border_width),
+                    pen_style,
+                )
+                pen.setCosmetic(True)
+            else:
+                pen = QPen(Qt.PenStyle.NoPen)
 
             painter.setPen(pen)
             painter.setBrush(brush)
@@ -507,8 +521,15 @@ class MapRenderer:
             half = marker_size / 2.0
             sym = (pt.symbol or "circle").strip().lower()
 
-            fill_brush = QBrush(QColor(pt.red, pt.green, pt.blue))
-            outline_pen = QPen(QColor("#FFFFFF"), max(1.0, 1.5 * marker_scale))
+            fill_alpha = int(pt.opacity * 255.0 / 100.0)
+            fill_brush = QBrush(QColor(pt.red, pt.green, pt.blue, fill_alpha))
+            if pt.stroke_width > 0:
+                outline_pen = QPen(
+                    QColor(pt.stroke_red, pt.stroke_green, pt.stroke_blue),
+                    max(1.0, float(pt.stroke_width) * marker_scale),
+                )
+            else:
+                outline_pen = QPen(Qt.PenStyle.NoPen)
 
             painter.setPen(outline_pen)
             painter.setBrush(fill_brush)
@@ -539,8 +560,11 @@ class MapRenderer:
         selected_point_ids: set[str],
         image_width: int,
         image_height: int,
+        label_content_mode: str = "name",
     ) -> None:
         """Отрисовка текстовых подписей точек с контрастным гало."""
+        from rme_mapper.maps.map_canvas import format_point_label
+
         marker_scale = min(max(scale_factor, 0.5), 5.0)
         font_size = max(8, round(9.0 * marker_scale))
         font = QFont("Segoe UI", font_size, QFont.Weight.Bold)
@@ -555,8 +579,8 @@ class MapRenderer:
             if labels_mode == "selected" and pt.id not in selected_point_ids:
                 continue
 
-            name = (pt.name or "").strip()
-            if not name:
+            label_text = format_point_label(pt, label_content_mode)
+            if not label_text.strip():
                 continue
 
             try:
@@ -580,7 +604,7 @@ class MapRenderer:
             ty = py + offset_y
 
             # Проверка выхода за границы изображения
-            text_w = fm.horizontalAdvance(name)
+            text_w = fm.horizontalAdvance(label_text)
             text_h = fm.height()
             if tx + text_w < 0 or tx > image_width or ty + text_h < 0 or ty > image_height:
                 continue
@@ -596,9 +620,9 @@ class MapRenderer:
                 painter.drawText(
                     label_rect.translated(dx * marker_scale * 0.75, dy * marker_scale * 0.75),
                     Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-                    name,
+                    label_text,
                 )
 
             # Основной текст
             painter.setPen(QPen(QColor("#1E293B")))
-            painter.drawText(label_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, name)
+            painter.drawText(label_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, label_text)

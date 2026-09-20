@@ -214,6 +214,69 @@ CANONICAL_HEADERS: dict[str, str] = {
     "zone_opacity": "zone_opacity",
     "opacity": "zone_opacity",
     "прозрачность": "zone_opacity",
+    # Этап 17: Новые поля объекта и стили
+    "object_number": "object_number",
+    "number": "object_number",
+    "номер": "object_number",
+    "номер_объекта": "object_number",
+    "код": "object_number",
+    "№": "object_number",
+    "no": "object_number",
+    "description": "description",
+    "описание": "description",
+    "примечание": "description",
+    "комментарий": "description",
+    "desc": "description",
+    "notes": "description",
+    "category": "category",
+    "категория": "category",
+    "тип": "category",
+    "группа": "category",
+    "класс": "category",
+    "cat": "category",
+    "visible": "visible",
+    "видимость": "visible",
+    "видимый": "visible",
+    "отображать": "visible",
+    # Обводка маркера
+    "stroke_red": "stroke_red",
+    "обводка_красный": "stroke_red",
+    "stroke_r": "stroke_red",
+    "обводка_к": "stroke_red",
+    "stroke_green": "stroke_green",
+    "обводка_зеленый": "stroke_green",
+    "stroke_g": "stroke_green",
+    "обводка_з": "stroke_green",
+    "stroke_blue": "stroke_blue",
+    "обводка_синий": "stroke_blue",
+    "stroke_b": "stroke_blue",
+    "обводка_с": "stroke_blue",
+    "stroke_width": "stroke_width",
+    "толщина_обводки": "stroke_width",
+    "ширина_обводки": "stroke_width",
+    "marker_opacity": "marker_opacity",
+    "прозрачность_маркера": "marker_opacity",
+    # Граница геозоны
+    "zone_border_red": "zone_border_red",
+    "граница_зоны_красный": "zone_border_red",
+    "border_red": "zone_border_red",
+    "zone_border_r": "zone_border_red",
+    "zone_border_green": "zone_border_green",
+    "граница_зоны_зеленый": "zone_border_green",
+    "border_green": "zone_border_green",
+    "zone_border_g": "zone_border_green",
+    "zone_border_blue": "zone_border_blue",
+    "граница_зоны_синий": "zone_border_blue",
+    "border_blue": "zone_border_blue",
+    "zone_border_b": "zone_border_blue",
+    "zone_border_width": "zone_border_width",
+    "толщина_границы_зоны": "zone_border_width",
+    "border_width": "zone_border_width",
+    "толщина_границы": "zone_border_width",
+    "zone_border_style": "zone_border_style",
+    "стиль_границы_зоны": "zone_border_style",
+    "border_style": "zone_border_style",
+    "стиль_границы": "zone_border_style",
 }
 
 
@@ -776,6 +839,87 @@ class ImportService:
                         )
                     )
 
+            # Этап 17: Новые поля объекта и оформление
+            raw_num = c_dict.get("object_number")
+            object_number = str(raw_num).strip() if raw_num is not None and str(raw_num).strip() != "" else ""
+            if len(object_number) > 100:
+                object_number = object_number[:100]
+
+            raw_cat = c_dict.get("category")
+            category = str(raw_cat).strip() if raw_cat is not None and str(raw_cat).strip() != "" else ""
+            if len(category) > 200:
+                category = category[:200]
+
+            raw_desc = c_dict.get("description")
+            description = str(raw_desc).strip() if raw_desc is not None and str(raw_desc).strip() != "" else ""
+            if len(description) > 8192:
+                description = description[:8192]
+
+            visible = True
+            raw_vis = c_dict.get("visible")
+            if raw_vis is not None and str(raw_vis).strip() != "":
+                v_clean = str(raw_vis).strip().lower()
+                if v_clean in BOOL_TRUE_VALUES:
+                    visible = True
+                elif v_clean in BOOL_FALSE_VALUES:
+                    visible = False
+
+            stroke_red = 255
+            stroke_green = 255
+            stroke_blue = 255
+            raw_sr = c_dict.get("stroke_red")
+            raw_sg = c_dict.get("stroke_green")
+            raw_sb = c_dict.get("stroke_blue")
+            has_stroke_color = any(c is not None and str(c).strip() != "" for c in (raw_sr, raw_sg, raw_sb))
+            if has_stroke_color and all(c is not None and str(c).strip() != "" for c in (raw_sr, raw_sg, raw_sb)):
+                try:
+                    stroke_red, stroke_green, stroke_blue = StyleValidator.validate_rgb(raw_sr, raw_sg, raw_sb)
+                except Exception:
+                    pass
+
+            stroke_width = 1
+            raw_sw = c_dict.get("stroke_width")
+            if raw_sw is not None and str(raw_sw).strip() != "":
+                try:
+                    stroke_width = StyleValidator.validate_stroke_width(raw_sw)
+                except Exception:
+                    pass
+
+            marker_opacity = 100
+            raw_mop = c_dict.get("marker_opacity")
+            if raw_mop is not None and str(raw_mop).strip() != "":
+                try:
+                    marker_opacity = StyleValidator.validate_opacity(raw_mop)
+                except Exception:
+                    pass
+
+            zone_border_red, zone_border_green, zone_border_blue = z_r, z_g, z_b
+            raw_zbr = c_dict.get("zone_border_red")
+            raw_zbg = c_dict.get("zone_border_green")
+            raw_zbb = c_dict.get("zone_border_blue")
+            has_zborder_color = any(c is not None and str(c).strip() != "" for c in (raw_zbr, raw_zbg, raw_zbb))
+            if has_zborder_color and all(c is not None and str(c).strip() != "" for c in (raw_zbr, raw_zbg, raw_zbb)):
+                try:
+                    zone_border_red, zone_border_green, zone_border_blue = StyleValidator.validate_rgb(raw_zbr, raw_zbg, raw_zbb)
+                except Exception:
+                    pass
+
+            zone_border_width = 2
+            raw_zbw = c_dict.get("zone_border_width")
+            if raw_zbw is not None and str(raw_zbw).strip() != "":
+                try:
+                    zone_border_width = StyleValidator.validate_border_width(raw_zbw)
+                except Exception:
+                    pass
+
+            zone_border_style = "solid"
+            raw_zbs = c_dict.get("zone_border_style")
+            if raw_zbs is not None and str(raw_zbs).strip() != "":
+                try:
+                    zone_border_style = StyleValidator.validate_border_style(raw_zbs)
+                except Exception:
+                    pass
+
             # Д. Предупреждения (дубликаты координат и границы карты)
             is_duplicate = False
             is_outside = False
@@ -866,6 +1010,20 @@ class ImportService:
                     zone_green=z_g,
                     zone_blue=z_b,
                     zone_opacity=zone_opacity,
+                    object_number=object_number,
+                    description=description,
+                    category=category,
+                    visible=visible,
+                    stroke_red=stroke_red,
+                    stroke_green=stroke_green,
+                    stroke_blue=stroke_blue,
+                    stroke_width=stroke_width,
+                    opacity=marker_opacity,
+                    zone_border_red=zone_border_red,
+                    zone_border_green=zone_border_green,
+                    zone_border_blue=zone_border_blue,
+                    zone_border_width=zone_border_width,
+                    zone_border_style=zone_border_style,
                 )
                 result.valid_rows += 1
                 result.warnings.extend(row_warnings)

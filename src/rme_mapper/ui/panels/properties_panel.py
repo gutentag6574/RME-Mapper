@@ -80,14 +80,36 @@ class PropertiesPanel(QWidget):
         prop_vbox.setContentsMargins(0, 0, 0, 0)
         prop_vbox.setSpacing(8)
 
-        # 0. Название точки
+        # 0. Раздел: Объект (Название, Номер, Категория, Описание, Видимость)
         name_form = QFormLayout()
         name_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
         self.prop_name_lbl = QLabel()
         self.prop_name_val = QLabel("—")
         self.prop_name_val.setWordWrap(True)
         self.prop_name_val.setStyleSheet("font-weight: 600; color: #1E293B;")
         name_form.addRow(self.prop_name_lbl, self.prop_name_val)
+
+        self.prop_object_number_lbl = QLabel()
+        self.prop_object_number_val = QLabel("—")
+        self.prop_object_number_val.setWordWrap(True)
+        name_form.addRow(self.prop_object_number_lbl, self.prop_object_number_val)
+
+        self.prop_category_lbl = QLabel()
+        self.prop_category_val = QLabel("—")
+        self.prop_category_val.setWordWrap(True)
+        name_form.addRow(self.prop_category_lbl, self.prop_category_val)
+
+        self.prop_description_lbl = QLabel()
+        self.prop_description_val = QLabel("—")
+        self.prop_description_val.setWordWrap(True)
+        self.prop_description_val.setStyleSheet("color: #334155; max-height: 80px;")
+        name_form.addRow(self.prop_description_lbl, self.prop_description_val)
+
+        self.prop_visibility_lbl = QLabel()
+        self.prop_visibility_val = QLabel("—")
+        name_form.addRow(self.prop_visibility_lbl, self.prop_visibility_val)
+
         prop_vbox.addLayout(name_form)
 
         # 1. Раздел: Координаты
@@ -141,6 +163,22 @@ class PropertiesPanel(QWidget):
         color_row.addStretch()
         self.prop_color_lbl = QLabel()
         marker_form.addRow(self.prop_color_lbl, color_row)
+
+        self.prop_opacity_lbl = QLabel()
+        self.prop_opacity_val = QLabel("—")
+        marker_form.addRow(self.prop_opacity_lbl, self.prop_opacity_val)
+
+        stroke_row = QHBoxLayout()
+        self.prop_stroke_val = QLabel("—")
+        self.prop_stroke_swatch = QFrame()
+        self.prop_stroke_swatch.setFixedSize(18, 18)
+        self.prop_stroke_swatch.setStyleSheet("border: 1px solid #999; border-radius: 3px;")
+        stroke_row.addWidget(self.prop_stroke_val)
+        stroke_row.addWidget(self.prop_stroke_swatch)
+        stroke_row.addStretch()
+        self.prop_stroke_lbl = QLabel()
+        marker_form.addRow(self.prop_stroke_lbl, stroke_row)
+
         prop_vbox.addLayout(marker_form)
 
         # 3. Раздел: Зона
@@ -177,6 +215,18 @@ class PropertiesPanel(QWidget):
         self.prop_zone_opacity_lbl = QLabel()
         self.prop_zone_opacity_val = QLabel("—")
         zone_form.addRow(self.prop_zone_opacity_lbl, self.prop_zone_opacity_val)
+
+        zone_border_row = QHBoxLayout()
+        self.prop_zone_border_val = QLabel("—")
+        self.prop_zone_border_swatch = QFrame()
+        self.prop_zone_border_swatch.setFixedSize(18, 18)
+        self.prop_zone_border_swatch.setStyleSheet("border: 1px solid #999; border-radius: 3px;")
+        zone_border_row.addWidget(self.prop_zone_border_val)
+        zone_border_row.addWidget(self.prop_zone_border_swatch)
+        zone_border_row.addStretch()
+        self.prop_zone_border_lbl = QLabel()
+        zone_form.addRow(self.prop_zone_border_lbl, zone_border_row)
+
         prop_vbox.addLayout(zone_form)
 
         self.prop_container.setVisible(False)
@@ -196,15 +246,24 @@ class PropertiesPanel(QWidget):
         self.sec_zone_lbl.setText(tr("properties.section_zone"))
 
         self.prop_name_lbl.setText(f"<b>{tr('properties.name')}</b>")
+        self.prop_object_number_lbl.setText(f"<b>{tr('properties.object_number')}</b>")
+        self.prop_category_lbl.setText(f"<b>{tr('properties.category')}</b>")
+        self.prop_description_lbl.setText(f"<b>{tr('properties.description')}</b>")
+        self.prop_visibility_lbl.setText(f"<b>{tr('properties.visibility')}</b>")
+
         self.prop_lat_lbl.setText(f"<b>{tr('properties.latitude')}</b>")
         self.prop_lon_lbl.setText(f"<b>{tr('properties.longitude')}</b>")
         self.prop_shape_lbl.setText(f"<b>{tr('properties.shape')}</b>")
         self.prop_size_lbl.setText(f"<b>{tr('properties.size')}</b>")
         self.prop_color_lbl.setText(f"<b>{tr('properties.color')}</b>")
+        self.prop_opacity_lbl.setText(f"<b>{tr('properties.opacity')}</b>")
+        self.prop_stroke_lbl.setText(f"<b>{tr('properties.stroke')}</b>")
+
         self.prop_zone_lbl.setText(f"<b>{tr('properties.zone')}</b>")
         self.prop_zone_radius_lbl.setText(f"<b>{tr('properties.radius')}</b>")
         self.prop_zone_color_lbl.setText(f"<b>{tr('properties.zone_color')}</b>")
-        self.prop_zone_opacity_lbl.setText(f"<b>{tr('properties.opacity')}</b>")
+        self.prop_zone_opacity_lbl.setText(f"<b>{tr('properties.zone_opacity')}</b>")
+        self.prop_zone_border_lbl.setText(f"<b>{tr('properties.zone_border')}</b>")
 
         if self._current_point is not None:
             self._render_point_data(self._current_point)
@@ -221,7 +280,12 @@ class PropertiesPanel(QWidget):
         self._render_point_data(point)
 
     def _render_point_data(self, point: MapPoint) -> None:
-        self.prop_name_val.setText(point.name)
+        self.prop_name_val.setText(point.name or "—")
+        self.prop_object_number_val.setText(point.object_number or "—")
+        self.prop_category_val.setText(point.category or "—")
+        self.prop_description_val.setText(point.description or "—")
+        self.prop_visibility_val.setText(tr("properties.visible_yes") if point.visible else tr("properties.visible_no"))
+
         self.prop_lat_val.setText(f"{point.latitude:.6f}")
         self.prop_lon_val.setText(f"{point.longitude:.6f}")
         self.prop_shape_val.setText(get_symbol_display_name(point.symbol))
@@ -229,6 +293,14 @@ class PropertiesPanel(QWidget):
         self.prop_color_val.setText(f"RGB({point.red}, {point.green}, {point.blue})")
         self.prop_color_swatch.setStyleSheet(
             f"background-color: rgb({point.red}, {point.green}, {point.blue}); "
+            f"border: 1px solid #777; border-radius: 3px;"
+        )
+        self.prop_opacity_val.setText(f"{int(point.opacity)}%")
+        self.prop_stroke_val.setText(
+            f"RGB({point.stroke_red}, {point.stroke_green}, {point.stroke_blue}), {point.stroke_width:.1f} px"
+        )
+        self.prop_stroke_swatch.setStyleSheet(
+            f"background-color: rgb({point.stroke_red}, {point.stroke_green}, {point.stroke_blue}); "
             f"border: 1px solid #777; border-radius: 3px;"
         )
 
@@ -241,6 +313,15 @@ class PropertiesPanel(QWidget):
                 f"border: 1px solid #777; border-radius: 3px;"
             )
             self.prop_zone_opacity_val.setText(f"{point.zone_opacity}%")
+            b_style_name = tr(f"border_style.{point.zone_border_style}") if get_translation_service().has_translation(f"border_style.{point.zone_border_style}") else point.zone_border_style
+            self.prop_zone_border_val.setText(
+                f"RGB({point.zone_border_red}, {point.zone_border_green}, {point.zone_border_blue}), "
+                f"{point.zone_border_width:.1f} px, {b_style_name}"
+            )
+            self.prop_zone_border_swatch.setStyleSheet(
+                f"background-color: rgb({point.zone_border_red}, {point.zone_border_green}, {point.zone_border_blue}); "
+                f"border: 1px solid #777; border-radius: 3px;"
+            )
         else:
             self.prop_zone_radius_val.setText("—")
             self.prop_zone_color_val.setText("—")
@@ -248,6 +329,10 @@ class PropertiesPanel(QWidget):
                 "background-color: transparent; border: 1px solid #ccc; border-radius: 3px;"
             )
             self.prop_zone_opacity_val.setText("—")
+            self.prop_zone_border_val.setText("—")
+            self.prop_zone_border_swatch.setStyleSheet(
+                "background-color: transparent; border: 1px solid #ccc; border-radius: 3px;"
+            )
 
     def clear(self) -> None:
         """Очистка панели свойств при отсутствии выбора."""

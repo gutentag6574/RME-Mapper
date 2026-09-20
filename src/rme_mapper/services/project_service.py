@@ -27,6 +27,8 @@ PRIMARY_FORMAT = PRIMARY_PROJECT_FORMAT
 LEGACY_FORMAT = LEGACY_PROJECT_FORMAT
 SUPPORTED_FORMATS = SUPPORTED_PROJECT_FORMATS
 CURRENT_VERSION = 1
+MAX_SUPPORTED_VERSION = 2
+SUPPORTED_VERSIONS = {1, 2}
 PRIMARY_EXTENSION = ".gpmap"
 LEGACY_EXTENSION = ".rmeproject"
 SUPPORTED_EXTENSIONS = {PRIMARY_EXTENSION, LEGACY_EXTENSION}
@@ -240,9 +242,9 @@ class ProjectService:
         except (ValueError, TypeError):
             raise ValueError(f"Некорректная версия проекта: '{ver}'. Ожидается целое число.")
 
-        if ver_int > CURRENT_VERSION:
+        if ver_int > MAX_SUPPORTED_VERSION:
             raise ValueError(
-                f"Проект создан более новой версией программы (версия {ver_int}, поддерживается {CURRENT_VERSION})."
+                f"Проект создан более новой версией программы (версия {ver_int}, поддерживается {MAX_SUPPORTED_VERSION})."
             )
 
         # Валидация и парсинг точек
@@ -290,6 +292,24 @@ class ProjectService:
                 )
                 opacity = StyleValidator.validate_opacity(pt_dict.get("zone_opacity", 30))
 
+                obj_num = StyleValidator.validate_object_number(pt_dict.get("object_number", ""))
+                desc = StyleValidator.validate_description(pt_dict.get("description", ""))
+                cat = StyleValidator.validate_category(pt_dict.get("category", ""))
+                sr, sg, sb = StyleValidator.validate_rgb(
+                    pt_dict.get("stroke_red", 0),
+                    pt_dict.get("stroke_green", 0),
+                    pt_dict.get("stroke_blue", 0),
+                )
+                sw = StyleValidator.validate_stroke_width(pt_dict.get("stroke_width", 1.0))
+                m_op = StyleValidator.validate_opacity(pt_dict.get("opacity", pt_dict.get("marker_opacity", 100)))
+                zbr, zbg, zbb = StyleValidator.validate_rgb(
+                    pt_dict.get("zone_border_red", zr),
+                    pt_dict.get("zone_border_green", zg),
+                    pt_dict.get("zone_border_blue", zb),
+                )
+                zbw = StyleValidator.validate_border_width(pt_dict.get("zone_border_width", 1.0))
+                zbs = StyleValidator.validate_border_style(pt_dict.get("zone_border_style", "solid"))
+
                 pt_data = ProjectPointData(
                     id=str(pt_dict.get("id", uuid4().hex)),
                     name=str(pt_dict.get("name", "")),
@@ -308,6 +328,19 @@ class ProjectService:
                     zone_green=zg,
                     zone_blue=zb,
                     zone_opacity=opacity,
+                    object_number=obj_num,
+                    description=desc,
+                    category=cat,
+                    stroke_red=sr,
+                    stroke_green=sg,
+                    stroke_blue=sb,
+                    stroke_width=sw,
+                    opacity=m_op,
+                    zone_border_red=zbr,
+                    zone_border_green=zbg,
+                    zone_border_blue=zbb,
+                    zone_border_width=zbw,
+                    zone_border_style=zbs,
                 )
                 validated_points.append(pt_data)
             except Exception as pt_err:

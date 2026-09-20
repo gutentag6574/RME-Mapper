@@ -133,6 +133,28 @@ class EditPointCommand(UndoCommand):
         self._apply_fn(copy.deepcopy(self.before_point))
 
 
+class MovePointCommand(UndoCommand):
+    """Команда перемещения пользовательской точки мышью на карте."""
+
+    def __init__(
+        self,
+        before_point: MapPoint,
+        after_point: MapPoint,
+        apply_fn: Callable[[MapPoint], None],
+        description: str = "Переместить точку",
+    ) -> None:
+        super().__init__(description)
+        self.before_point = copy.deepcopy(before_point)
+        self.after_point = copy.deepcopy(after_point)
+        self._apply_fn = apply_fn
+
+    def execute(self) -> None:
+        self._apply_fn(copy.deepcopy(self.after_point))
+
+    def undo(self) -> None:
+        self._apply_fn(copy.deepcopy(self.before_point))
+
+
 class BulkEditStyleCommand(UndoCommand):
     """Команда группового изменения стилей точек как единой транзакции."""
 
@@ -294,3 +316,7 @@ class UndoManager:
                 cb()
             except Exception as e:
                 logger.warning("Ошибка в обработчике on_state_changed UndoManager: %s", e)
+
+
+# Алиас для обратной совместимости
+BulkEditPointStyleCommand = BulkEditStyleCommand

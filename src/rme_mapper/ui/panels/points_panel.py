@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -168,12 +168,16 @@ class PointsPanel(QWidget):
         super().keyPressEvent(event)
 
     def _on_search_text_changed(self, text: str) -> None:
-        """Фильтрация строк таблицы по введенному названию."""
+        """Фильтрация строк таблицы по названию, номеру объекта, категории и описанию."""
         query = text.strip().lower()
         for r in range(self.points_table.rowCount()):
-            item = self.points_table.item(r, 1)
-            name = item.text().lower() if item else ""
-            matches = (not query) or (query in name)
+            name_item = self.points_table.item(r, 1)
+            name = name_item.text().lower() if name_item else ""
+            num_item = self.points_table.item(r, 0)
+            obj_num = str(num_item.data(Qt.ItemDataRole.UserRole + 1) or "").lower() if num_item else ""
+            cat = str(num_item.data(Qt.ItemDataRole.UserRole + 2) or "").lower() if num_item else ""
+            desc = str(num_item.data(Qt.ItemDataRole.UserRole + 3) or "").lower() if num_item else ""
+            matches = (not query) or (query in name) or (query in obj_num) or (query in cat) or (query in desc)
             self.points_table.setRowHidden(r, not matches)
         self._update_counter()
 
@@ -182,9 +186,14 @@ class PointsPanel(QWidget):
         if not query:
             self.points_table.setRowHidden(row, False)
             return
-        item = self.points_table.item(row, 1)
-        name = item.text().lower() if item else ""
-        self.points_table.setRowHidden(row, query not in name)
+        name_item = self.points_table.item(row, 1)
+        name = name_item.text().lower() if name_item else ""
+        num_item = self.points_table.item(row, 0)
+        obj_num = str(num_item.data(Qt.ItemDataRole.UserRole + 1) or "").lower() if num_item else ""
+        cat = str(num_item.data(Qt.ItemDataRole.UserRole + 2) or "").lower() if num_item else ""
+        desc = str(num_item.data(Qt.ItemDataRole.UserRole + 3) or "").lower() if num_item else ""
+        matches = (query in name) or (query in obj_num) or (query in cat) or (query in desc)
+        self.points_table.setRowHidden(row, not matches)
 
     def _update_counter(self) -> None:
         """Обновление счетчика точек (всего / отфильтровано)."""
@@ -248,6 +257,10 @@ class PointsPanel(QWidget):
         shape: str,
         radius: str,
         point_id: str | None = None,
+        object_number: str = "",
+        category: str = "",
+        description: str = "",
+        visible: bool = True,
     ) -> int:
         """Добавление строки в таблицу."""
         row = self.points_table.rowCount()
@@ -257,12 +270,21 @@ class PointsPanel(QWidget):
         num_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         if point_id is not None:
             num_item.setData(Qt.ItemDataRole.UserRole, point_id)
+        num_item.setData(Qt.ItemDataRole.UserRole + 1, object_number)
+        num_item.setData(Qt.ItemDataRole.UserRole + 2, category)
+        num_item.setData(Qt.ItemDataRole.UserRole + 3, description)
+        num_item.setData(Qt.ItemDataRole.UserRole + 4, visible)
 
         name_item = QTableWidgetItem(name)
         lat_item = QTableWidgetItem(lat)
         lon_item = QTableWidgetItem(lon)
         shape_item = QTableWidgetItem(shape)
         radius_item = QTableWidgetItem(radius)
+
+        if not visible:
+            muted_color = QColor("#94A3B8")
+            for it in (num_item, name_item, lat_item, lon_item, shape_item, radius_item):
+                it.setForeground(muted_color)
 
         self.points_table.setItem(row, 0, num_item)
         self.points_table.setItem(row, 1, name_item)
@@ -284,6 +306,10 @@ class PointsPanel(QWidget):
         shape: str,
         radius: str,
         point_id: str | None = None,
+        object_number: str = "",
+        category: str = "",
+        description: str = "",
+        visible: bool = True,
     ) -> int:
         """Вставка строки по заданному индексу (для восстановления в Undo)."""
         target_row = max(0, min(row, self.points_table.rowCount()))
@@ -293,12 +319,21 @@ class PointsPanel(QWidget):
         num_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         if point_id is not None:
             num_item.setData(Qt.ItemDataRole.UserRole, point_id)
+        num_item.setData(Qt.ItemDataRole.UserRole + 1, object_number)
+        num_item.setData(Qt.ItemDataRole.UserRole + 2, category)
+        num_item.setData(Qt.ItemDataRole.UserRole + 3, description)
+        num_item.setData(Qt.ItemDataRole.UserRole + 4, visible)
 
         name_item = QTableWidgetItem(name)
         lat_item = QTableWidgetItem(lat)
         lon_item = QTableWidgetItem(lon)
         shape_item = QTableWidgetItem(shape)
         radius_item = QTableWidgetItem(radius)
+
+        if not visible:
+            muted_color = QColor("#94A3B8")
+            for it in (num_item, name_item, lat_item, lon_item, shape_item, radius_item):
+                it.setForeground(muted_color)
 
         self.points_table.setItem(target_row, 0, num_item)
         self.points_table.setItem(target_row, 1, name_item)
@@ -307,11 +342,12 @@ class PointsPanel(QWidget):
         self.points_table.setItem(target_row, 4, shape_item)
         self.points_table.setItem(target_row, 5, radius_item)
 
-        # Пересчет номеров строк
+        # Пересчет номеров строк (с сохранением пользовательских номеров)
         for r in range(self.points_table.rowCount()):
             it = self.points_table.item(r, 0)
             if it:
-                it.setText(str(r + 1))
+                custom_num = it.data(Qt.ItemDataRole.UserRole + 1)
+                it.setText(str(custom_num) if custom_num else str(r + 1))
 
         self._apply_filter_to_row(target_row)
         self._update_counter()
@@ -325,9 +361,32 @@ class PointsPanel(QWidget):
         lon: str,
         shape: str,
         radius: str,
+        num: str | None = None,
+        object_number: str | None = None,
+        category: str | None = None,
+        description: str | None = None,
+        visible: bool | None = None,
     ) -> None:
         """Обновление значений в строке таблицы."""
         if 0 <= row < self.points_table.rowCount():
+            num_item = self.points_table.item(row, 0)
+            if num is not None and num_item:
+                num_item.setText(num)
+            if object_number is not None and num_item:
+                num_item.setData(Qt.ItemDataRole.UserRole + 1, object_number)
+            if category is not None and num_item:
+                num_item.setData(Qt.ItemDataRole.UserRole + 2, category)
+            if description is not None and num_item:
+                num_item.setData(Qt.ItemDataRole.UserRole + 3, description)
+            if visible is not None and num_item:
+                num_item.setData(Qt.ItemDataRole.UserRole + 4, visible)
+                muted = not visible
+                fore_color = QColor("#94A3B8") if muted else QColor("#000000")
+                for c in range(6):
+                    it = self.points_table.item(row, c)
+                    if it:
+                        it.setForeground(fore_color)
+
             self.points_table.item(row, 1).setText(name)
             self.points_table.item(row, 2).setText(lat)
             self.points_table.item(row, 3).setText(lon)
@@ -343,7 +402,8 @@ class PointsPanel(QWidget):
             for r in range(self.points_table.rowCount()):
                 item = self.points_table.item(r, 0)
                 if item:
-                    item.setText(str(r + 1))
+                    custom_num = item.data(Qt.ItemDataRole.UserRole + 1)
+                    item.setText(str(custom_num) if custom_num else str(r + 1))
             self._update_counter()
 
     def clear_table(self) -> None:

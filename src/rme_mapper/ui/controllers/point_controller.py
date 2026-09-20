@@ -17,10 +17,12 @@ from rme_mapper.services.geodesic_service import GeodesicService
 from rme_mapper.services.point_service import PointService
 from rme_mapper.services.undo_manager import (
     AddPointCommand,
+    BulkEditPointStyleCommand,
     BulkEditStyleCommand,
     DeleteMultiplePointsCommand,
     DeletePointCommand,
     EditPointCommand,
+    MovePointCommand,
     UndoManager,
 )
 from rme_mapper.ui.bulk_point_style_dialog import BulkPointStyleDialog
@@ -83,6 +85,8 @@ class PointController(QObject):
 
         self._map_canvas.map_point_clicked.connect(self.on_map_point_clicked)
         self._map_canvas.add_point_mode_cancelled.connect(self.cancel_add_point_on_map_mode)
+        self._map_canvas.point_moved.connect(self.on_point_moved_on_canvas)
+        self._map_canvas.move_point_mode_cancelled.connect(self.cancel_move_point_mode)
 
     @property
     def undo_manager(self) -> UndoManager:
@@ -240,6 +244,7 @@ class PointController(QObject):
             map_crs=active_crs,
             initial_lat=initial_lat,
             initial_lon=initial_lon,
+            categories=self._point_service.get_used_categories(),
         )
         if dialog.exec():
             data = dialog.get_point_data()
@@ -259,6 +264,19 @@ class PointController(QObject):
                     zone_green=data.zone_green,
                     zone_blue=data.zone_blue,
                     zone_opacity=data.zone_opacity,
+                    object_number=data.object_number,
+                    description=data.description,
+                    category=data.category,
+                    stroke_red=data.stroke_red,
+                    stroke_green=data.stroke_green,
+                    stroke_blue=data.stroke_blue,
+                    stroke_width=data.stroke_width,
+                    opacity=data.opacity,
+                    zone_border_red=data.zone_border_red,
+                    zone_border_green=data.zone_border_green,
+                    zone_border_blue=data.zone_border_blue,
+                    zone_border_width=data.zone_border_width,
+                    zone_border_style=data.zone_border_style,
                 )
                 cmd = AddPointCommand(
                     point=point,
@@ -303,6 +321,7 @@ class PointController(QObject):
             map_name=profile.name if profile else None,
             map_extent=profile.extent if profile else None,
             map_crs=active_crs,
+            categories=self._point_service.get_used_categories(),
         )
         if dialog.exec():
             data = dialog.get_point_data()
@@ -323,6 +342,19 @@ class PointController(QObject):
                 after_pt.zone_green = data.zone_green
                 after_pt.zone_blue = data.zone_blue
                 after_pt.zone_opacity = data.zone_opacity
+                after_pt.object_number = data.object_number
+                after_pt.description = data.description
+                after_pt.category = data.category
+                after_pt.stroke_red = data.stroke_red
+                after_pt.stroke_green = data.stroke_green
+                after_pt.stroke_blue = data.stroke_blue
+                after_pt.stroke_width = data.stroke_width
+                after_pt.opacity = data.opacity
+                after_pt.zone_border_red = data.zone_border_red
+                after_pt.zone_border_green = data.zone_border_green
+                after_pt.zone_border_blue = data.zone_border_blue
+                after_pt.zone_border_width = data.zone_border_width
+                after_pt.zone_border_style = data.zone_border_style
 
                 cmd = EditPointCommand(
                     before_point=before_pt,
@@ -479,6 +511,114 @@ class PointController(QObject):
         self.add_point_workflow(initial_lat=lat_deg, initial_lon=lon_deg)
 
     # -------------------------------------------------------------------------
+    # Перемещение точки на холсте
+    # -------------------------------------------------------------------------
+
+    def start_move_point_mode(self) -> None:
+        """Активация режима перемещения точки на холсте."""
+        if self._get_active_profile() is None and self._get_map_path() is None:
+            QMessageBox.information(
+                self._parent,
+                tr("dialog.no_map_title"),
+                tr("dialog.no_map_text"),
+            )
+            return
+        self._map_canvas.set_interaction_mode("move_point")
+        self._set_status(tr("status.move_point_hint"))
+
+    def cancel_move_point_mode(self) -> None:
+        """Отмена режима перемещения точки на холсте."""
+        self._map_canvas.set_interaction_mode("navigation")
+        self._set_status("")
+
+    def on_point_moved_on_canvas(
+        self, point_id: str, final_x: float, final_y: float, start_x: float, start_y: float
+    ) -> None:
+        """Обработка завершения перетаскивания точки на холсте: пересчет в WGS84 и сохранение в Undo."""
+        pt = self._point_service.get_point(point_id)
+        if not pt:
+            return
+
+        active_crs = self._get_active_crs()
+        try:
+            lon, lat = CoordinateService.transform_xy(
+                final_x,
+                final_y,
+                source_crs=active_crs,
+                target_crs="OGC:CRS84",
+            )
+        except Exception as e:
+            logger.warning("Ошибка трансформации координат после перемещения точки: %s", e)
+            return
+
+        before_pt = copy.deepcopy(pt)
+        after_pt = copy.deepcopy(pt)
+        after_pt.longitude = lon
+        after_pt.latitude = lat
+
+        cmd = MovePointCommand(
+            before_point=before_pt,
+            after_point=after_pt,
+            apply_fn=lambda p: self._cmd_update_point(p),
+            description=f"{tr('action.move_point')}: {after_pt.name}",
+        )
+        self._undo_manager.push(cmd, execute=True)
+        self._set_status(tr("status.point_moved", name=after_pt.name, lat=lat, lon=lon), 3000)
+        logger.info("Точка '%s' перемещена на координаты lon=%f, lat=%f", after_pt.name, lon, lat)
+
+    def toggle_point_visibility(self, point_id: str | None = None) -> None:
+        """Переключение видимости точки (или всех выделенных точек)."""
+        if point_id:
+            pt = self._point_service.get_point(point_id)
+            if not pt:
+                return
+            before_pt = copy.deepcopy(pt)
+            after_pt = copy.deepcopy(pt)
+            after_pt.visible = not before_pt.visible
+
+            desc_key = "action.hide_object" if not after_pt.visible else "action.show_object"
+            cmd = EditPointCommand(
+                before_point=before_pt,
+                after_point=after_pt,
+                apply_fn=lambda p: self._cmd_update_point(p),
+                description=f"{tr(desc_key)}: {after_pt.name}",
+            )
+            self._undo_manager.push(cmd, execute=True)
+            self._set_status(tr("status.object_visibility_changed"), 2000)
+            return
+
+        selected_ids = self._get_selected_point_ids()
+        if not selected_ids:
+            return
+
+        valid_pts = [self._point_service.get_point(pid) for pid in selected_ids]
+        valid_pts = [p for p in valid_pts if p is not None]
+        if not valid_pts:
+            return
+
+        target_visible = not all(p.visible for p in valid_pts)
+        before_pts = [copy.deepcopy(p) for p in valid_pts]
+        after_pts: list[MapPoint] = []
+        for p in valid_pts:
+            after_p = copy.deepcopy(p)
+            after_p.visible = target_visible
+            after_pts.append(after_p)
+
+        def apply_vis(pts: list[MapPoint]) -> None:
+            for p in pts:
+                self._cmd_update_point(p)
+
+        desc_key = "action.hide_object" if not target_visible else "action.show_object"
+        cmd = BulkEditStyleCommand(
+            before_points=before_pts,
+            after_points=after_pts,
+            apply_fn=apply_vis,
+            description=f"{tr(desc_key)} ({len(valid_pts)})",
+        )
+        self._undo_manager.push(cmd, execute=True)
+        self._set_status(tr("status.object_visibility_changed"), 2000)
+
+    # -------------------------------------------------------------------------
     # Быстрая навигация и экстенты
     # -------------------------------------------------------------------------
 
@@ -596,26 +736,36 @@ class PointController(QObject):
 
         if row_index is None or row_index >= len(self._table_point_ids):
             row_num = len(self._table_point_ids) + 1
+            num_str = point.object_number if point.object_number else str(row_num)
             self._points_panel.add_row(
-                num=str(row_num),
+                num=num_str,
                 name=point.name,
                 lat=f"{point.latitude:.6f}",
                 lon=f"{point.longitude:.6f}",
                 shape=shape_name,
                 radius=radius_str,
                 point_id=point.id,
+                object_number=point.object_number,
+                category=point.category,
+                description=point.description,
+                visible=point.visible,
             )
             self._table_point_ids.append(point.id)
         else:
+            num_str = point.object_number if point.object_number else str(row_index + 1)
             self._points_panel.insert_row(
                 row=row_index,
-                num=str(row_index + 1),
+                num=num_str,
                 name=point.name,
                 lat=f"{point.latitude:.6f}",
                 lon=f"{point.longitude:.6f}",
                 shape=shape_name,
                 radius=radius_str,
                 point_id=point.id,
+                object_number=point.object_number,
+                category=point.category,
+                description=point.description,
+                visible=point.visible,
             )
             self._table_point_ids.insert(row_index, point.id)
 
@@ -623,14 +773,20 @@ class PointController(QObject):
         """Обновление значений в строке таблицы."""
         shape_name = get_symbol_display_name(point.symbol)
         radius_str = GeodesicService.format_radius(point.radius_m, point.zone_enabled)
+        num_str = point.object_number if point.object_number else str(row + 1)
 
         self._points_panel.update_row(
             row=row,
+            num=num_str,
             name=point.name,
             lat=f"{point.latitude:.6f}",
             lon=f"{point.longitude:.6f}",
             shape=shape_name,
             radius=radius_str,
+            object_number=point.object_number,
+            category=point.category,
+            description=point.description,
+            visible=point.visible,
         )
 
     def _render_point_on_canvas(self, point: MapPoint, is_update: bool = False) -> None:
@@ -730,6 +886,8 @@ class PointController(QObject):
             act_zoom_sel.setEnabled(has_map)
             act_copy_sel = menu.addAction(tr("action.copy_selected_coords"))
             menu.addSeparator()
+            act_toggle_vis = menu.addAction(tr("action.hide_object"))
+            menu.addSeparator()
             act_delete = menu.addAction(tr("action.delete_selected"))
 
             action = menu.exec(table.viewport().mapToGlobal(pos))
@@ -739,14 +897,27 @@ class PointController(QObject):
                 self.zoom_to_selected()
             elif action == act_copy_sel:
                 self.copy_selected_coordinates()
+            elif action == act_toggle_vis:
+                self.toggle_point_visibility()
             elif action == act_delete:
                 self.delete_point_workflow(confirm=True)
             return
 
         # Одиночное выделение
+        row = table.row(item)
+        point = None
+        if 0 <= row < len(self._table_point_ids):
+            point = self._point_service.get_point(self._table_point_ids[row])
+
         act_edit = menu.addAction(tr("action.edit_point"))
+        act_move = menu.addAction(tr("action.move_point_context"))
+        act_move.setEnabled(has_map)
         act_center = menu.addAction(tr("action.center_on_map"))
         act_center.setEnabled(has_map)
+
+        act_vis = None
+        if point:
+            act_vis = menu.addAction(tr("action.hide_object") if point.visible else tr("action.show_object"))
 
         copy_menu = menu.addMenu(tr("action.copy_coordinates"))
         act_copy_dd = copy_menu.addAction(tr("action.copy_dd"))
@@ -758,22 +929,24 @@ class PointController(QObject):
         act_delete = menu.addAction(tr("action.delete_point"))
 
         action = menu.exec(table.viewport().mapToGlobal(pos))
-        row = table.row(item)
-        if 0 <= row < len(self._table_point_ids):
-            point = self._point_service.get_point(self._table_point_ids[row])
-            if point:
-                if action == act_copy_dd:
-                    self.copy_coordinates_dd(point)
-                    return
-                elif action == act_copy_dms:
-                    self.copy_coordinates_dms(point)
-                    return
-                elif action == act_copy_map_xy:
-                    self.copy_coordinates_map_xy(point)
-                    return
+        if point:
+            if action == act_copy_dd:
+                self.copy_coordinates_dd(point)
+                return
+            elif action == act_copy_dms:
+                self.copy_coordinates_dms(point)
+                return
+            elif action == act_copy_map_xy:
+                self.copy_coordinates_map_xy(point)
+                return
+            elif action == act_vis:
+                self.toggle_point_visibility(point.id)
+                return
 
         if action == act_edit:
             self.edit_point_workflow()
+        elif action == act_move:
+            self.start_move_point_mode()
         elif action == act_center:
             r = table.currentRow()
             self.on_table_row_double_clicked(r, 0)

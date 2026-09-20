@@ -47,10 +47,12 @@ class BulkPointStyleDialog(QDialog):
         self._points = points or []
         count = point_count if point_count is not None else len(self._points)
         self._marker_color = QColor(220, 30, 30)
+        self._stroke_color = QColor(255, 255, 255)
         self._zone_color = QColor(220, 30, 30)
+        self._zone_border_color = QColor(30, 58, 138)
 
         self.setModal(True)
-        self.resize(460, 480)
+        self.resize(480, 580)
         self.setWindowTitle(tr("dialog.bulk_style.title", count=count))
 
         self._setup_ui()
@@ -91,7 +93,7 @@ class BulkPointStyleDialog(QDialog):
         self.spin_size.setEnabled(False)
         marker_layout.addRow(self.chk_size, self.spin_size)
 
-        # Цвет маркера
+        # Цвет заливки маркера
         self.chk_color = QCheckBox(tr("dialog.bulk_style.change_color"), self)
         color_layout = QHBoxLayout()
         self.color_sample = QFrame(self)
@@ -103,6 +105,45 @@ class BulkPointStyleDialog(QDialog):
         color_layout.addWidget(self.btn_pick_color)
         color_layout.addStretch()
         marker_layout.addRow(self.chk_color, color_layout)
+
+        # Непрозрачность маркера
+        self.chk_marker_opacity = QCheckBox("Изменить непрозрачность маркера", self)
+        marker_op_layout = QHBoxLayout()
+        self.slider_marker_opacity = QSlider(Qt.Orientation.Horizontal, self)
+        self.slider_marker_opacity.setRange(0, 100)
+        self.slider_marker_opacity.setValue(100)
+        self.slider_marker_opacity.setEnabled(False)
+        self.spin_marker_opacity = QSpinBox(self)
+        self.spin_marker_opacity.setRange(0, 100)
+        self.spin_marker_opacity.setValue(100)
+        self.spin_marker_opacity.setSuffix("%")
+        self.spin_marker_opacity.setEnabled(False)
+        marker_op_layout.addWidget(self.slider_marker_opacity, stretch=1)
+        marker_op_layout.addWidget(self.spin_marker_opacity)
+        marker_layout.addRow(self.chk_marker_opacity, marker_op_layout)
+
+        # Цвет обводки маркера
+        self.chk_stroke_color = QCheckBox("Изменить цвет обводки маркера", self)
+        stroke_color_layout = QHBoxLayout()
+        self.stroke_color_sample = QFrame(self)
+        self.stroke_color_sample.setFixedSize(24, 24)
+        self._update_color_sample(self.stroke_color_sample, self._stroke_color)
+        self.btn_pick_stroke_color = QPushButton("Выбрать цвет...", self)
+        self.btn_pick_stroke_color.setEnabled(False)
+        stroke_color_layout.addWidget(self.stroke_color_sample)
+        stroke_color_layout.addWidget(self.btn_pick_stroke_color)
+        stroke_color_layout.addStretch()
+        marker_layout.addRow(self.chk_stroke_color, stroke_color_layout)
+
+        # Толщина обводки маркера
+        self.chk_stroke_width = QCheckBox("Изменить толщину обводки маркера", self)
+        self.spin_stroke_width = QDoubleSpinBox(self)
+        self.spin_stroke_width.setRange(0.0, 10.0)
+        self.spin_stroke_width.setValue(1.5)
+        self.spin_stroke_width.setSingleStep(0.5)
+        self.spin_stroke_width.setSuffix(" px")
+        self.spin_stroke_width.setEnabled(False)
+        marker_layout.addRow(self.chk_stroke_width, self.spin_stroke_width)
 
         main_layout.addWidget(self.marker_group)
 
@@ -137,7 +178,7 @@ class BulkPointStyleDialog(QDialog):
         radius_layout.addWidget(self.combo_radius_unit)
         zone_layout.addRow(self.chk_radius, radius_layout)
 
-        # Цвет зоны
+        # Цвет заливки зоны
         self.chk_zone_color = QCheckBox(tr("dialog.bulk_style.change_zone_color"), self)
         zone_color_layout = QHBoxLayout()
         self.zone_color_sample = QFrame(self)
@@ -166,6 +207,38 @@ class BulkPointStyleDialog(QDialog):
         opacity_layout.addWidget(self.spin_opacity)
         zone_layout.addRow(self.chk_opacity, opacity_layout)
 
+        # Цвет границы зоны
+        self.chk_zone_border_color = QCheckBox("Изменить цвет границы зоны", self)
+        zone_border_color_layout = QHBoxLayout()
+        self.zone_border_color_sample = QFrame(self)
+        self.zone_border_color_sample.setFixedSize(24, 24)
+        self._update_color_sample(self.zone_border_color_sample, self._zone_border_color)
+        self.btn_pick_zone_border_color = QPushButton("Выбрать цвет...", self)
+        self.btn_pick_zone_border_color.setEnabled(False)
+        zone_border_color_layout.addWidget(self.zone_border_color_sample)
+        zone_border_color_layout.addWidget(self.btn_pick_zone_border_color)
+        zone_border_color_layout.addStretch()
+        zone_layout.addRow(self.chk_zone_border_color, zone_border_color_layout)
+
+        # Толщина границы зоны
+        self.chk_zone_border_width = QCheckBox("Изменить толщину границы зоны", self)
+        self.spin_zone_border_width = QDoubleSpinBox(self)
+        self.spin_zone_border_width.setRange(0.0, 10.0)
+        self.spin_zone_border_width.setValue(1.5)
+        self.spin_zone_border_width.setSingleStep(0.5)
+        self.spin_zone_border_width.setSuffix(" px")
+        self.spin_zone_border_width.setEnabled(False)
+        zone_layout.addRow(self.chk_zone_border_width, self.spin_zone_border_width)
+
+        # Стиль границы зоны
+        self.chk_zone_border_style = QCheckBox("Изменить стиль границы зоны", self)
+        self.combo_zone_border_style = QComboBox(self)
+        self.combo_zone_border_style.addItem("Сплошная", "solid")
+        self.combo_zone_border_style.addItem("Штриховая", "dash")
+        self.combo_zone_border_style.addItem("Точечная", "dot")
+        self.combo_zone_border_style.setEnabled(False)
+        zone_layout.addRow(self.chk_zone_border_style, self.combo_zone_border_style)
+
         main_layout.addWidget(self.zone_group)
 
         # Кнопки диалога
@@ -188,6 +261,15 @@ class BulkPointStyleDialog(QDialog):
         self.chk_color.toggled.connect(self.btn_pick_color.setEnabled)
         self.btn_pick_color.clicked.connect(self._pick_marker_color)
 
+        self.chk_marker_opacity.toggled.connect(self.slider_marker_opacity.setEnabled)
+        self.chk_marker_opacity.toggled.connect(self.spin_marker_opacity.setEnabled)
+        self.slider_marker_opacity.valueChanged.connect(self.spin_marker_opacity.setValue)
+        self.spin_marker_opacity.valueChanged.connect(self.slider_marker_opacity.setValue)
+
+        self.chk_stroke_color.toggled.connect(self.btn_pick_stroke_color.setEnabled)
+        self.btn_pick_stroke_color.clicked.connect(self._pick_stroke_color)
+        self.chk_stroke_width.toggled.connect(self.spin_stroke_width.setEnabled)
+
         self.chk_zone.toggled.connect(self.rb_zone_on.setEnabled)
         self.chk_zone.toggled.connect(self.rb_zone_off.setEnabled)
         self.chk_radius.toggled.connect(self.edit_radius.setEnabled)
@@ -199,6 +281,11 @@ class BulkPointStyleDialog(QDialog):
         self.chk_opacity.toggled.connect(self.spin_opacity.setEnabled)
         self.slider_opacity.valueChanged.connect(self.spin_opacity.setValue)
         self.spin_opacity.valueChanged.connect(self.slider_opacity.setValue)
+
+        self.chk_zone_border_color.toggled.connect(self.btn_pick_zone_border_color.setEnabled)
+        self.btn_pick_zone_border_color.clicked.connect(self._pick_zone_border_color)
+        self.chk_zone_border_width.toggled.connect(self.spin_zone_border_width.setEnabled)
+        self.chk_zone_border_style.toggled.connect(self.combo_zone_border_style.setEnabled)
 
         self.button_box.accepted.connect(self._validate_and_accept)
         self.button_box.rejected.connect(self.reject)
@@ -214,11 +301,23 @@ class BulkPointStyleDialog(QDialog):
             self._marker_color = col
             self._update_color_sample(self.color_sample, col)
 
+    def _pick_stroke_color(self) -> None:
+        col = QColorDialog.getColor(self._stroke_color, self, "Выбор цвета обводки")
+        if col.isValid():
+            self._stroke_color = col
+            self._update_color_sample(self.stroke_color_sample, col)
+
     def _pick_zone_color(self) -> None:
         col = QColorDialog.getColor(self._zone_color, self, "Выбор цвета зоны")
         if col.isValid():
             self._zone_color = col
             self._update_color_sample(self.zone_color_sample, col)
+
+    def _pick_zone_border_color(self) -> None:
+        col = QColorDialog.getColor(self._zone_border_color, self, "Выбор цвета границы зоны")
+        if col.isValid():
+            self._zone_border_color = col
+            self._update_color_sample(self.zone_border_color_sample, col)
 
     def _validate_and_accept(self) -> None:
         if not self.has_any_changes():
@@ -254,10 +353,16 @@ class BulkPointStyleDialog(QDialog):
                 self.chk_symbol.isChecked(),
                 self.chk_size.isChecked(),
                 self.chk_color.isChecked(),
+                self.chk_marker_opacity.isChecked(),
+                self.chk_stroke_color.isChecked(),
+                self.chk_stroke_width.isChecked(),
                 self.chk_zone.isChecked(),
                 self.chk_radius.isChecked(),
                 self.chk_zone_color.isChecked(),
                 self.chk_opacity.isChecked(),
+                self.chk_zone_border_color.isChecked(),
+                self.chk_zone_border_width.isChecked(),
+                self.chk_zone_border_style.isChecked(),
             ]
         )
 
@@ -272,6 +377,15 @@ class BulkPointStyleDialog(QDialog):
             changes["red"] = self._marker_color.red()
             changes["green"] = self._marker_color.green()
             changes["blue"] = self._marker_color.blue()
+
+        if self.chk_marker_opacity.isChecked():
+            changes["opacity"] = float(self.spin_marker_opacity.value())
+        if self.chk_stroke_color.isChecked():
+            changes["stroke_red"] = self._stroke_color.red()
+            changes["stroke_green"] = self._stroke_color.green()
+            changes["stroke_blue"] = self._stroke_color.blue()
+        if self.chk_stroke_width.isChecked():
+            changes["stroke_width"] = float(self.spin_stroke_width.value())
 
         if self.chk_zone.isChecked():
             changes["zone_enabled"] = self.rb_zone_on.isChecked()
@@ -292,6 +406,15 @@ class BulkPointStyleDialog(QDialog):
         if self.chk_opacity.isChecked():
             changes["zone_opacity"] = self.spin_opacity.value()
 
+        if self.chk_zone_border_color.isChecked():
+            changes["zone_border_red"] = self._zone_border_color.red()
+            changes["zone_border_green"] = self._zone_border_color.green()
+            changes["zone_border_blue"] = self._zone_border_color.blue()
+        if self.chk_zone_border_width.isChecked():
+            changes["zone_border_width"] = float(self.spin_zone_border_width.value())
+        if self.chk_zone_border_style.isChecked():
+            changes["zone_border_style"] = self.combo_zone_border_style.currentData() or "solid"
+
         return changes
 
     def retranslate_ui(self) -> None:
@@ -303,6 +426,9 @@ class BulkPointStyleDialog(QDialog):
         self.chk_symbol.setText(tr("dialog.bulk_style.change_symbol"))
         self.chk_size.setText(tr("dialog.bulk_style.change_size"))
         self.chk_color.setText(tr("dialog.bulk_style.change_color"))
+        self.chk_marker_opacity.setText(tr("dialog.bulk_style.change_marker_opacity"))
+        self.chk_stroke_color.setText(tr("dialog.bulk_style.change_stroke_color"))
+        self.chk_stroke_width.setText(tr("dialog.bulk_style.change_stroke_width"))
 
         self.zone_group.setTitle(tr("properties.section_zone"))
         self.chk_zone.setText(tr("dialog.bulk_style.change_zone"))
@@ -311,6 +437,16 @@ class BulkPointStyleDialog(QDialog):
         self.chk_radius.setText(tr("dialog.bulk_style.change_radius"))
         self.chk_zone_color.setText(tr("dialog.bulk_style.change_zone_color"))
         self.chk_opacity.setText(tr("dialog.bulk_style.change_opacity"))
+        self.chk_zone_border_color.setText(tr("dialog.bulk_style.change_zone_border_color"))
+        self.chk_zone_border_width.setText(tr("dialog.bulk_style.change_zone_border_width"))
+        self.chk_zone_border_style.setText(tr("dialog.bulk_style.change_zone_border_style"))
+
+        if hasattr(self, "combo_zone_border_style"):
+            cur_idx = self.combo_zone_border_style.currentIndex()
+            self.combo_zone_border_style.setItemText(0, tr("border_style.solid"))
+            self.combo_zone_border_style.setItemText(1, tr("border_style.dash"))
+            self.combo_zone_border_style.setItemText(2, tr("border_style.dot"))
+            self.combo_zone_border_style.setCurrentIndex(cur_idx)
 
         if self.btn_ok:
             self.btn_ok.setText(tr("dialog.bulk_style.apply"))

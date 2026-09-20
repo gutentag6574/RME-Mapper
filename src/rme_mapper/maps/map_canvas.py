@@ -1,6 +1,7 @@
 """Виджет интерактивного отображения карты на базе QGraphicsView."""
 
 import logging
+import math
 from typing import Any
 
 import numpy as np
@@ -10,6 +11,7 @@ from PySide6.QtGui import (
     QBrush,
     QColor,
     QFont,
+    QFontMetrics,
     QImage,
     QPainter,
     QPainterPath,
@@ -51,6 +53,25 @@ from rme_mapper.services.geodesic_service import GeodesicService
 logger = logging.getLogger("rme_mapper.maps.canvas")
 
 
+def format_point_label(point: MapPoint, content_mode: str) -> str:
+    """Формирование текста подписи точки в зависимости от режима содержимого."""
+    num = (point.object_number or "").strip()
+    name = (point.name or "").strip()
+    mode = (content_mode or "name").lower()
+    if mode == "number":
+        return num
+    elif mode == "number_name":
+        if num and name:
+            return f"{num} - {name}"
+        elif num:
+            return num
+        elif name:
+            return name
+        return ""
+    else:  # "name"
+        return name
+
+
 class MapCanvas(QGraphicsView):
     """Интерактивный холст для многослойного векторного отображения карты."""
 
@@ -63,6 +84,8 @@ class MapCanvas(QGraphicsView):
     cursor_left = Signal()
     map_point_clicked = Signal(float, float)
     add_point_mode_cancelled = Signal()
+    point_moved = Signal(str, float, float, float, float)  # point_id, final_map_x, final_map_y, start_map_x, start_map_y
+    move_point_mode_cancelled = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -79,15 +102,28 @@ class MapCanvas(QGraphicsView):
         self._boundary_bounds: QRectF | None = None
         # Словарь созданных графических элементов слоев: layer_id -> QGraphicsItem
         self._layer_items: dict[str, QGraphicsItem] = {}
+        # Словарь моделей точек для быстрого доступа: point_id -> MapPoint
+        self._points_data: dict[str, MapPoint] = {}
         # Словарь графических элементов пользовательских точек: point_id -> QGraphicsItem
         self._user_point_items: dict[str, QGraphicsItem] = {}
         # Словарь графических элементов зон радиуса: point_id -> QGraphicsItem
         self._user_zone_items: dict[str, QGraphicsItem] = {}
         # Словарь графических элементов текстовых подписей: point_id -> QGraphicsSimpleTextItem
         self._user_label_items: dict[str, QGraphicsSimpleTextItem] = {}
-        # Режим отображения подписей: 'hidden', 'selected', 'all'
-        self._labels_mode = "hidden"
+        # Словарь индикаторов выделения: point_id -> QGraphicsItem
+        self._selection_halo_items: dict[str, QGraphicsItem] = {}
+
+        # Режимы отображения и содержимого подписей
+        self._labels_mode = "hidden"  # 'hidden', 'selected', 'all'
+        self._label_content_mode = "name"  # 'name', 'number', 'number_name'
         self._selected_point_ids: set[str] = set()
+
+        # Состояние перетаскивания точки мышью (Move Point)
+        self._is_dragging_point: bool = False
+        self._drag_point_id: str | None = None
+        self._drag_start_scene_pos: QPointF | None = None
+        self._drag_start_map_coords: tuple[float, float] = (0.0, 0.0)
+
         # Глобальные флаги видимости точек и зон
         self._show_points_visible = True
         self._show_zones_visible = True
@@ -123,16 +159,35 @@ class MapCanvas(QGraphicsView):
             self.viewport().setMouseTracking(True)
 
     def mouseMoveEvent(self, event: Any) -> None:
-        """Отслеживание перемещения курсора мыши и передача координат карты."""
-        super().mouseMoveEvent(event)
+        """Отслеживание перемещения курсора мыши и перетаскивание точки в режиме move_point."""
         pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
         scene_pt = self.mapToScene(pos)
         map_x = scene_pt.x()
         map_y = -scene_pt.y()
         self.cursor_position_changed.emit(map_x, map_y)
 
+        if self._is_dragging_point and self._drag_point_id:
+            item = self._user_point_items.get(self._drag_point_id)
+            pt = self._points_data.get(self._drag_point_id)
+            if item and pt:
+                item.setPos(scene_pt)
+                # Перемещаем подпись
+                lbl = self._user_label_items.get(self._drag_point_id)
+                if lbl and lbl.isVisible():
+                    half = pt.size / 2.0
+                    gap = 4.0
+                    lbl.setPos(scene_pt.x() + half + gap, scene_pt.y() - half)
+                # Перемещаем гало выделения
+                halo = self._selection_halo_items.get(self._drag_point_id)
+                if halo:
+                    halo.setPos(scene_pt)
+            event.accept()
+            return
+
+        super().mouseMoveEvent(event)
+
     def mousePressEvent(self, event: Any) -> None:
-        """Обработка клика мыши: выбор точки или создание точки кликом по карте."""
+        """Обработка клика мыши: выбор точки, создание точки или начало перемещения."""
         if self._interaction_mode == "add_point" and event.button() == Qt.MouseButton.LeftButton:
             pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
             scene_pt = self.mapToScene(pos)
@@ -141,15 +196,126 @@ class MapCanvas(QGraphicsView):
             self.map_point_clicked.emit(map_x, map_y)
             event.accept()
             return
+
+        if self._interaction_mode == "move_point" and event.button() == Qt.MouseButton.LeftButton:
+            pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            scene_pt = self.mapToScene(pos)
+
+            # Проверяем клик по маркеру выбранной точки (или любой видимой)
+            target_pid = None
+            for pid in self._selected_point_ids:
+                item = self._user_point_items.get(pid)
+                pt = self._points_data.get(pid)
+                if item and pt and pt.visible and item.isVisible():
+                    dist = math.hypot(scene_pt.x() - item.pos().x(), scene_pt.y() - item.pos().y())
+                    if dist <= max(pt.size / 2.0, 10.0):
+                        target_pid = pid
+                        break
+
+            # Если выбранная точка не найдена под курсором, проверяем другие точки
+            if target_pid is None and len(self._selected_point_ids) <= 1:
+                for pid, item in self._user_point_items.items():
+                    pt = self._points_data.get(pid)
+                    if pt and pt.visible and item.isVisible():
+                        dist = math.hypot(scene_pt.x() - item.pos().x(), scene_pt.y() - item.pos().y())
+                        if dist <= max(pt.size / 2.0, 10.0):
+                            target_pid = pid
+                            break
+
+            if target_pid is not None:
+                item = self._user_point_items[target_pid]
+                self._is_dragging_point = True
+                self._drag_point_id = target_pid
+                self._drag_start_scene_pos = QPointF(item.pos().x(), item.pos().y())
+                self._drag_start_map_coords = (item.pos().x(), -item.pos().y())
+                if self.viewport():
+                    self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
+                event.accept()
+                return
+            else:
+                # Клик в пустое место: обычная навигация (pan)
+                self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+                super().mousePressEvent(event)
+                return
+
         super().mousePressEvent(event)
 
-    def keyPressEvent(self, event: Any) -> None:
-        """Обработка клавиш холста: отмена режима добавления точки по Esc."""
-        if self._interaction_mode == "add_point" and event.key() == Qt.Key.Key_Escape:
-            self.set_interaction_mode("navigation")
-            self.add_point_mode_cancelled.emit()
+    def mouseReleaseEvent(self, event: Any) -> None:
+        """Завершение перетаскивания точки или навигации."""
+        if self._is_dragging_point and self._drag_point_id:
+            self._is_dragging_point = False
+            pid = self._drag_point_id
+            self._drag_point_id = None
+            if self.viewport():
+                self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+
+            item = self._user_point_items.get(pid)
+            if item and self._drag_start_scene_pos is not None:
+                final_scene_pos = item.pos()
+                start_x, start_y = self._drag_start_map_coords
+                final_x, final_y = final_scene_pos.x(), -final_scene_pos.y()
+                dist = math.hypot(
+                    final_scene_pos.x() - self._drag_start_scene_pos.x(),
+                    final_scene_pos.y() - self._drag_start_scene_pos.y(),
+                )
+                if dist > 1e-4:
+                    self.point_moved.emit(pid, final_x, final_y, start_x, start_y)
+                else:
+                    item.setPos(self._drag_start_scene_pos)
+            self._drag_start_scene_pos = None
+            if self._interaction_mode == "move_point":
+                self.setDragMode(QGraphicsView.DragMode.NoDrag)
             event.accept()
             return
+
+        if self._interaction_mode == "move_point":
+            self.setDragMode(QGraphicsView.DragMode.NoDrag)
+
+        super().mouseReleaseEvent(event)
+        if self._raster_provider and self._raster_item and self._raster_item.isVisible():
+            self._raster_debounce_timer.start()
+
+    def keyPressEvent(self, event: Any) -> None:
+        """Обработка клавиш холста: отмена режима добавления/перемещения точки по Esc."""
+        if event.key() == Qt.Key.Key_Escape:
+            if self._is_dragging_point and self._drag_point_id and self._drag_start_scene_pos:
+                item = self._user_point_items.get(self._drag_point_id)
+                if item:
+                    item.setPos(self._drag_start_scene_pos)
+                    pt = self._points_data.get(self._drag_point_id)
+                    if pt:
+                        lbl = self._user_label_items.get(self._drag_point_id)
+                        if lbl:
+                            half = pt.size / 2.0
+                            gap = 4.0
+                            lbl.setPos(
+                                self._drag_start_scene_pos.x() + half + gap,
+                                self._drag_start_scene_pos.y() - half,
+                            )
+                        halo = self._selection_halo_items.get(self._drag_point_id)
+                        if halo:
+                            halo.setPos(self._drag_start_scene_pos)
+                self._is_dragging_point = False
+                self._drag_point_id = None
+                self._drag_start_scene_pos = None
+                if self.viewport():
+                    self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+                self.move_point_mode_cancelled.emit()
+                event.accept()
+                return
+
+            if self._interaction_mode == "move_point":
+                self.set_interaction_mode("navigation")
+                self.move_point_mode_cancelled.emit()
+                event.accept()
+                return
+
+            if self._interaction_mode == "add_point":
+                self.set_interaction_mode("navigation")
+                self.add_point_mode_cancelled.emit()
+                event.accept()
+                return
+
         super().keyPressEvent(event)
 
     def leaveEvent(self, event: Any) -> None:
@@ -158,12 +324,16 @@ class MapCanvas(QGraphicsView):
         self.cursor_left.emit()
 
     def set_interaction_mode(self, mode: str) -> None:
-        """Установка режима взаимодействия с холстом: 'navigation' или 'add_point'."""
+        """Установка режима взаимодействия с холстом: 'navigation', 'add_point', 'move_point'."""
         self._interaction_mode = mode
         if mode == "add_point":
             self.setDragMode(QGraphicsView.DragMode.NoDrag)
             if self.viewport():
                 self.viewport().setCursor(Qt.CursorShape.CrossCursor)
+        elif mode == "move_point":
+            self.setDragMode(QGraphicsView.DragMode.NoDrag)
+            if self.viewport():
+                self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
         else:
             self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
             if self.viewport():
@@ -619,7 +789,11 @@ class MapCanvas(QGraphicsView):
         Флаг ItemIgnoresTransformations сохраняет постоянный размер маркера в пикселях.
         """
         # Удаляем предыдущий элемент, если был
+        # Удаляем предыдущий элемент, если был
         self.remove_user_point(point.id)
+
+        # Сохраняем модель точки
+        self._points_data[point.id] = point
 
         px = point.longitude if map_x is None else float(map_x)
         py = point.latitude if map_y is None else float(map_y)
@@ -627,12 +801,18 @@ class MapCanvas(QGraphicsView):
         path = self._create_marker_path(point.symbol, point.size)
         item = QGraphicsPathItem(path)
 
-        pen = QPen(QColor("#FFFFFF"))
-        pen.setWidthF(1.5)
-        pen.setCosmetic(True)
+        if point.stroke_width > 0:
+            pen = QPen(
+                QColor(point.stroke_red, point.stroke_green, point.stroke_blue),
+                float(point.stroke_width),
+            )
+            pen.setCosmetic(True)
+        else:
+            pen = QPen(Qt.PenStyle.NoPen)
         item.setPen(pen)
 
-        brush = QBrush(QColor(point.red, point.green, point.blue))
+        alpha = int(point.opacity * 255 / 100.0)
+        brush = QBrush(QColor(point.red, point.green, point.blue, alpha))
         item.setBrush(brush)
 
         # Инвариантность к масштабу карты (размер значка постоянен на экране)
@@ -642,7 +822,7 @@ class MapCanvas(QGraphicsView):
 
         # Преобразование координат сцены: scene_x = map_x, scene_y = -map_y
         item.setPos(px, -py)
-        item.setVisible(point.visible)
+        item.setVisible(point.visible and self._show_points_visible)
 
         self._scene.addItem(item)
         self._user_point_items[point.id] = item
@@ -653,6 +833,7 @@ class MapCanvas(QGraphicsView):
         # Синхронно добавляем/обновляем зону радиуса и подпись
         self.update_point_zone(point, zone_polygon=zone_polygon, map_coords=(px, py))
         self.update_point_label(point, px, -py)
+        self._update_selection_halos()
 
     def update_user_point(
         self,
@@ -662,6 +843,7 @@ class MapCanvas(QGraphicsView):
         zone_polygon: Polygon | None = None,
     ) -> None:
         """Мгновенное обновление маркера и зоны существующей точки без пересоздания карты."""
+        self._points_data[point.id] = point
         px = point.longitude if map_x is None else float(map_x)
         py = point.latitude if map_y is None else float(map_y)
 
@@ -670,8 +852,19 @@ class MapCanvas(QGraphicsView):
             path = self._create_marker_path(point.symbol, point.size)
             item.setPath(path)
 
-            brush = QBrush(QColor(point.red, point.green, point.blue))
+            alpha = int(point.opacity * 255 / 100.0)
+            brush = QBrush(QColor(point.red, point.green, point.blue, alpha))
             item.setBrush(brush)
+
+            if point.stroke_width > 0:
+                pen = QPen(
+                    QColor(point.stroke_red, point.stroke_green, point.stroke_blue),
+                    float(point.stroke_width),
+                )
+                pen.setCosmetic(True)
+            else:
+                pen = QPen(Qt.PenStyle.NoPen)
+            item.setPen(pen)
 
             item.setPos(px, -py)
             item.setVisible(point.visible and self._show_points_visible)
@@ -686,6 +879,7 @@ class MapCanvas(QGraphicsView):
         # Синхронно обновляем зону радиуса и подпись
         self.update_point_zone(point, zone_polygon=zone_polygon, map_coords=(px, py))
         self.update_point_label(point, px, -py)
+        self._update_selection_halos()
 
     # -------------------------------------------------------------------------
     # Географические зоны радиуса (Этапы 7 и 9)
@@ -733,7 +927,7 @@ class MapCanvas(QGraphicsView):
         Зона располагается на Z=90.0 (между дорогами и маркером) и масштабируется
         вместе с картой (ItemIgnoresTransformations = False).
         """
-        if not point.zone_enabled or point.radius_m <= 0 or not point.visible:
+        if not point.zone_enabled or point.radius_m <= 0 or not point.visible or not self._show_zones_visible:
             self.remove_point_zone(point.id)
             return
 
@@ -746,16 +940,29 @@ class MapCanvas(QGraphicsView):
         brush_color = QColor(point.zone_red, point.zone_green, point.zone_blue, alpha)
         brush = QBrush(brush_color)
 
-        pen_color = QColor(point.zone_red, point.zone_green, point.zone_blue, max(180, alpha))
-        pen = QPen(pen_color, 1.5)
-        pen.setCosmetic(True)
+        border_style_map = {
+            "solid": Qt.PenStyle.SolidLine,
+            "dash": Qt.PenStyle.DashLine,
+            "dot": Qt.PenStyle.DotLine,
+        }
+        pen_style = border_style_map.get(point.zone_border_style, Qt.PenStyle.SolidLine)
+
+        if point.zone_border_width > 0:
+            pen = QPen(
+                QColor(point.zone_border_red, point.zone_border_green, point.zone_border_blue),
+                float(point.zone_border_width),
+                pen_style,
+            )
+            pen.setCosmetic(True)
+        else:
+            pen = QPen(Qt.PenStyle.NoPen)
 
         item = self._user_zone_items.get(point.id)
         if item is not None and isinstance(item, QGraphicsPathItem):
             item.setPath(path)
             item.setBrush(brush)
             item.setPen(pen)
-            item.setVisible(point.visible)
+            item.setVisible(point.visible and self._show_zones_visible)
         else:
             self.remove_point_zone(point.id)
             item = QGraphicsPathItem(path)
@@ -763,7 +970,7 @@ class MapCanvas(QGraphicsView):
             item.setPen(pen)
             item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, False)
             item.setZValue(90.0)
-            item.setVisible(point.visible)
+            item.setVisible(point.visible and self._show_zones_visible)
             self._scene.addItem(item)
             self._user_zone_items[point.id] = item
 
@@ -776,7 +983,8 @@ class MapCanvas(QGraphicsView):
         """Удаление графического элемента зоны с холста."""
         if point_id in self._user_zone_items:
             item = self._user_zone_items.pop(point_id)
-            self._scene.removeItem(item)
+            if item.scene() == self._scene:
+                self._scene.removeItem(item)
             logger.info("Зона точки '%s' удалена с карты", point_id)
 
     def has_point_zone(self, point_id: str) -> bool:
@@ -785,35 +993,93 @@ class MapCanvas(QGraphicsView):
 
     def remove_user_point(self, point_id: str) -> None:
         """Удаление пользовательской точки, ее зоны и подписи с карты."""
+        self._points_data.pop(point_id, None)
+        if point_id in self._selection_halo_items:
+            h = self._selection_halo_items.pop(point_id)
+            if h.scene() == self._scene:
+                self._scene.removeItem(h)
+
         if point_id in self._user_point_items:
             item = self._user_point_items.pop(point_id)
-            self._scene.removeItem(item)
+            if item.scene() == self._scene:
+                self._scene.removeItem(item)
             logger.info("Пользовательская точка '%s' удалена с карты", point_id)
 
         self.remove_point_zone(point_id)
 
         if point_id in self._user_label_items:
             lbl_item = self._user_label_items.pop(point_id)
-            self._scene.removeItem(lbl_item)
+            if lbl_item.scene() == self._scene:
+                self._scene.removeItem(lbl_item)
+
+        self._recalculate_labels_layout()
 
     def clear_user_points(self) -> None:
         """Удаление всех пользовательских точек, зон и подписей с карты."""
+        self._points_data.clear()
+        for item in self._selection_halo_items.values():
+            if item.scene() == self._scene:
+                self._scene.removeItem(item)
+        self._selection_halo_items.clear()
+
         for item in self._user_zone_items.values():
-            self._scene.removeItem(item)
+            if item.scene() == self._scene:
+                self._scene.removeItem(item)
         self._user_zone_items.clear()
 
         for item in self._user_label_items.values():
-            self._scene.removeItem(item)
+            if item.scene() == self._scene:
+                self._scene.removeItem(item)
         self._user_label_items.clear()
 
         for item in self._user_point_items.values():
-            self._scene.removeItem(item)
+            if item.scene() == self._scene:
+                self._scene.removeItem(item)
         self._user_point_items.clear()
         logger.info("Все пользовательские точки, зоны и подписи очищены с карты")
 
     def has_user_point(self, point_id: str) -> bool:
         """Проверка наличия маркера точки на холсте."""
         return point_id in self._user_point_items
+
+    # -------------------------------------------------------------------------
+    # Гало выделения (Selection Halo)
+    # -------------------------------------------------------------------------
+
+    def _update_selection_halos(self) -> None:
+        """Обновление графических ореолов (halo) для выделенных точек."""
+        for pid in list(self._selection_halo_items.keys()):
+            if pid not in self._selected_point_ids:
+                h = self._selection_halo_items.pop(pid)
+                if h.scene() == self._scene:
+                    self._scene.removeItem(h)
+
+        for pid in self._selected_point_ids:
+            pt = self._points_data.get(pid)
+            pt_item = self._user_point_items.get(pid)
+            if not pt or not pt_item or not pt.visible or not self._show_points_visible:
+                if pid in self._selection_halo_items:
+                    h = self._selection_halo_items.pop(pid)
+                    if h.scene() == self._scene:
+                        self._scene.removeItem(h)
+                continue
+
+            halo = self._selection_halo_items.get(pid)
+            if halo is None:
+                halo = QGraphicsEllipseItem()
+                pen = QPen(QColor("#2563EB"), 1.5, Qt.PenStyle.DashLine)
+                pen.setCosmetic(True)
+                halo.setPen(pen)
+                halo.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+                halo.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+                halo.setZValue(105.0)
+                self._scene.addItem(halo)
+                self._selection_halo_items[pid] = halo
+
+            r = (pt.size / 2.0) + 4.0
+            halo.setRect(-r, -r, 2 * r, 2 * r)
+            halo.setPos(pt_item.pos())
+            halo.setVisible(True)
 
     # -------------------------------------------------------------------------
     # Подписи точек (Point Labels)
@@ -832,46 +1098,113 @@ class MapCanvas(QGraphicsView):
             self._scene.addItem(item)
             self._user_label_items[point.id] = item
 
-        item.setText(point.name)
+        text = format_point_label(point, self._label_content_mode)
+        item.setText(text)
         offset_x = (point.size / 2.0) + 4.0
         offset_y = -(point.size / 2.0)
         item.setPos(scene_x + offset_x, scene_y + offset_y)
-        self._update_single_label_visibility(point.id, point.visible)
-
-    def _update_single_label_visibility(self, point_id: str, point_visible: bool = True) -> None:
-        item = self._user_label_items.get(point_id)
-        if not item:
-            return
-        if not self._show_points_visible or not point_visible:
-            item.setVisible(False)
-            return
-        if self._labels_mode == "hidden":
-            item.setVisible(False)
-        elif self._labels_mode == "all":
-            item.setVisible(True)
-        elif self._labels_mode == "selected":
-            item.setVisible(point_id in self._selected_point_ids)
+        self._recalculate_labels_layout()
 
     def set_labels_mode(self, mode: str) -> None:
         """Установка режима отображения подписей: 'hidden', 'selected', 'all'."""
         self._labels_mode = mode.lower() if mode.lower() in {"hidden", "selected", "all"} else "hidden"
-        for pid in self._user_label_items:
-            pt_item = self._user_point_items.get(pid)
-            pt_vis = pt_item.isVisible() if pt_item else True
-            self._update_single_label_visibility(pid, pt_vis)
+        self._recalculate_labels_layout()
+
+    def set_label_content_mode(self, mode: str) -> None:
+        """Установка режима содержимого подписей: 'number', 'name', 'number_name'."""
+        self._label_content_mode = mode.lower() if mode.lower() in {"number", "name", "number_name"} else "name"
+        for pid, pt in self._points_data.items():
+            lbl = self._user_label_items.get(pid)
+            if lbl:
+                lbl.setText(format_point_label(pt, self._label_content_mode))
+        self._recalculate_labels_layout()
 
     @property
-    def labels_mode(self) -> str:
-        return self._labels_mode
+    def label_content_mode(self) -> str:
+        return self._label_content_mode
 
     def update_selected_label_ids(self, selected_ids: set[str]) -> None:
-        """Обновление набора выделенных ID для режима 'selected'."""
+        """Обновление набора выделенных ID для режима 'selected' и ореолов выделения."""
         self._selected_point_ids = set(selected_ids)
+        self._update_selection_halos()
+        self._recalculate_labels_layout()
+
+    def _should_show_label(self, point_id: str, point_visible: bool) -> bool:
+        if not self._show_points_visible or not point_visible:
+            return False
+        if self._labels_mode == "hidden":
+            return False
+        if self._labels_mode == "all":
+            return True
         if self._labels_mode == "selected":
-            for pid in self._user_label_items:
-                pt_item = self._user_point_items.get(pid)
-                pt_vis = pt_item.isVisible() if pt_item else True
-                self._update_single_label_visibility(pid, pt_vis)
+            return point_id in self._selected_point_ids
+        return False
+
+    def _recalculate_labels_layout(self) -> None:
+        """Пересчет позиций подписей точек с предотвращением взаимного перекрытия (4 позиции)."""
+        t = self.transform()
+        scale_x = abs(t.m11()) if abs(t.m11()) > 1e-9 else 1.0
+        scale_y = abs(t.m22()) if abs(t.m22()) > 1e-9 else 1.0
+
+        visible_points: list[tuple[bool, str, MapPoint, QGraphicsSimpleTextItem]] = []
+        for pid, item in self._user_label_items.items():
+            pt = self._points_data.get(pid)
+            pt_item = self._user_point_items.get(pid)
+            if not pt or not pt_item:
+                item.setVisible(False)
+                continue
+            should_show = self._should_show_label(pid, pt.visible)
+            formatted_text = format_point_label(pt, self._label_content_mode)
+            if not should_show or not formatted_text.strip():
+                item.setText(formatted_text)
+                item.setVisible(False)
+                continue
+            item.setText(formatted_text)
+            is_selected = pid in self._selected_point_ids
+            # Выделенные точки имеют приоритет (not is_selected == False идет первым)
+            visible_points.append((not is_selected, pid, pt, item))
+
+        visible_points.sort(key=lambda x: (x[0], x[2].name, x[1]))
+
+        placed_rects: list[QRectF] = []
+        for _, pid, pt, item in visible_points:
+            pt_item = self._user_point_items[pid]
+            scene_pt = pt_item.pos()
+            view_pt = self.mapFromScene(scene_pt)
+
+            half = pt.size / 2.0
+            gap = 4.0
+            fm = QFontMetrics(item.font())
+            text = item.text()
+            w = float(fm.horizontalAdvance(text))
+            h = float(fm.height())
+
+            candidates = [
+                (half + gap, -half - h * 0.75, view_pt.x() + half + gap, view_pt.y() - half - h),
+                (half + gap, half, view_pt.x() + half + gap, view_pt.y() + half),
+                (-half - gap - w, -half - h * 0.75, view_pt.x() - half - gap - w, view_pt.y() - half - h),
+                (-half - gap - w, half, view_pt.x() - half - gap - w, view_pt.y() + half),
+            ]
+
+            chosen_pos = None
+            chosen_rect = None
+
+            for dx_px, dy_px, rx, ry in candidates:
+                cand_rect = QRectF(rx, ry, w, h)
+                collides = any(cand_rect.intersects(other) for other in placed_rects)
+                if not collides:
+                    chosen_pos = (scene_pt.x() + (dx_px / scale_x), scene_pt.y() + (dy_px / scale_y))
+                    chosen_rect = cand_rect
+                    break
+
+            if chosen_pos is None:
+                dx_px, dy_px, rx, ry = candidates[0]
+                chosen_pos = (scene_pt.x() + (dx_px / scale_x), scene_pt.y() + (dy_px / scale_y))
+                chosen_rect = QRectF(rx, ry, w, h)
+
+            placed_rects.append(chosen_rect)
+            item.setPos(chosen_pos[0], chosen_pos[1])
+            item.setVisible(True)
 
     # -------------------------------------------------------------------------
     # Глобальная видимость точек и зон
@@ -881,14 +1214,19 @@ class MapCanvas(QGraphicsView):
         """Глобальное переключение видимости пользовательских точек и подписей."""
         self._show_points_visible = visible
         for pid, item in self._user_point_items.items():
-            item.setVisible(visible)
-            self._update_single_label_visibility(pid, visible)
+            pt = self._points_data.get(pid)
+            item_vis = visible and (pt.visible if pt else True)
+            item.setVisible(item_vis)
+        self._update_selection_halos()
+        self._recalculate_labels_layout()
 
     def set_all_zones_visible(self, visible: bool) -> None:
         """Глобальное переключение видимости геодезических зон."""
         self._show_zones_visible = visible
-        for item in self._user_zone_items.values():
-            item.setVisible(visible)
+        for pid, item in self._user_zone_items.items():
+            pt = self._points_data.get(pid)
+            item_vis = visible and (pt.visible if pt else True)
+            item.setVisible(item_vis)
 
     @property
     def show_points_visible(self) -> bool:
@@ -1083,16 +1421,12 @@ class MapCanvas(QGraphicsView):
         if self.MIN_ZOOM <= new_zoom <= self.MAX_ZOOM:
             self.scale(factor, factor)
             self._current_zoom = new_zoom
+            self._recalculate_labels_layout()
             if self._raster_provider and self._raster_item and self._raster_item.isVisible():
                 self._raster_debounce_timer.start()
             event.accept()
         else:
             event.ignore()
-
-    def mouseReleaseEvent(self, event: Any) -> None:
-        super().mouseReleaseEvent(event)
-        if self._raster_provider and self._raster_item and self._raster_item.isVisible():
-            self._raster_debounce_timer.start()
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)

@@ -9,10 +9,18 @@ from rme_mapper.coordinates.validator import ValidationError
 logger = logging.getLogger("rme_mapper.models.point_style")
 
 ALLOWED_SYMBOLS: set[str] = {"circle", "square", "triangle"}
+ALLOWED_BORDER_STYLES: set[str] = {"solid", "dash", "dot"}
 MIN_SIZE: float = 4.0
 MAX_SIZE: float = 50.0
 MIN_RGB: int = 0
 MAX_RGB: int = 255
+MIN_STROKE_WIDTH: float = 0.0
+MAX_STROKE_WIDTH: float = 10.0
+MIN_BORDER_WIDTH: float = 0.0
+MAX_BORDER_WIDTH: float = 10.0
+MAX_OBJECT_NUMBER_LEN: int = 100
+MAX_CATEGORY_LEN: int = 200
+MAX_DESCRIPTION_LEN: int = 8192
 
 
 @dataclass
@@ -24,6 +32,11 @@ class PointStyle:
     red: int = 220
     green: int = 30
     blue: int = 30
+    stroke_red: int = 0
+    stroke_green: int = 0
+    stroke_blue: int = 0
+    stroke_width: float = 1.0
+    opacity: int = 100
 
 
 class StyleValidator:
@@ -193,6 +206,96 @@ class StyleValidator:
 
         return int_val
 
+    @classmethod
+    def validate_stroke_width(cls, width: Any) -> float:
+        """Проверка допустимой толщины обводки маркера (0.0 .. 10.0 px)."""
+        if width is None or width == "":
+            return 1.0
+        if isinstance(width, str):
+            cleaned = width.strip().replace(",", ".")
+            try:
+                val = float(cleaned)
+            except ValueError:
+                raise ValidationError("val.style.stroke_width_format", min=MIN_STROKE_WIDTH, max=MAX_STROKE_WIDTH)
+        elif isinstance(width, (int, float)):
+            val = float(width)
+        else:
+            raise ValidationError("val.style.stroke_width_number")
+
+        if val < MIN_STROKE_WIDTH or val > MAX_STROKE_WIDTH:
+            raise ValidationError("val.style.stroke_width_range", min=MIN_STROKE_WIDTH, max=MAX_STROKE_WIDTH, value=val)
+        return val
+
+    @classmethod
+    def validate_border_width(cls, width: Any) -> float:
+        """Проверка допустимой толщины границы зоны (0.0 .. 10.0 px)."""
+        if width is None or width == "":
+            return 1.0
+        if isinstance(width, str):
+            cleaned = width.strip().replace(",", ".")
+            try:
+                val = float(cleaned)
+            except ValueError:
+                raise ValidationError("val.zone.border_width_format", min=MIN_BORDER_WIDTH, max=MAX_BORDER_WIDTH)
+        elif isinstance(width, (int, float)):
+            val = float(width)
+        else:
+            raise ValidationError("val.zone.border_width_number")
+
+        if val < MIN_BORDER_WIDTH or val > MAX_BORDER_WIDTH:
+            raise ValidationError("val.zone.border_width_range", min=MIN_BORDER_WIDTH, max=MAX_BORDER_WIDTH, value=val)
+        return val
+
+    @classmethod
+    def validate_border_style(cls, style: Any) -> str:
+        """Проверка стиля границы зоны ('solid', 'dash', 'dot')."""
+        if not style:
+            return "solid"
+        if not isinstance(style, str):
+            raise ValidationError("val.zone.border_style_str")
+        s = style.strip().lower()
+        # Aliases
+        if s in ("dashed", "штриховая"):
+            s = "dash"
+        elif s in ("dotted", "точечная"):
+            s = "dot"
+        elif s in ("сплошная",):
+            s = "solid"
+
+        if s not in ALLOWED_BORDER_STYLES:
+            raise ValidationError("val.zone.border_style_unknown", value=style, allowed=", ".join(sorted(ALLOWED_BORDER_STYLES)))
+        return s
+
+    @classmethod
+    def validate_object_number(cls, num: Any) -> str:
+        """Валидация пользовательского номера объекта (длина <= 100)."""
+        if num is None:
+            return ""
+        s = str(num).strip()
+        if len(s) > MAX_OBJECT_NUMBER_LEN:
+            raise ValidationError("val.object.number_length", max=MAX_OBJECT_NUMBER_LEN, value=len(s))
+        return s
+
+    @classmethod
+    def validate_category(cls, category: Any) -> str:
+        """Валидация категории объекта (длина <= 200)."""
+        if category is None:
+            return ""
+        s = str(category).strip()
+        if len(s) > MAX_CATEGORY_LEN:
+            raise ValidationError("val.object.category_length", max=MAX_CATEGORY_LEN, value=len(s))
+        return s
+
+    @classmethod
+    def validate_description(cls, description: Any) -> str:
+        """Валидация многострочного описания (длина <= 8192)."""
+        if description is None:
+            return ""
+        s = str(description)
+        if len(s) > MAX_DESCRIPTION_LEN:
+            raise ValidationError("val.object.description_length", max=MAX_DESCRIPTION_LEN, value=len(s))
+        return s
+
 
 def validate_radius(radius: Any, enabled: bool = True, zone_enabled: bool | None = None) -> float:
     """Модульная функция валидации радиуса зоны."""
@@ -202,6 +305,36 @@ def validate_radius(radius: Any, enabled: bool = True, zone_enabled: bool | None
 def validate_opacity(opacity: Any) -> int:
     """Модульная функция валидации прозрачности зоны."""
     return StyleValidator.validate_opacity(opacity)
+
+
+def validate_stroke_width(width: Any) -> float:
+    """Модульная функция валидации толщины обводки."""
+    return StyleValidator.validate_stroke_width(width)
+
+
+def validate_border_width(width: Any) -> float:
+    """Модульная функция валидации толщины границы зоны."""
+    return StyleValidator.validate_border_width(width)
+
+
+def validate_border_style(style: Any) -> str:
+    """Модульная функция валидации стиля границы зоны."""
+    return StyleValidator.validate_border_style(style)
+
+
+def validate_object_number(number: Any) -> str:
+    """Модульная функция валидации номера объекта."""
+    return StyleValidator.validate_object_number(number)
+
+
+def validate_category(category: Any) -> str:
+    """Модульная функция валидации категории."""
+    return StyleValidator.validate_category(category)
+
+
+def validate_description(description: Any) -> str:
+    """Модульная функция валидации описания."""
+    return StyleValidator.validate_description(description)
 
 
 @dataclass
@@ -214,3 +347,8 @@ class PointZoneStyle:
     green: int = 30
     blue: int = 30
     opacity: int = 30
+    border_red: int = 220
+    border_green: int = 30
+    border_blue: int = 30
+    border_width: float = 1.0
+    border_style: str = "solid"

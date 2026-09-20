@@ -76,6 +76,19 @@ class ProjectPointData:
     zone_green: int = 30
     zone_blue: int = 30
     zone_opacity: int = 30
+    object_number: str = ""
+    description: str = ""
+    category: str = ""
+    stroke_red: int = 0
+    stroke_green: int = 0
+    stroke_blue: int = 0
+    stroke_width: float = 1.0
+    opacity: int = 100
+    zone_border_red: int = 220
+    zone_border_green: int = 30
+    zone_border_blue: int = 30
+    zone_border_width: float = 1.0
+    zone_border_style: str = "solid"
 
     def to_dict(self) -> dict[str, Any]:
         """Преобразование в словарь для JSON-сериализации."""
@@ -102,6 +115,19 @@ class ProjectPointData:
             zone_green=int(data.get("zone_green", 30)),
             zone_blue=int(data.get("zone_blue", 30)),
             zone_opacity=int(data.get("zone_opacity", 30)),
+            object_number=str(data.get("object_number", "")),
+            description=str(data.get("description", "")),
+            category=str(data.get("category", "")),
+            stroke_red=int(data.get("stroke_red", 0)),
+            stroke_green=int(data.get("stroke_green", 0)),
+            stroke_blue=int(data.get("stroke_blue", 0)),
+            stroke_width=float(data.get("stroke_width", 1.0)),
+            opacity=int(data.get("opacity", data.get("marker_opacity", 100))),
+            zone_border_red=int(data.get("zone_border_red", data.get("zone_red", 220))),
+            zone_border_green=int(data.get("zone_border_green", data.get("zone_green", 30))),
+            zone_border_blue=int(data.get("zone_border_blue", data.get("zone_blue", 30))),
+            zone_border_width=float(data.get("zone_border_width", 1.0)),
+            zone_border_style=str(data.get("zone_border_style", "solid")),
         )
 
     def to_map_point(self) -> MapPoint:
@@ -124,6 +150,19 @@ class ProjectPointData:
             zone_green=self.zone_green,
             zone_blue=self.zone_blue,
             zone_opacity=self.zone_opacity,
+            object_number=self.object_number,
+            description=self.description,
+            category=self.category,
+            stroke_red=self.stroke_red,
+            stroke_green=self.stroke_green,
+            stroke_blue=self.stroke_blue,
+            stroke_width=self.stroke_width,
+            opacity=self.opacity,
+            zone_border_red=self.zone_border_red,
+            zone_border_green=self.zone_border_green,
+            zone_border_blue=self.zone_border_blue,
+            zone_border_width=self.zone_border_width,
+            zone_border_style=self.zone_border_style,
         )
 
     @classmethod
@@ -147,6 +186,19 @@ class ProjectPointData:
             zone_green=point.zone_green,
             zone_blue=point.zone_blue,
             zone_opacity=point.zone_opacity,
+            object_number=point.object_number,
+            description=point.description,
+            category=point.category,
+            stroke_red=point.stroke_red,
+            stroke_green=point.stroke_green,
+            stroke_blue=point.stroke_blue,
+            stroke_width=point.stroke_width,
+            opacity=point.opacity,
+            zone_border_red=point.zone_border_red,
+            zone_border_green=point.zone_border_green,
+            zone_border_blue=point.zone_border_blue,
+            zone_border_width=point.zone_border_width,
+            zone_border_style=point.zone_border_style,
         )
 
 

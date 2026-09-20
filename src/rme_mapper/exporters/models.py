@@ -31,6 +31,7 @@ class ImageExportOptions:
     include_zones: bool = True
     include_labels: bool = True
     labels_mode: str = "all"  # 'all', 'selected', 'none'
+    label_content_mode: str = "name"  # 'name', 'number', 'number_name'
 
     # Оформление
     include_title: bool = True

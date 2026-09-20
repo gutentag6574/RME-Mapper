@@ -432,6 +432,10 @@ class ColumnMappingPage(QWizardPage):
         self.fields_order = [
             # Общие
             ("name", tr("wizard.field_name"), False),
+            ("object_number", tr("wizard.field_object_number"), False),
+            ("category", tr("wizard.field_category"), False),
+            ("description", tr("wizard.field_description"), False),
+            ("visible", tr("wizard.field_visible"), False),
             # DD
             ("latitude", tr("wizard.field_latitude"), True),
             ("longitude", tr("wizard.field_longitude"), True),
@@ -453,6 +457,11 @@ class ColumnMappingPage(QWizardPage):
             ("red", tr("wizard.field_red"), False),
             ("green", tr("wizard.field_green"), False),
             ("blue", tr("wizard.field_blue"), False),
+            ("stroke_red", tr("wizard.field_stroke_red"), False),
+            ("stroke_green", tr("wizard.field_stroke_green"), False),
+            ("stroke_blue", tr("wizard.field_stroke_blue"), False),
+            ("stroke_width", tr("wizard.field_stroke_width"), False),
+            ("marker_opacity", tr("wizard.field_marker_opacity"), False),
             # Геозона
             ("zone_enabled", tr("wizard.field_zone_enabled"), False),
             ("radius", tr("wizard.field_radius"), False),
@@ -461,6 +470,11 @@ class ColumnMappingPage(QWizardPage):
             ("zone_green", tr("wizard.field_zone_green"), False),
             ("zone_blue", tr("wizard.field_zone_blue"), False),
             ("zone_opacity", tr("wizard.field_zone_opacity"), False),
+            ("zone_border_red", tr("wizard.field_zone_border_red"), False),
+            ("zone_border_green", tr("wizard.field_zone_border_green"), False),
+            ("zone_border_blue", tr("wizard.field_zone_border_blue"), False),
+            ("zone_border_width", tr("wizard.field_zone_border_width"), False),
+            ("zone_border_style", tr("wizard.field_zone_border_style"), False),
         ]
 
         row = 0
