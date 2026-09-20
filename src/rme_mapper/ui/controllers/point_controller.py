@@ -17,6 +17,8 @@ from rme_mapper.services.geodesic_service import GeodesicService
 from rme_mapper.services.point_service import PointService
 from rme_mapper.services.undo_manager import (
     AddPointCommand,
+    AssignPointsToGroupCommand,
+    BulkChangeCategoryCommand,
     BulkEditPointStyleCommand,
     BulkEditStyleCommand,
     DeleteMultiplePointsCommand,
@@ -26,6 +28,7 @@ from rme_mapper.services.undo_manager import (
     UndoManager,
 )
 from rme_mapper.ui.bulk_point_style_dialog import BulkPointStyleDialog
+from rme_mapper.ui.change_category_dialog import ChangeCategoryDialog
 from rme_mapper.ui.panels.points_panel import PointsPanel
 from rme_mapper.ui.panels.properties_panel import PropertiesPanel, get_symbol_display_name
 from rme_mapper.ui.point_dialog import PointDialog
@@ -51,6 +54,8 @@ class PointController(QObject):
         set_status_message: Callable[[str, int], None] | None = None,
         set_modified: Callable[[bool], None] | None = None,
         undo_manager: UndoManager | None = None,
+        group_service: Any = None,
+        group_controller: Any = None,
     ) -> None:
         super().__init__(parent_widget)
         self._parent = parent_widget
@@ -58,6 +63,8 @@ class PointController(QObject):
         self._points_panel = points_panel
         self._properties_panel = properties_panel
         self._map_canvas = map_canvas
+        self._group_service = group_service
+        self._group_controller = group_controller
 
         self._get_active_crs = get_active_crs
         self._get_active_profile = get_active_profile
@@ -74,6 +81,12 @@ class PointController(QObject):
         self._table_point_ids: list[str] = []
 
         self._connect_signals()
+
+    def set_group_service(self, service: Any) -> None:
+        self._group_service = service
+
+    def set_group_controller(self, controller: Any) -> None:
+        self._group_controller = controller
 
     def _connect_signals(self) -> None:
         self._points_panel.add_clicked.connect(lambda: self.add_point_workflow())
@@ -162,6 +175,8 @@ class PointController(QObject):
         self._point_service._points[point.id] = point
         self.add_point_to_table(point, row_index=row_index)
         self._render_point_on_canvas(point)
+        if self._group_controller:
+            self._group_controller.refresh_groups_ui()
         self._on_undo_state_changed()
 
     def _cmd_remove_point(self, point_id: str) -> None:
@@ -173,6 +188,8 @@ class PointController(QObject):
 
         self._point_service.remove_point(point_id)
         self._map_canvas.remove_user_point(point_id)
+        if self._group_controller:
+            self._group_controller.refresh_groups_ui()
         self._on_undo_state_changed()
 
     def _cmd_update_point(self, point: MapPoint) -> None:
@@ -188,6 +205,8 @@ class PointController(QObject):
         if row is not None and 0 <= row < len(self._table_point_ids):
             if self._table_point_ids[row] == point.id:
                 self._properties_panel.update_properties(point)
+        if self._group_controller:
+            self._group_controller.refresh_groups_ui()
         self._on_undo_state_changed()
 
     def _cmd_add_points(self, points: list[MapPoint]) -> None:
@@ -196,6 +215,8 @@ class PointController(QObject):
             self._point_service._points[p.id] = p
             self.add_point_to_table(p)
             self._render_point_on_canvas(p)
+        if self._group_controller:
+            self._group_controller.refresh_groups_ui()
         self._on_undo_state_changed()
 
     def _cmd_remove_points(self, point_ids: list[str]) -> None:
@@ -210,6 +231,8 @@ class PointController(QObject):
         for pid in point_ids:
             self._point_service.remove_point(pid)
             self._map_canvas.remove_user_point(pid)
+        if self._group_controller:
+            self._group_controller.refresh_groups_ui()
         self._on_undo_state_changed()
 
     # -------------------------------------------------------------------------
@@ -234,6 +257,14 @@ class PointController(QObject):
         active_crs = self._get_active_crs()
         auto_name = f"{tr('point.default_name_prefix')} {len(self._point_service) + 1}"
 
+        current_gid = None
+        if self._group_controller and hasattr(self._group_controller, "_groups_panel"):
+            filt = self._group_controller._groups_panel.active_group_filter()
+            if filt and filt != "__ungrouped__":
+                current_gid = filt
+
+        groups_list = self._group_service.list_groups() if self._group_service else []
+
         dialog = PointDialog(
             parent=self._parent,
             boundary_geometry=self._get_boundary_geometry(),
@@ -245,6 +276,8 @@ class PointController(QObject):
             initial_lat=initial_lat,
             initial_lon=initial_lon,
             categories=self._point_service.get_used_categories(),
+            groups=groups_list,
+            current_group_id=current_gid,
         )
         if dialog.exec():
             data = dialog.get_point_data()
@@ -277,6 +310,7 @@ class PointController(QObject):
                     zone_border_blue=data.zone_border_blue,
                     zone_border_width=data.zone_border_width,
                     zone_border_style=data.zone_border_style,
+                    group_id=data.group_id,
                 )
                 cmd = AddPointCommand(
                     point=point,
@@ -312,6 +346,7 @@ class PointController(QObject):
 
         profile = self._get_active_profile()
         active_crs = self._get_active_crs()
+        groups_list = self._group_service.list_groups() if self._group_service else []
 
         dialog = PointDialog(
             parent=self._parent,
@@ -322,6 +357,8 @@ class PointController(QObject):
             map_extent=profile.extent if profile else None,
             map_crs=active_crs,
             categories=self._point_service.get_used_categories(),
+            groups=groups_list,
+            current_group_id=point.group_id,
         )
         if dialog.exec():
             data = dialog.get_point_data()
@@ -355,6 +392,7 @@ class PointController(QObject):
                 after_pt.zone_border_blue = data.zone_border_blue
                 after_pt.zone_border_width = data.zone_border_width
                 after_pt.zone_border_style = data.zone_border_style
+                after_pt.group_id = data.group_id
 
                 cmd = EditPointCommand(
                     before_point=before_pt,
@@ -749,6 +787,7 @@ class PointController(QObject):
                 category=point.category,
                 description=point.description,
                 visible=point.visible,
+                group_id=point.group_id,
             )
             self._table_point_ids.append(point.id)
         else:
@@ -766,6 +805,7 @@ class PointController(QObject):
                 category=point.category,
                 description=point.description,
                 visible=point.visible,
+                group_id=point.group_id,
             )
             self._table_point_ids.insert(row_index, point.id)
 
@@ -787,6 +827,8 @@ class PointController(QObject):
             category=point.category,
             description=point.description,
             visible=point.visible,
+            group_id=point.group_id,
+            update_group=True,
         )
 
     def _render_point_on_canvas(self, point: MapPoint, is_update: bool = False) -> None:
@@ -834,6 +876,76 @@ class PointController(QObject):
                     )
                 self._map_canvas.add_user_point(pt, map_x=mx, map_y=my, zone_polygon=zone_poly)
 
+    def move_points_to_group_workflow(self, target_group_id: str | None, point_ids: list[str] | None = None) -> None:
+        """Перемещение выбранных точек в указанную группу (или Ungrouped при None)."""
+        pids = point_ids or self._get_selected_point_ids()
+        if not pids:
+            return
+
+        points = [self._point_service.get_point(pid) for pid in pids]
+        valid_points = [p for p in points if p is not None]
+        if not valid_points:
+            return
+
+        prev_groups = {p.id: p.group_id for p in valid_points}
+
+        def apply_fn(mapping: dict[str, str | None]) -> None:
+            for pid, gid in mapping.items():
+                self._point_service.set_point_group(pid, gid)
+            self._points_panel.update_points_group_ids(mapping)
+            if self._group_controller:
+                self._group_controller.refresh_groups_ui()
+
+        grp_name = tr("groups.ungrouped")
+        if target_group_id and self._group_service:
+            g = self._group_service.get_group(target_group_id)
+            if g:
+                grp_name = g.name
+
+        cmd = AssignPointsToGroupCommand(
+            previous_groups=prev_groups,
+            target_group_id=target_group_id,
+            apply_fn=apply_fn,
+            description=f"{tr('action.move_to_group')}: {grp_name} ({len(valid_points)})",
+        )
+        self._undo_manager.push(cmd, execute=True)
+        self._set_status(tr("status.points_moved_to_group", count=len(valid_points)), 3000)
+
+    def bulk_change_category_workflow(self, point_ids: list[str] | None = None) -> None:
+        """Диалог массовой смены категории для выбранных точек."""
+        pids = point_ids or self._get_selected_point_ids()
+        if not pids:
+            return
+
+        points = [self._point_service.get_point(pid) for pid in pids]
+        valid_points = [p for p in points if p is not None]
+        if not valid_points:
+            return
+
+        existing_cats = self._point_service.get_used_categories()
+        current_cat = valid_points[0].category if len(valid_points) == 1 else ""
+
+        dlg = ChangeCategoryDialog(self._parent, existing_categories=existing_cats, current_category=current_cat)
+        if dlg.exec():
+            new_cat = dlg.category_result
+            prev_cats = {p.id: p.category for p in valid_points}
+
+            def apply_fn(mapping: dict[str, str]) -> None:
+                for pid, cat in mapping.items():
+                    pt = self._point_service.get_point(pid)
+                    if pt:
+                        pt.category = cat
+                self._points_panel.update_points_categories(mapping)
+
+            cmd = BulkChangeCategoryCommand(
+                previous_categories=prev_cats,
+                new_category=new_cat,
+                apply_fn=apply_fn,
+                description=f"{tr('action.change_category')}: '{new_cat}' ({len(valid_points)})",
+            )
+            self._undo_manager.push(cmd, execute=True)
+            self._set_status(tr("status.category_changed", count=len(valid_points)), 3000)
+
     def on_table_row_double_clicked(self, row: int, column: int) -> None:
         """Центрирование карты на выбранной точке."""
         if 0 <= row < len(self._table_point_ids):
@@ -880,6 +992,23 @@ class PointController(QObject):
         has_map = self._get_active_profile() is not None or self._get_map_path() is not None
 
         menu = QMenu(self._parent)
+
+        # Подменю: Переместить в группу
+        menu_move = menu.addMenu(tr("action.move_to_group"))
+        act_move_ungrouped = menu_move.addAction(tr("groups.ungrouped"))
+        act_move_ungrouped.triggered.connect(lambda: self.move_points_to_group_workflow(None, selected_ids))
+        menu_move.addSeparator()
+
+        groups = self._group_service.list_groups() if self._group_service else []
+        for grp in groups:
+            act_grp = menu_move.addAction(grp.name)
+            gid = grp.id
+            act_grp.triggered.connect(lambda checked=False, target_id=gid: self.move_points_to_group_workflow(target_id, selected_ids))
+
+        act_change_cat = menu.addAction(tr("action.change_category"))
+        act_change_cat.triggered.connect(lambda: self.bulk_change_category_workflow(selected_ids))
+
+        menu.addSeparator()
 
         if is_multi:
             act_bulk_style = menu.addAction(tr("action.bulk_edit_style"))

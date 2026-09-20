@@ -19,6 +19,7 @@ import pyproj
 from PySide6.QtCore import QModelIndex, QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -433,6 +434,7 @@ class ColumnMappingPage(QWizardPage):
             # Общие
             ("name", tr("wizard.field_name"), False),
             ("object_number", tr("wizard.field_object_number"), False),
+            ("group", tr("wizard.field_group"), False),
             ("category", tr("wizard.field_category"), False),
             ("description", tr("wizard.field_description"), False),
             ("visible", tr("wizard.field_visible"), False),
@@ -796,6 +798,13 @@ class ValidationPage(QWizardPage):
         p_layout.addSpacing(16)
         p_layout.addWidget(out_lbl)
         p_layout.addWidget(self.out_combo)
+        p_layout.addSpacing(16)
+
+        self.chk_create_groups = QCheckBox(tr("wizard.create_missing_groups"))
+        self.chk_create_groups.setChecked(True)
+        self.chk_create_groups.toggled.connect(self._on_policy_changed)
+        p_layout.addWidget(self.chk_create_groups)
+
         p_layout.addStretch(1)
         layout.addWidget(policy_group)
 
@@ -874,8 +883,13 @@ class ValidationPage(QWizardPage):
         opts = wizard.get_import_options()
         opts.duplicate_policy = self.dup_combo.currentData()
         opts.outside_policy = self.out_combo.currentData()
+        opts.create_missing_groups = self.chk_create_groups.isChecked()
         opts.existing_points = self._get_existing_points()
         opts.boundary_geometry = self._get_boundary_geometry()
+
+        if hasattr(wizard, "get_group_service") and wizard.get_group_service():
+            gs = wizard.get_group_service()
+            opts.group_name_to_id = {g.name.casefold(): g.id for g in gs.list_groups()}
 
         self._result = self._service.validate_file(
             file_path=path,
@@ -1033,6 +1047,10 @@ class SummaryPage(QWizardPage):
         grid.addWidget(QLabel(tr("wizard.summary_warnings")), 8, 0)
         grid.addWidget(self.lbl_warnings, 8, 1)
 
+        self.lbl_new_groups = QLabel()
+        grid.addWidget(QLabel(tr("wizard.summary_new_groups")), 9, 0)
+        grid.addWidget(self.lbl_new_groups, 9, 1)
+
         layout.addLayout(grid)
         layout.addStretch(1)
 
@@ -1073,6 +1091,7 @@ class SummaryPage(QWizardPage):
         self.lbl_to_skip.setText(str(res.excluded_rows))
         self.lbl_errors.setText(str(res.invalid_rows))
         self.lbl_warnings.setText(str(len(res.warnings)))
+        self.lbl_new_groups.setText(str(len(res.new_group_names)))
 
         self.completeChanged.emit()
 
@@ -1098,6 +1117,7 @@ class ImportWizard(QWizard):
         last_directory: str = "",
         existing_points: list[MapPoint] | None = None,
         boundary_geometry: Any = None,
+        group_service: Any = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(tr("wizard.import_title"))
@@ -1108,6 +1128,7 @@ class ImportWizard(QWizard):
         self._presets_service = PresetsService()
         self._existing_points = existing_points or []
         self._boundary_geometry = boundary_geometry
+        self._group_service = group_service
 
         # Страницы
         self.page_source = SourcePage(last_directory=last_directory, parent=self)
@@ -1141,6 +1162,9 @@ class ImportWizard(QWizard):
 
     def get_source_path(self) -> Path | None:
         return self.page_source.get_selected_path()
+
+    def get_group_service(self) -> Any:
+        return self._group_service
 
     def get_detected_headers(self) -> list[str]:
         return self.page_structure.get_detected_headers()

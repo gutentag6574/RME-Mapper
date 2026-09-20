@@ -28,6 +28,7 @@ from rme_mapper.importers.models import (
 )
 from rme_mapper.importers.xlsx_importer import XlsxImporter
 from rme_mapper.models.map_point import MapPoint
+from rme_mapper.models.object_group import ObjectGroup
 from rme_mapper.models.point_style import ALLOWED_SYMBOLS, StyleValidator
 from rme_mapper.services.coordinate_service import CoordinateService
 from rme_mapper.services.project_service import MAX_PROJECT_POINTS
@@ -231,9 +232,14 @@ CANONICAL_HEADERS: dict[str, str] = {
     "category": "category",
     "категория": "category",
     "тип": "category",
-    "группа": "category",
     "класс": "category",
     "cat": "category",
+    # Этап 18: Группы объектов
+    "group": "group",
+    "group_name": "group",
+    "группа": "group",
+    "имя_группы": "group",
+    "название_группы": "group",
     "visible": "visible",
     "видимость": "visible",
     "видимый": "visible",
@@ -523,6 +529,8 @@ class ImportService:
             for p in opts.existing_points
         }
         auto_point_counter = current_project_points_count + 1
+        dynamic_group_map: dict[str, str] = {}
+        new_group_names_map: dict[str, str] = {}
 
         for row_num, raw_dict in raw_rows:
             # Создаем словарь по каноническим ключам
@@ -850,6 +858,22 @@ class ImportService:
             if len(category) > 200:
                 category = category[:200]
 
+            # Этап 18: Группа объекта
+            raw_group = c_dict.get("group")
+            group_id = None
+            if raw_group is not None and str(raw_group).strip() != "":
+                group_name_str = str(raw_group).strip()
+                if len(group_name_str) > 100:
+                    group_name_str = group_name_str[:100]
+                g_key = group_name_str.casefold()
+                if g_key in opts.group_name_to_id:
+                    group_id = opts.group_name_to_id[g_key]
+                elif opts.create_missing_groups:
+                    if g_key not in dynamic_group_map:
+                        dynamic_group_map[g_key] = str(uuid.uuid4())
+                        new_group_names_map[g_key] = group_name_str
+                    group_id = dynamic_group_map[g_key]
+
             raw_desc = c_dict.get("description")
             description = str(raw_desc).strip() if raw_desc is not None and str(raw_desc).strip() != "" else ""
             if len(description) > 8192:
@@ -1024,6 +1048,7 @@ class ImportService:
                     zone_border_blue=zone_border_blue,
                     zone_border_width=zone_border_width,
                     zone_border_style=zone_border_style,
+                    group_id=group_id,
                 )
                 result.valid_rows += 1
                 result.warnings.extend(row_warnings)
@@ -1064,6 +1089,11 @@ class ImportService:
                 )
             )
 
+        result.new_groups = [
+            ObjectGroup(id=dynamic_group_map[k], name=new_group_names_map[k], visible=True)
+            for k in dynamic_group_map
+        ]
+        result.new_group_names = [g.name for g in result.new_groups]
         return result
 
     @staticmethod

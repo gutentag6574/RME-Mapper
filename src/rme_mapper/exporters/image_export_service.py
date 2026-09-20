@@ -29,6 +29,7 @@ class ImageExportService:
         selected_point_ids: set[str] | None = None,
         raster_source: Path | str | None = None,
         is_raster_visible: bool = True,
+        hidden_group_ids: set[str] | None = None,
     ) -> Path:
         """Рендеринг и сохранение изображения в файл с гарантией атомарности.
 
@@ -68,6 +69,7 @@ class ImageExportService:
             selected_point_ids=selected_point_ids,
             raster_source=raster_source,
             is_raster_visible=is_raster_visible,
+            hidden_group_ids=hidden_group_ids,
         )
 
         if image.isNull():

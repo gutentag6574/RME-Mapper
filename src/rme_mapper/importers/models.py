@@ -57,6 +57,8 @@ class ImportOptions:
     duplicate_policy: DuplicatePolicy = DuplicatePolicy.IMPORT_ALL
     outside_policy: OutsideAreaPolicy = OutsideAreaPolicy.IMPORT_OUTSIDE
     existing_points: list[MapPoint] = field(default_factory=list)
+    create_missing_groups: bool = True
+    group_name_to_id: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -137,5 +139,7 @@ class ImportResult:
     errors: list[ImportRowError] = field(default_factory=list)
     warnings: list[ImportRowWarning] = field(default_factory=list)
     rows: list[ImportRow] = field(default_factory=list)
+    new_group_names: list[str] = field(default_factory=list)
+    new_groups: list[Any] = field(default_factory=list)
     file_mtime: float | None = None
     file_size: int | None = None

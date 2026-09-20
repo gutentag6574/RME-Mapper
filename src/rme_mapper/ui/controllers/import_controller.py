@@ -34,6 +34,8 @@ class ImportController:
         get_boundary_geometry: Callable[[], Any],
         settings_service: AppSettingsService,
         set_status_message: Callable[[str, int], None] | None = None,
+        group_service: Any = None,
+        group_controller: Any = None,
     ) -> None:
         self._parent = parent_widget
         self._point_controller = point_controller
@@ -44,6 +46,14 @@ class ImportController:
         self._get_boundary_geometry = get_boundary_geometry
         self._settings_service = settings_service
         self._set_status_message = set_status_message
+        self._group_service = group_service
+        self._group_controller = group_controller
+
+    def set_group_service(self, service: Any) -> None:
+        self._group_service = service
+
+    def set_group_controller(self, controller: Any) -> None:
+        self._group_controller = controller
 
     def _set_status(self, text: str, timeout: int = 0) -> None:
         if self._set_status_message:
@@ -74,9 +84,11 @@ class ImportController:
             last_directory=last_dir,
             existing_points=self._point_service.get_points(),
             boundary_geometry=self._get_boundary_geometry(),
+            group_service=self._group_service,
         )
 
         if wizard.exec():
+            res = wizard.get_validation_result()
             points = wizard.get_final_points()
             if not points:
                 return False
@@ -85,13 +97,38 @@ class ImportController:
             if src_path:
                 self._settings_service.set_last_import_directory(str(src_path))
 
+            created_groups = res.new_groups if res else []
+
+            def add_groups_fn(grps: list[Any]) -> None:
+                if self._group_service:
+                    for g in grps:
+                        self._group_service.add_existing_group(g)
+                if self._group_controller:
+                    self._group_controller.refresh_groups_ui()
+
+            def remove_groups_fn(gids: list[str]) -> None:
+                if self._group_service:
+                    for gid in gids:
+                        try:
+                            self._group_service.delete_group(gid)
+                        except KeyError:
+                            pass
+                if self._group_controller:
+                    self._group_controller.refresh_groups_ui()
+
             cmd = ImportPointsCommand(
                 points=points,
                 add_fn=self._point_controller._cmd_add_points,
                 remove_fn=self._point_controller._cmd_remove_points,
+                created_groups=created_groups,
+                add_groups_fn=add_groups_fn,
+                remove_groups_fn=remove_groups_fn,
                 description=f"{tr('action.import_points')}: {len(points)}",
             )
             self._point_controller.undo_manager.push(cmd, execute=True)
+
+            if self._group_controller:
+                self._group_controller.refresh_groups_ui()
 
             # Сохранение снимка аварийного восстановления
             self._project_controller._save_recovery_snapshot_worker()

@@ -38,6 +38,7 @@ class ExportController(QObject):
         layers_panel: LayersPanel,
         settings_service: AppSettingsService | None = None,
         set_status_message: Callable[[str, int], None] | None = None,
+        group_service: Any = None,
     ) -> None:
         super().__init__(parent_widget)
         self._parent = parent_widget
@@ -51,6 +52,10 @@ class ExportController(QObject):
         self._layers_panel = layers_panel
         self._settings_service = settings_service or AppSettingsService()
         self._set_status_message = set_status_message
+        self._group_service = group_service
+
+    def set_group_service(self, service: Any) -> None:
+        self._group_service = service
 
     def _set_status(self, text: str, timeout: int = 0) -> None:
         if self._set_status_message:
@@ -195,6 +200,12 @@ class ExportController(QObject):
 
             self._set_status(tr("export.status_exporting"))
 
+            hidden_gids = (
+                {g.id for g in self._group_service.list_groups() if not g.visible}
+                if self._group_service
+                else None
+            )
+
             out_path = ImageExportService.export_image(
                 options=options,
                 active_crs=active_crs,
@@ -204,6 +215,7 @@ class ExportController(QObject):
                 selected_point_ids=selected_ids,
                 raster_source=raster_source,
                 is_raster_visible=is_raster_visible,
+                hidden_group_ids=hidden_gids,
             )
 
             success_msg = tr("export.status_success", path=str(out_path))

@@ -2,8 +2,35 @@
 
 from dataclasses import asdict, dataclass, field
 from typing import Any
+from uuid import uuid4
 
 from rme_mapper.models.map_point import MapPoint
+
+
+@dataclass
+class ProjectGroupData:
+    """Сериализуемые данные организационной группы объектов."""
+
+    id: str
+    name: str
+    description: str = ""
+    visible: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        """Преобразование в словарь для JSON-сериализации."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "ProjectGroupData":
+        """Создание экземпляра из словаря."""
+        if not data or not isinstance(data, dict):
+            return cls(id=uuid4().hex, name="")
+        return cls(
+            id=str(data.get("id") or uuid4().hex),
+            name=str(data.get("name") or ""),
+            description=str(data.get("description") or ""),
+            visible=bool(data.get("visible", True)),
+        )
 
 
 @dataclass
@@ -89,6 +116,7 @@ class ProjectPointData:
     zone_border_blue: int = 30
     zone_border_width: float = 1.0
     zone_border_style: str = "solid"
+    group_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Преобразование в словарь для JSON-сериализации."""
@@ -97,6 +125,9 @@ class ProjectPointData:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ProjectPointData":
         """Создание экземпляра из словаря с безопасными значениями по умолчанию."""
+        raw_gid = data.get("group_id")
+        gid = str(raw_gid).strip() if raw_gid is not None and str(raw_gid).strip() else None
+
         return cls(
             id=str(data["id"]),
             name=str(data.get("name", "")),
@@ -128,6 +159,7 @@ class ProjectPointData:
             zone_border_blue=int(data.get("zone_border_blue", data.get("zone_blue", 30))),
             zone_border_width=float(data.get("zone_border_width", 1.0)),
             zone_border_style=str(data.get("zone_border_style", "solid")),
+            group_id=gid,
         )
 
     def to_map_point(self) -> MapPoint:
@@ -163,6 +195,7 @@ class ProjectPointData:
             zone_border_blue=self.zone_border_blue,
             zone_border_width=self.zone_border_width,
             zone_border_style=self.zone_border_style,
+            group_id=self.group_id,
         )
 
     @classmethod
@@ -199,6 +232,7 @@ class ProjectPointData:
             zone_border_blue=point.zone_border_blue,
             zone_border_width=point.zone_border_width,
             zone_border_style=point.zone_border_style,
+            group_id=point.group_id,
         )
 
 
@@ -216,6 +250,7 @@ class ProjectData:
     map: ProjectMapData = field(default_factory=ProjectMapData)
     layers: dict[str, bool] = field(default_factory=dict)
     points: list[ProjectPointData] = field(default_factory=list)
+    groups: list[ProjectGroupData] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Преобразование модели проекта в словарь верхнего уровня."""
@@ -224,6 +259,7 @@ class ProjectData:
             "version": self.version,
             "map": self.map.to_dict(),
             "layers": dict(self.layers),
+            "groups": [g.to_dict() for g in self.groups],
             "points": [p.to_dict() for p in self.points],
         }
 
@@ -257,6 +293,19 @@ class ProjectData:
             for k, v in raw_layers.items():
                 layers[str(k)] = bool(v)
 
+        # Десериализация групп с безопасной обработкой дубликатов ID
+        raw_groups = data.get("groups", [])
+        groups: list[ProjectGroupData] = []
+        seen_group_ids: set[str] = set()
+        if isinstance(raw_groups, list):
+            for grp_item in raw_groups:
+                if isinstance(grp_item, dict):
+                    grp_data = ProjectGroupData.from_dict(grp_item)
+                    if grp_data.id in seen_group_ids:
+                        grp_data.id = uuid4().hex
+                    seen_group_ids.add(grp_data.id)
+                    groups.append(grp_data)
+
         raw_points = data.get("points", [])
         points: list[ProjectPointData] = []
         if isinstance(raw_points, list):
@@ -270,4 +319,5 @@ class ProjectData:
             map=map_data,
             layers=layers,
             points=points,
+            groups=groups,
         )

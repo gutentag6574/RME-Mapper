@@ -11,12 +11,14 @@ from rme_mapper.coordinates.validator import CoordinateValidator
 from rme_mapper.maps.map_config import get_project_root
 from rme_mapper.models.map_layer import MapLayer
 from rme_mapper.models.map_point import MapPoint
+from rme_mapper.models.object_group import ObjectGroup
 from rme_mapper.models.point_style import StyleValidator
 from rme_mapper.models.project_data import (
     PRIMARY_PROJECT_FORMAT,
     LEGACY_PROJECT_FORMAT,
     SUPPORTED_PROJECT_FORMATS,
     ProjectData,
+    ProjectGroupData,
     ProjectMapData,
     ProjectPointData,
 )
@@ -250,6 +252,35 @@ class ProjectService:
         # Валидация и парсинг точек
         validated_points: list[ProjectPointData] = []
         raw_points = raw_data.get("points", [])
+        # Парсинг групп проекта
+        raw_groups = raw_data.get("groups", [])
+        validated_groups: list[ProjectGroupData] = []
+        seen_group_ids: set[str] = set()
+        if isinstance(raw_groups, list):
+            for g_idx, grp_item in enumerate(raw_groups):
+                if not isinstance(grp_item, dict):
+                    logger.warning("Группа №%d имеет неверный формат (не словарь), пропущена", g_idx + 1)
+                    continue
+                gid = str(grp_item.get("id") or uuid4().hex)
+                gname = str(grp_item.get("name") or "").strip()
+                if not gname:
+                    logger.warning("Группа №%d имеет пустое название, пропущена", g_idx + 1)
+                    continue
+                if gid in seen_group_ids:
+                    logger.warning("duplicate_group_id: группа '%s' имеет дублирующийся ID '%s', сгенерирован новый", gname, gid)
+                    gid = uuid4().hex
+                seen_group_ids.add(gid)
+                gdesc = str(grp_item.get("description") or "")
+                gvis = bool(grp_item.get("visible", True))
+                validated_groups.append(ProjectGroupData(
+                    id=gid,
+                    name=gname,
+                    description=gdesc,
+                    visible=gvis,
+                ))
+
+        valid_group_ids = {g.id for g in validated_groups}
+
         if not isinstance(raw_points, list):
             raw_points = []
 
@@ -310,6 +341,16 @@ class ProjectService:
                 zbw = StyleValidator.validate_border_width(pt_dict.get("zone_border_width", 1.0))
                 zbs = StyleValidator.validate_border_style(pt_dict.get("zone_border_style", "solid"))
 
+                raw_gid = pt_dict.get("group_id")
+                gid = str(raw_gid).strip() if raw_gid is not None and str(raw_gid).strip() else None
+                if gid is not None and gid not in valid_group_ids:
+                    logger.warning(
+                        "orphan_group_reference: точка '%s' ссылается на несуществующую группу '%s', сброшена в Ungrouped",
+                        pt_dict.get("name", ""),
+                        gid,
+                    )
+                    gid = None
+
                 pt_data = ProjectPointData(
                     id=str(pt_dict.get("id", uuid4().hex)),
                     name=str(pt_dict.get("name", "")),
@@ -341,6 +382,7 @@ class ProjectService:
                     zone_border_blue=zbb,
                     zone_border_width=zbw,
                     zone_border_style=zbs,
+                    group_id=gid,
                 )
                 validated_points.append(pt_data)
             except Exception as pt_err:
@@ -362,10 +404,12 @@ class ProjectService:
             map=map_data,
             layers=layers_dict,
             points=validated_points,
+            groups=validated_groups,
         )
         logger.info(
-            "Проект успешно загружен: %d валидных точек, слоев: %s",
+            "Проект успешно загружен: %d валидных точек, групп: %d, слоев: %s",
             len(project.points),
+            len(project.groups),
             list(project.layers.keys()),
         )
         return project
@@ -376,6 +420,7 @@ class ProjectService:
         map_path: Path | str | None = None,
         layers: list[MapLayer] | None = None,
         points: list[MapPoint] | None = None,
+        groups: list[ObjectGroup] | None = None,
         map_id: str = "",
         map_name: str = "",
         source_type: str = "geopackage",
@@ -430,6 +475,15 @@ class ProjectService:
 
         layers_state = {layer.id: layer.visible for layer in (layers or [])}
         points_data = [ProjectPointData.from_map_point(p) for p in (points or [])]
+        groups_data = [
+            ProjectGroupData(
+                id=g.id,
+                name=g.name,
+                description=g.description,
+                visible=g.visible,
+            )
+            for g in (groups or [])
+        ]
 
         return ProjectData(
             format=PRIMARY_FORMAT,
@@ -437,4 +491,5 @@ class ProjectService:
             map=map_data,
             layers=layers_state,
             points=points_data,
+            groups=groups_data,
         )

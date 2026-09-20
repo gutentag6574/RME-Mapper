@@ -31,16 +31,19 @@ from rme_mapper.models.map_point import MapPoint
 from rme_mapper.models.map_profile import MapProfile
 from rme_mapper.models.project_data import ProjectData
 from rme_mapper.services.app_settings_service import AppSettingsService
+from rme_mapper.services.group_service import GroupService
 from rme_mapper.services.layer_service import LayerService
 from rme_mapper.services.map_catalog_service import MapCatalogService
 from rme_mapper.services.point_service import PointService
 from rme_mapper.services.project_service import ProjectService
 from rme_mapper.ui.about_dialog import AboutDialog
+from rme_mapper.ui.controllers.export_controller import ExportController
+from rme_mapper.ui.controllers.group_controller import GroupController
+from rme_mapper.ui.controllers.import_controller import ImportController
 from rme_mapper.ui.controllers.map_controller import MapController
 from rme_mapper.ui.controllers.point_controller import PointController
 from rme_mapper.ui.controllers.project_controller import ProjectController
-from rme_mapper.ui.controllers.import_controller import ImportController
-from rme_mapper.ui.controllers.export_controller import ExportController
+from rme_mapper.ui.panels.groups_panel import GroupsPanel
 from rme_mapper.ui.panels.layers_panel import LayersPanel
 from rme_mapper.ui.panels.points_panel import PointsPanel
 from rme_mapper.ui.panels.properties_panel import (
@@ -77,6 +80,7 @@ class MainWindow(QMainWindow):
         # Сервисы
         self._map_catalog_service = MapCatalogService()
         self._layer_service = LayerService(backend=self._backend)
+        self._group_service = GroupService()
         self._point_service = PointService()
         self._project_service = ProjectService()
 
@@ -97,7 +101,21 @@ class MainWindow(QMainWindow):
             on_modified=lambda: self.project_controller.set_modified(True),
             set_modified=lambda m: self.project_controller.set_modified(m),
             set_status_message=self._show_status_message,
+            group_service=self._group_service,
         )
+
+        self.group_controller = GroupController(
+            parent=self,
+            group_service=self._group_service,
+            point_service=self._point_service,
+            undo_manager=self.point_controller.undo_manager,
+            groups_panel=self.groups_panel,
+            points_panel=self.points_panel,
+            map_canvas=self.map_canvas,
+            point_controller=self.point_controller,
+            status_bar_fn=self._show_status_message,
+        )
+        self.point_controller.set_group_controller(self.group_controller)
 
         self.map_controller = MapController(
             parent_widget=self,
@@ -127,6 +145,8 @@ class MainWindow(QMainWindow):
             on_title_changed=self._update_window_title,
             set_status_message=self._show_status_message,
             settings_service=self._settings_service,
+            group_service=self._group_service,
+            group_controller=self.group_controller,
         )
 
         self.import_controller = ImportController(
@@ -139,6 +159,8 @@ class MainWindow(QMainWindow):
             get_boundary_geometry=lambda: self.map_controller.boundary_geometry,
             settings_service=self._settings_service,
             set_status_message=self._show_status_message,
+            group_service=self._group_service,
+            group_controller=self.group_controller,
         )
 
         self.export_controller = ExportController(
@@ -153,6 +175,12 @@ class MainWindow(QMainWindow):
             layers_panel=self.layers_panel,
             settings_service=self._settings_service,
             set_status_message=self._show_status_message,
+            group_service=self._group_service,
+        )
+
+        # Резолвер названия группы для панели свойств
+        self.properties_panel.set_group_name_resolver(
+            lambda gid: self._group_service.get_group(gid).name if gid and self._group_service.get_group(gid) else tr("groups.ungrouped")
         )
 
         # Drag & Drop, сигналы курсора и счетчика точек
@@ -160,6 +188,7 @@ class MainWindow(QMainWindow):
         self.map_canvas.cursor_position_changed.connect(self._on_canvas_cursor_moved)
         self.map_canvas.cursor_left.connect(self._on_canvas_cursor_left)
         self.points_panel.count_changed.connect(self._on_points_count_changed)
+        self.points_panel.count_changed.connect(lambda *_: self.group_controller.refresh_groups_ui())
 
         # Сигналы отмены/повтора, интерактивного добавления и выделения точек
         self.point_controller.undo_manager.add_on_state_changed(self._update_undo_redo_actions)
@@ -511,10 +540,19 @@ class MainWindow(QMainWindow):
         self.layers_panel = LayersPanel(self.left_panel)
         left_layout.addWidget(self.layers_panel)
 
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        left_layout.addWidget(separator)
+        separator1 = QFrame()
+        separator1.setFrameShape(QFrame.Shape.HLine)
+        separator1.setFrameShadow(QFrame.Shadow.Sunken)
+        left_layout.addWidget(separator1)
+
+        self.groups_panel = GroupsPanel(self.left_panel)
+        self.groups_panel.setMaximumHeight(220)
+        left_layout.addWidget(self.groups_panel)
+
+        separator2 = QFrame()
+        separator2.setFrameShape(QFrame.Shape.HLine)
+        separator2.setFrameShadow(QFrame.Shadow.Sunken)
+        left_layout.addWidget(separator2)
 
         self.points_panel = PointsPanel(self.left_panel)
         left_layout.addWidget(self.points_panel, stretch=1)
@@ -578,6 +616,10 @@ class MainWindow(QMainWindow):
         self.layers_title_label = self.layers_panel.title_label
         self.layers_container = self.layers_panel.layers_container
         self.layers_layout = self.layers_panel.layers_layout
+
+        self.groups_title_label = self.groups_panel.title_label
+        self.groups_tree = self.groups_panel.groups_tree
+        self.btn_create_group = self.groups_panel.btn_create
 
         self.points_title_label = self.points_panel.title_label
         self.points_table = self.points_panel.points_table
@@ -1042,6 +1084,8 @@ class MainWindow(QMainWindow):
             self.show_zones_action.setText(tr("action.show_zones"))
 
         self.layers_panel.retranslate_ui()
+        if hasattr(self, "groups_panel"):
+            self.groups_panel.retranslate_ui()
         self.points_panel.retranslate_ui()
         self.properties_panel.retranslate_ui()
         self.map_canvas.retranslate_ui()
@@ -1475,3 +1519,7 @@ class MainWindow(QMainWindow):
     @property
     def _table_point_ids(self) -> list[str]:
         return self.point_controller.table_point_ids
+
+    @property
+    def group_service(self) -> GroupService:
+        return self._group_service

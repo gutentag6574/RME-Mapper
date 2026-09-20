@@ -1,7 +1,7 @@
 """Менеджер хранения и управления пользовательскими точками в памяти."""
 
 import logging
-from typing import Iterator
+from typing import Any, Iterator
 
 from rme_mapper.models.map_point import MapPoint
 
@@ -48,6 +48,7 @@ class PointService:
         zone_border_blue: int = 30,
         zone_border_width: float = 1.0,
         zone_border_style: str = "solid",
+        group_id: str | None = None,
     ) -> MapPoint:
         """Создание и добавление новой пользовательской точки.
 
@@ -89,6 +90,7 @@ class PointService:
             "zone_border_blue": zone_border_blue,
             "zone_border_width": zone_border_width,
             "zone_border_style": zone_border_style,
+            "group_id": group_id,
         }
         if point_id:
             kwargs["id"] = point_id
@@ -134,6 +136,8 @@ class PointService:
         zone_border_blue: int | None = None,
         zone_border_width: float | None = None,
         zone_border_style: str | None = None,
+        group_id: Any = None,
+        update_group: bool = False,
     ) -> MapPoint:
         """Обновление существующей пользовательской точки по ее ID.
 
@@ -199,13 +203,30 @@ class PointService:
             point.zone_border_width = zone_border_width
         if zone_border_style is not None:
             point.zone_border_style = zone_border_style
+        if update_group:
+            point.group_id = group_id
 
         logger.info(
-            "Обновлена точка: id=%s, name='%s', lat=%s, lon=%s, zone_enabled=%s, radius_m=%s",
+            "Обновлена точка: id=%s, name='%s', lat=%s, lon=%s, zone_enabled=%s, radius_m=%s, group_id=%s",
             point.id, point.name, point.latitude, point.longitude,
-            point.zone_enabled, point.radius_m,
+            point.zone_enabled, point.radius_m, point.group_id,
         )
         return point
+
+    def set_point_group(self, point_id: str, group_id: str | None) -> None:
+        """Назначение группы для одной точки."""
+        point = self.get_point(point_id)
+        if point:
+            point.group_id = group_id
+
+    def set_points_group(self, point_ids: list[str], group_id: str | None) -> None:
+        """Массовое назначение группы для набора точек."""
+        for pid in point_ids:
+            self.set_point_group(pid, group_id)
+
+    def get_points_by_group(self, group_id: str | None) -> list[MapPoint]:
+        """Получение списка точек, принадлежащих указанной группе (или Ungrouped при None)."""
+        return [p for p in self._points.values() if p.group_id == group_id]
 
     def get_used_categories(self) -> list[str]:
         """Получение списка уникальных непустых категорий всех точек проекта."""

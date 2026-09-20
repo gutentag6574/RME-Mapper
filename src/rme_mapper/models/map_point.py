@@ -46,6 +46,7 @@ class MapPoint:
     zone_border_blue: int = 30
     zone_border_width: float = 1.0
     zone_border_style: str = "solid"
+    group_id: str | None = None
 
     @property
     def marker_opacity(self) -> int:

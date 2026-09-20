@@ -7,6 +7,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -38,6 +39,8 @@ class PointsPanel(QWidget):
         super().__init__(parent)
         self.setObjectName("pointsPanel")
 
+        self._active_group_filter: str | None = None
+
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -64,12 +67,22 @@ class PointsPanel(QWidget):
         points_header_layout.addWidget(self.count_label)
         layout.addLayout(points_header_layout)
 
-        # 2. Поле поиска по названию точки на всю ширину
+        # 2. Поле поиска и компактный фильтр категории
+        filter_layout = QHBoxLayout()
+        filter_layout.setSpacing(4)
+
         self.search_input = QLineEdit(self)
         self.search_input.setObjectName("searchPointInput")
         self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self._on_search_text_changed)
-        layout.addWidget(self.search_input)
+        filter_layout.addWidget(self.search_input, stretch=2)
+
+        self.category_combo = QComboBox(self)
+        self.category_combo.setObjectName("categoryFilterCombo")
+        self.category_combo.currentIndexChanged.connect(self._on_category_filter_changed)
+        filter_layout.addWidget(self.category_combo, stretch=1)
+
+        layout.addLayout(filter_layout)
 
         # 3. Кнопки добавления, редактирования и удаления точки (единая высота и стиль)
         btn_row_layout = QHBoxLayout()
@@ -167,41 +180,96 @@ class PointsPanel(QWidget):
             return
         super().keyPressEvent(event)
 
-    def _on_search_text_changed(self, text: str) -> None:
-        """Фильтрация строк таблицы по названию, номеру объекта, категории и описанию."""
-        query = text.strip().lower()
+    def set_group_filter(self, group_id: str | None) -> None:
+        """Установка фильтра по группе (None = все, '__ungrouped__', или group_id)."""
+        self._active_group_filter = group_id
+        self._reapply_all_filters()
+
+    def _on_category_filter_changed(self, index: int) -> None:
+        self._reapply_all_filters()
+
+    def _reapply_all_filters(self) -> None:
         for r in range(self.points_table.rowCount()):
-            name_item = self.points_table.item(r, 1)
-            name = name_item.text().lower() if name_item else ""
-            num_item = self.points_table.item(r, 0)
-            obj_num = str(num_item.data(Qt.ItemDataRole.UserRole + 1) or "").lower() if num_item else ""
-            cat = str(num_item.data(Qt.ItemDataRole.UserRole + 2) or "").lower() if num_item else ""
-            desc = str(num_item.data(Qt.ItemDataRole.UserRole + 3) or "").lower() if num_item else ""
-            matches = (not query) or (query in name) or (query in obj_num) or (query in cat) or (query in desc)
-            self.points_table.setRowHidden(r, not matches)
+            self._apply_filter_to_row(r)
         self._update_counter()
 
+    def _on_search_text_changed(self, text: str) -> None:
+        """Фильтрация строк таблицы при изменении текста поиска."""
+        self._reapply_all_filters()
+
     def _apply_filter_to_row(self, row: int) -> None:
-        query = self.search_input.text().strip().lower()
-        if not query:
-            self.points_table.setRowHidden(row, False)
-            return
-        name_item = self.points_table.item(row, 1)
-        name = name_item.text().lower() if name_item else ""
+        query = self.search_input.text().strip().lower() if hasattr(self, "search_input") else ""
+        selected_cat = self.category_combo.currentData() if hasattr(self, "category_combo") else ""
+
         num_item = self.points_table.item(row, 0)
+        name_item = self.points_table.item(row, 1)
+
+        name = name_item.text().lower() if name_item else ""
         obj_num = str(num_item.data(Qt.ItemDataRole.UserRole + 1) or "").lower() if num_item else ""
-        cat = str(num_item.data(Qt.ItemDataRole.UserRole + 2) or "").lower() if num_item else ""
+        cat = str(num_item.data(Qt.ItemDataRole.UserRole + 2) or "") if num_item else ""
         desc = str(num_item.data(Qt.ItemDataRole.UserRole + 3) or "").lower() if num_item else ""
-        matches = (query in name) or (query in obj_num) or (query in cat) or (query in desc)
+        row_group_id = num_item.data(Qt.ItemDataRole.UserRole + 5) if num_item else None
+
+        # 1. Фильтр группы
+        matches_group = True
+        if self._active_group_filter is not None:
+            if self._active_group_filter == "__ungrouped__":
+                if row_group_id is not None and str(row_group_id).strip():
+                    matches_group = False
+            else:
+                if row_group_id != self._active_group_filter:
+                    matches_group = False
+
+        # 2. Фильтр категории
+        matches_cat = True
+        if selected_cat:
+            if cat.strip().casefold() != str(selected_cat).strip().casefold():
+                matches_cat = False
+
+        # 3. Текстовый поиск
+        matches_search = True
+        if query:
+            matches_search = (query in name) or (query in obj_num) or (query in cat.lower()) or (query in desc)
+
+        matches = matches_group and matches_cat and matches_search
         self.points_table.setRowHidden(row, not matches)
+
+    def _update_category_combo_items(self) -> None:
+        if not hasattr(self, "category_combo"):
+            return
+        current_data = self.category_combo.currentData()
+        self.category_combo.blockSignals(True)
+        self.category_combo.clear()
+        self.category_combo.addItem(tr("category.all"), "")
+
+        cats: set[str] = set()
+        for r in range(self.points_table.rowCount()):
+            num_item = self.points_table.item(r, 0)
+            if num_item:
+                c = str(num_item.data(Qt.ItemDataRole.UserRole + 2) or "").strip()
+                if c:
+                    cats.add(c)
+
+        for c in sorted(cats):
+            self.category_combo.addItem(c, c)
+
+        if current_data:
+            idx = self.category_combo.findData(current_data)
+            if idx != -1:
+                self.category_combo.setCurrentIndex(idx)
+            else:
+                self.category_combo.setCurrentIndex(0)
+        else:
+            self.category_combo.setCurrentIndex(0)
+
+        self.category_combo.blockSignals(False)
 
     def _update_counter(self) -> None:
         """Обновление счетчика точек (всего / отфильтровано)."""
         total = self.points_table.rowCount()
         shown = sum(1 for r in range(total) if not self.points_table.isRowHidden(r))
-        query = self.search_input.text().strip() if hasattr(self, "search_input") else ""
         if hasattr(self, "count_label"):
-            if query:
+            if shown < total:
                 self.count_label.setText(tr("points.count_filtered", shown=shown, total=total))
             else:
                 self.count_label.setText(tr("points.count_total", count=total))
@@ -224,6 +292,8 @@ class PointsPanel(QWidget):
         self.btn_delete.setText(tr("btn.delete_point"))
         if hasattr(self, "search_input"):
             self.search_input.setPlaceholderText(tr("search.placeholder"))
+        if hasattr(self, "category_combo") and self.category_combo.count() > 0:
+            self.category_combo.setItemText(0, tr("category.all"))
         self.points_table.setHorizontalHeaderLabels([
             tr("table.col_index"),
             tr("table.col_name"),
@@ -261,6 +331,7 @@ class PointsPanel(QWidget):
         category: str = "",
         description: str = "",
         visible: bool = True,
+        group_id: str | None = None,
     ) -> int:
         """Добавление строки в таблицу."""
         row = self.points_table.rowCount()
@@ -274,6 +345,7 @@ class PointsPanel(QWidget):
         num_item.setData(Qt.ItemDataRole.UserRole + 2, category)
         num_item.setData(Qt.ItemDataRole.UserRole + 3, description)
         num_item.setData(Qt.ItemDataRole.UserRole + 4, visible)
+        num_item.setData(Qt.ItemDataRole.UserRole + 5, group_id)
 
         name_item = QTableWidgetItem(name)
         lat_item = QTableWidgetItem(lat)
@@ -293,8 +365,29 @@ class PointsPanel(QWidget):
         self.points_table.setItem(row, 4, shape_item)
         self.points_table.setItem(row, 5, radius_item)
         self._apply_filter_to_row(row)
+        self._update_category_combo_items()
         self._update_counter()
         return row
+
+    def add_point(self, point: Any) -> int:
+        """Удобный метод добавления точки (модели MapPoint) в таблицу."""
+        from rme_mapper.models.map_point import MapPoint
+        if isinstance(point, MapPoint):
+            return self.add_row(
+                num=str(self.points_table.rowCount() + 1),
+                name=point.name,
+                lat=f"{point.latitude:.6f}",
+                lon=f"{point.longitude:.6f}",
+                shape=point.symbol,
+                radius=f"{point.radius_m:.1f}" if point.zone_enabled else "-",
+                point_id=point.id,
+                object_number=point.object_number,
+                category=point.category,
+                description=point.description,
+                visible=point.visible,
+                group_id=point.group_id,
+            )
+        return -1
 
     def insert_row(
         self,
@@ -310,6 +403,7 @@ class PointsPanel(QWidget):
         category: str = "",
         description: str = "",
         visible: bool = True,
+        group_id: str | None = None,
     ) -> int:
         """Вставка строки по заданному индексу (для восстановления в Undo)."""
         target_row = max(0, min(row, self.points_table.rowCount()))
@@ -323,6 +417,7 @@ class PointsPanel(QWidget):
         num_item.setData(Qt.ItemDataRole.UserRole + 2, category)
         num_item.setData(Qt.ItemDataRole.UserRole + 3, description)
         num_item.setData(Qt.ItemDataRole.UserRole + 4, visible)
+        num_item.setData(Qt.ItemDataRole.UserRole + 5, group_id)
 
         name_item = QTableWidgetItem(name)
         lat_item = QTableWidgetItem(lat)
@@ -350,6 +445,7 @@ class PointsPanel(QWidget):
                 it.setText(str(custom_num) if custom_num else str(r + 1))
 
         self._apply_filter_to_row(target_row)
+        self._update_category_combo_items()
         self._update_counter()
         return target_row
 
@@ -366,6 +462,8 @@ class PointsPanel(QWidget):
         category: str | None = None,
         description: str | None = None,
         visible: bool | None = None,
+        group_id: str | None = None,
+        update_group: bool = False,
     ) -> None:
         """Обновление значений в строке таблицы."""
         if 0 <= row < self.points_table.rowCount():
@@ -386,6 +484,8 @@ class PointsPanel(QWidget):
                     it = self.points_table.item(row, c)
                     if it:
                         it.setForeground(fore_color)
+            if update_group and num_item:
+                num_item.setData(Qt.ItemDataRole.UserRole + 5, group_id)
 
             self.points_table.item(row, 1).setText(name)
             self.points_table.item(row, 2).setText(lat)
@@ -393,6 +493,7 @@ class PointsPanel(QWidget):
             self.points_table.item(row, 4).setText(shape)
             self.points_table.item(row, 5).setText(radius)
             self._apply_filter_to_row(row)
+            self._update_category_combo_items()
             self._update_counter()
 
     def remove_row(self, row: int) -> None:
@@ -404,11 +505,48 @@ class PointsPanel(QWidget):
                 if item:
                     custom_num = item.data(Qt.ItemDataRole.UserRole + 1)
                     item.setText(str(custom_num) if custom_num else str(r + 1))
+            self._update_category_combo_items()
             self._update_counter()
 
     def clear_table(self) -> None:
         """Полная очистка строк таблицы."""
         self.points_table.setRowCount(0)
+        self._update_category_combo_items()
+        self._update_counter()
+
+    def update_point_group_id(self, point_id: str, group_id: str | None) -> None:
+        """Обновление group_id для строки с указанным point_id."""
+        for r in range(self.points_table.rowCount()):
+            num_item = self.points_table.item(r, 0)
+            if num_item and str(num_item.data(Qt.ItemDataRole.UserRole)) == str(point_id):
+                num_item.setData(Qt.ItemDataRole.UserRole + 5, group_id)
+                self._apply_filter_to_row(r)
+                break
+        self._update_counter()
+
+    def update_points_group_ids(self, points_group_map: dict[str, str | None]) -> None:
+        """Массовое обновление group_id для списка точек."""
+        target_ids = {str(k): v for k, v in points_group_map.items()}
+        for r in range(self.points_table.rowCount()):
+            num_item = self.points_table.item(r, 0)
+            if num_item:
+                pid = str(num_item.data(Qt.ItemDataRole.UserRole))
+                if pid in target_ids:
+                    num_item.setData(Qt.ItemDataRole.UserRole + 5, target_ids[pid])
+                    self._apply_filter_to_row(r)
+        self._update_counter()
+
+    def update_points_categories(self, points_cat_map: dict[str, str]) -> None:
+        """Массовое обновление категорий для списка точек."""
+        target_ids = {str(k): v for k, v in points_cat_map.items()}
+        for r in range(self.points_table.rowCount()):
+            num_item = self.points_table.item(r, 0)
+            if num_item:
+                pid = str(num_item.data(Qt.ItemDataRole.UserRole))
+                if pid in target_ids:
+                    num_item.setData(Qt.ItemDataRole.UserRole + 2, target_ids[pid])
+                    self._apply_filter_to_row(r)
+        self._update_category_combo_items()
         self._update_counter()
 
     def selected_rows(self) -> list[int]:

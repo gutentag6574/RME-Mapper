@@ -1,6 +1,7 @@
 """Панель отображения свойств выбранной пользовательской точки."""
 
 import logging
+from typing import Any, Callable
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
@@ -42,6 +43,7 @@ class PropertiesPanel(QWidget):
         self.setObjectName("propertiesPanel")
 
         self._current_point: MapPoint | None = None
+        self._group_name_resolver = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -99,6 +101,11 @@ class PropertiesPanel(QWidget):
         self.prop_category_val = QLabel("—")
         self.prop_category_val.setWordWrap(True)
         name_form.addRow(self.prop_category_lbl, self.prop_category_val)
+
+        self.prop_group_lbl = QLabel()
+        self.prop_group_val = QLabel("—")
+        self.prop_group_val.setWordWrap(True)
+        name_form.addRow(self.prop_group_lbl, self.prop_group_val)
 
         self.prop_description_lbl = QLabel()
         self.prop_description_val = QLabel("—")
@@ -248,6 +255,7 @@ class PropertiesPanel(QWidget):
         self.prop_name_lbl.setText(f"<b>{tr('properties.name')}</b>")
         self.prop_object_number_lbl.setText(f"<b>{tr('properties.object_number')}</b>")
         self.prop_category_lbl.setText(f"<b>{tr('properties.category')}</b>")
+        self.prop_group_lbl.setText(f"<b>{tr('properties.group')}</b>")
         self.prop_description_lbl.setText(f"<b>{tr('properties.description')}</b>")
         self.prop_visibility_lbl.setText(f"<b>{tr('properties.visibility')}</b>")
 
@@ -279,10 +287,21 @@ class PropertiesPanel(QWidget):
         self.prop_container.setVisible(True)
         self._render_point_data(point)
 
+    def set_group_name_resolver(self, resolver: Any) -> None:
+        """Установка функции получения названия группы по ее ID."""
+        self._group_name_resolver = resolver
+        if self._current_point is not None:
+            self._render_point_data(self._current_point)
+
     def _render_point_data(self, point: MapPoint) -> None:
         self.prop_name_val.setText(point.name or "—")
         self.prop_object_number_val.setText(point.object_number or "—")
         self.prop_category_val.setText(point.category or "—")
+        if self._group_name_resolver:
+            grp_name = self._group_name_resolver(point.group_id)
+        else:
+            grp_name = tr("groups.ungrouped") if not point.group_id else point.group_id
+        self.prop_group_val.setText(grp_name or tr("groups.ungrouped"))
         self.prop_description_val.setText(point.description or "—")
         self.prop_visibility_val.setText(tr("properties.visible_yes") if point.visible else tr("properties.visible_no"))
 

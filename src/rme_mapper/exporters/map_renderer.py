@@ -146,6 +146,7 @@ class MapRenderer:
         precomputed_zones: dict[str, Polygon] | None = None,
         raster_source: Path | str | None = None,
         is_raster_visible: bool = True,
+        hidden_group_ids: set[str] | None = None,
     ) -> QImage:
         """Полный рендер карты в QImage заданного разрешения."""
         errors = options.validate()
@@ -216,6 +217,8 @@ class MapRenderer:
 
             # 5. Отрисовка геодезических зон
             user_points = points or []
+            if hidden_group_ids:
+                user_points = [p for p in user_points if p.group_id not in hidden_group_ids]
             if options.include_zones:
                 cls._render_zones(
                     painter=painter,

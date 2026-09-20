@@ -48,6 +48,8 @@ from shapely.geometry import (
 
 from rme_mapper.models.map_layer import LayerRole, MapLayer
 from rme_mapper.models.map_point import MapPoint
+from rme_mapper.models.object_group import ObjectGroup
+from rme_mapper.services.coordinate_service import CoordinateService
 from rme_mapper.services.geodesic_service import GeodesicService
 
 logger = logging.getLogger("rme_mapper.maps.canvas")
@@ -125,9 +127,11 @@ class MapCanvas(QGraphicsView):
         self._drag_start_scene_pos: QPointF | None = None
         self._drag_start_map_coords: tuple[float, float] = (0.0, 0.0)
 
-        # Глобальные флаги видимости точек и зон
+        # Глобальные флаги видимости точек и зон, а также видимость групп
         self._show_points_visible = True
         self._show_zones_visible = True
+        self._group_visibility: dict[str, bool] = {}
+        self._active_crs: str = "OGC:CRS84"
 
         # Растровые слои (GeoTIFF)
         self._raster_layer: MapLayer | None = None
@@ -824,7 +828,7 @@ class MapCanvas(QGraphicsView):
 
         # Преобразование координат сцены: scene_x = map_x, scene_y = -map_y
         item.setPos(px, -py)
-        item.setVisible(point.visible and self._show_points_visible)
+        item.setVisible(point.visible and self._show_points_visible and self.is_group_visible(point.group_id))
 
         self._scene.addItem(item)
         self._user_point_items[point.id] = item
@@ -869,7 +873,7 @@ class MapCanvas(QGraphicsView):
             item.setPen(pen)
 
             item.setPos(px, -py)
-            item.setVisible(point.visible and self._show_points_visible)
+            item.setVisible(point.visible and self._show_points_visible and self.is_group_visible(point.group_id))
             logger.info(
                 "Маркер точки '%s' обновлен: pos=(%s, %s), shape=%s, size=%s",
                 point.name, px, -py, point.symbol, point.size,
@@ -929,7 +933,7 @@ class MapCanvas(QGraphicsView):
         Зона располагается на Z=90.0 (между дорогами и маркером) и масштабируется
         вместе с картой (ItemIgnoresTransformations = False).
         """
-        if not point.zone_enabled or point.radius_m <= 0 or not point.visible or not self._show_zones_visible:
+        if not point.zone_enabled or point.radius_m <= 0 or not point.visible or not self._show_zones_visible or not self.is_group_visible(point.group_id):
             self.remove_point_zone(point.id)
             return
 
@@ -964,7 +968,7 @@ class MapCanvas(QGraphicsView):
             item.setPath(path)
             item.setBrush(brush)
             item.setPen(pen)
-            item.setVisible(point.visible and self._show_zones_visible)
+            item.setVisible(point.visible and self._show_zones_visible and self.is_group_visible(point.group_id))
         else:
             self.remove_point_zone(point.id)
             item = QGraphicsPathItem(path)
@@ -972,7 +976,7 @@ class MapCanvas(QGraphicsView):
             item.setPen(pen)
             item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, False)
             item.setZValue(90.0)
-            item.setVisible(point.visible and self._show_zones_visible)
+            item.setVisible(point.visible and self._show_zones_visible and self.is_group_visible(point.group_id))
             self._scene.addItem(item)
             self._user_zone_items[point.id] = item
 
@@ -1059,7 +1063,7 @@ class MapCanvas(QGraphicsView):
         for pid in self._selected_point_ids:
             pt = self._points_data.get(pid)
             pt_item = self._user_point_items.get(pid)
-            if not pt or not pt_item or not pt.visible or not self._show_points_visible:
+            if not pt or not pt_item or not pt.visible or not self._show_points_visible or not self.is_group_visible(pt.group_id):
                 if pid in self._selection_halo_items:
                     h = self._selection_halo_items.pop(pid)
                     if h.scene() == self._scene:
@@ -1149,6 +1153,9 @@ class MapCanvas(QGraphicsView):
 
     def _should_show_label(self, point_id: str, point_visible: bool) -> bool:
         if not self._show_points_visible or not point_visible:
+            return False
+        pt = self._points_data.get(point_id)
+        if pt and not self.is_group_visible(pt.group_id):
             return False
         if self._labels_mode == "hidden":
             return False
@@ -1258,23 +1265,77 @@ class MapCanvas(QGraphicsView):
     # Глобальная видимость точек и зон
     # -------------------------------------------------------------------------
 
+    # -------------------------------------------------------------------------
+    # Управление видимостью групп и глобальная видимость
+    # -------------------------------------------------------------------------
+
+    def is_group_visible(self, group_id: str | None) -> bool:
+        """Проверка видимости группы. Для точек без группы (None) всегда True."""
+        if group_id is None:
+            return True
+        return self._group_visibility.get(group_id, True)
+
+    def set_group_visibility(self, group_id: str, visible: bool) -> None:
+        """Управление видимостью группы и обновление элементов на карте."""
+        self._group_visibility[group_id] = visible
+        self._update_all_points_and_zones_visibility()
+
+    def set_groups(self, groups: list[ObjectGroup]) -> None:
+        """Синхронизация списка групп и их видимости."""
+        self._group_visibility = {g.id: g.visible for g in groups}
+        self._update_all_points_and_zones_visibility()
+
+    def _update_all_points_and_zones_visibility(self) -> None:
+        """Пересчет видимости всех маркеров, зон, подписей и ореолов с учетом групп."""
+        for pid, item in self._user_point_items.items():
+            pt = self._points_data.get(pid)
+            if pt:
+                vis = self._show_points_visible and pt.visible and self.is_group_visible(pt.group_id)
+                item.setVisible(vis)
+
+        for pid, item in self._user_zone_items.items():
+            pt = self._points_data.get(pid)
+            if pt:
+                vis = (
+                    self._show_zones_visible
+                    and pt.visible
+                    and pt.zone_enabled
+                    and pt.radius_m > 0
+                    and self.is_group_visible(pt.group_id)
+                )
+                item.setVisible(vis)
+
+        self._update_selection_halos()
+        self._recalculate_labels_layout()
+
     def set_all_points_visible(self, visible: bool) -> None:
         """Глобальное переключение видимости пользовательских точек и подписей."""
         self._show_points_visible = visible
-        for pid, item in self._user_point_items.items():
-            pt = self._points_data.get(pid)
-            item_vis = visible and (pt.visible if pt else True)
-            item.setVisible(item_vis)
-        self._update_selection_halos()
-        self._recalculate_labels_layout()
+        self._update_all_points_and_zones_visibility()
 
     def set_all_zones_visible(self, visible: bool) -> None:
         """Глобальное переключение видимости геодезических зон."""
         self._show_zones_visible = visible
-        for pid, item in self._user_zone_items.items():
-            pt = self._points_data.get(pid)
-            item_vis = visible and (pt.visible if pt else True)
-            item.setVisible(item_vis)
+        self._update_all_points_and_zones_visibility()
+
+    def zoom_to_group(self, points: list[MapPoint]) -> None:
+        """Приближение к экстенту точек группы в активной системе координат."""
+        if not points:
+            return
+        active_crs = self.active_crs
+        coords: list[tuple[float, float]] = []
+        for pt in points:
+            try:
+                mx, my = CoordinateService.transform_xy(
+                    pt.longitude, pt.latitude,
+                    source_crs=pt.source_crs,
+                    target_crs=active_crs,
+                )
+                coords.append((mx, my))
+            except Exception as e:
+                logger.warning("Ошибка пересчета координат точки '%s' для зума к группе: %s", pt.name, e)
+        if coords:
+            self.zoom_to_points(coords)
 
     @property
     def show_points_visible(self) -> bool:
@@ -1283,6 +1344,29 @@ class MapCanvas(QGraphicsView):
     @property
     def show_zones_visible(self) -> bool:
         return self._show_zones_visible
+
+    @property
+    def active_crs(self) -> str:
+        return self._active_crs
+
+    def set_active_crs(self, crs: str) -> None:
+        self._active_crs = crs
+
+    def add_point(self, point: MapPoint, map_x: float | None = None, map_y: float | None = None) -> None:
+        """Псевдоним для add_user_point."""
+        self.add_user_point(point, map_x=map_x, map_y=map_y)
+
+    def update_point(self, point: MapPoint, map_x: float | None = None, map_y: float | None = None) -> None:
+        """Псевдоним для update_user_point."""
+        self.update_user_point(point, map_x=map_x, map_y=map_y)
+
+    @property
+    def _marker_items(self) -> dict[str, Any]:
+        return self._user_point_items
+
+    @property
+    def _zone_items(self) -> dict[str, Any]:
+        return self._user_zone_items
 
     # -------------------------------------------------------------------------
     # Центрирование и масштабирование

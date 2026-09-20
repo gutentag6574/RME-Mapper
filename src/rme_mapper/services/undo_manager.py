@@ -185,18 +185,186 @@ class ImportPointsCommand(UndoCommand):
         points: list[MapPoint],
         add_fn: Callable[[list[MapPoint]], None],
         remove_fn: Callable[[list[str]], None],
+        created_groups: list[Any] | None = None,
+        add_groups_fn: Callable[[list[Any]], None] | None = None,
+        remove_groups_fn: Callable[[list[str]], None] | None = None,
         description: str = "Импорт точек",
     ) -> None:
         super().__init__(description)
         self.points = [copy.deepcopy(p) for p in points]
         self._add_fn = add_fn
         self._remove_fn = remove_fn
+        self.created_groups = [copy.deepcopy(g) for g in (created_groups or [])]
+        self._add_groups_fn = add_groups_fn
+        self._remove_groups_fn = remove_groups_fn
 
     def execute(self) -> None:
+        if self._add_groups_fn and self.created_groups:
+            self._add_groups_fn([copy.deepcopy(g) for g in self.created_groups])
         self._add_fn([copy.deepcopy(p) for p in self.points])
 
     def undo(self) -> None:
         self._remove_fn([p.id for p in self.points])
+        if self._remove_groups_fn and self.created_groups:
+            self._remove_groups_fn([g.id for g in self.created_groups])
+
+
+class CreateGroupCommand(UndoCommand):
+    """Команда создания группы объектов."""
+
+    def __init__(
+        self,
+        group: Any,
+        add_fn: Callable[[Any], None],
+        remove_fn: Callable[[str], None],
+        description: str = "Создать группу",
+    ) -> None:
+        super().__init__(description)
+        self.group = copy.deepcopy(group)
+        self._add_fn = add_fn
+        self._remove_fn = remove_fn
+
+    def execute(self) -> None:
+        self._add_fn(copy.deepcopy(self.group))
+
+    def undo(self) -> None:
+        self._remove_fn(self.group.id)
+
+
+class RenameGroupCommand(UndoCommand):
+    """Команда переименования и/или редактирования описания группы."""
+
+    def __init__(
+        self,
+        group_id: str,
+        before_name: str,
+        after_name: str,
+        before_desc: str,
+        after_desc: str,
+        apply_fn: Callable[[str, str, str], None],
+        description: str = "Переименовать группу",
+    ) -> None:
+        super().__init__(description)
+        self.group_id = group_id
+        self.before_name = before_name
+        self.after_name = after_name
+        self.before_desc = before_desc
+        self.after_desc = after_desc
+        self._apply_fn = apply_fn
+
+    def execute(self) -> None:
+        self._apply_fn(self.group_id, self.after_name, self.after_desc)
+
+    def undo(self) -> None:
+        self._apply_fn(self.group_id, self.before_name, self.before_desc)
+
+
+class DeleteGroupCommand(UndoCommand):
+    """Команда удаления группы с переводом участников в Ungrouped и полным восстановлением при отмене."""
+
+    def __init__(
+        self,
+        group: Any,
+        affected_point_ids: list[str],
+        restore_group_fn: Callable[[Any], None],
+        remove_group_fn: Callable[[str], None],
+        set_points_group_fn: Callable[[list[str], str | None], None],
+        description: str = "Удалить группу",
+    ) -> None:
+        super().__init__(description)
+        self.group = copy.deepcopy(group)
+        self.affected_point_ids = list(affected_point_ids)
+        self._restore_group_fn = restore_group_fn
+        self._remove_group_fn = remove_group_fn
+        self._set_points_group_fn = set_points_group_fn
+
+    def execute(self) -> None:
+        self._set_points_group_fn(self.affected_point_ids, None)
+        self._remove_group_fn(self.group.id)
+
+    def undo(self) -> None:
+        self._restore_group_fn(copy.deepcopy(self.group))
+        self._set_points_group_fn(self.affected_point_ids, self.group.id)
+
+
+class AssignPointsToGroupCommand(UndoCommand):
+    """Команда перемещения точек в группу с запоминанием исходной группы для каждой точки."""
+
+    def __init__(
+        self,
+        previous_groups: dict[str, str | None] | None = None,
+        target_group_id: str | None = None,
+        apply_fn: Callable[[dict[str, str | None]], None] | None = None,
+        description: str = "Переместить в группу",
+        *,
+        point_ids: list[str] | None = None,
+        before_groups: dict[str, str | None] | None = None,
+        target_group: str | None = None,
+    ) -> None:
+        super().__init__(description)
+        raw_groups = previous_groups if previous_groups is not None else (before_groups or {})
+        self.previous_groups = dict(raw_groups)
+        self.target_group_id = target_group_id if target_group_id is not None else target_group
+        self._apply_fn = apply_fn or (lambda _: None)
+
+    def execute(self) -> None:
+        target_dict = {pid: self.target_group_id for pid in self.previous_groups}
+        self._apply_fn(target_dict)
+
+    def undo(self) -> None:
+        self._apply_fn(self.previous_groups)
+
+
+class SetGroupVisibilityCommand(UndoCommand):
+    """Команда изменения видимости группы объектов."""
+
+    def __init__(
+        self,
+        group_id: str,
+        before_visible: bool,
+        after_visible: bool,
+        apply_fn: Callable[[str, bool], None],
+        description: str = "Изменить видимость группы",
+    ) -> None:
+        super().__init__(description)
+        self.group_id = group_id
+        self.before_visible = before_visible
+        self.after_visible = after_visible
+        self._apply_fn = apply_fn
+
+    def execute(self) -> None:
+        self._apply_fn(self.group_id, self.after_visible)
+
+    def undo(self) -> None:
+        self._apply_fn(self.group_id, self.before_visible)
+
+
+class BulkChangeCategoryCommand(UndoCommand):
+    """Команда массового изменения категории выбранных точек."""
+
+    def __init__(
+        self,
+        previous_categories: dict[str, str] | None = None,
+        new_category: str = "",
+        apply_fn: Callable[[dict[str, str]], None] | None = None,
+        description: str = "Изменить категорию",
+        *,
+        point_ids: list[str] | None = None,
+        before_categories: dict[str, str] | None = None,
+        target_category: str | None = None,
+    ) -> None:
+        super().__init__(description)
+        raw_cats = previous_categories if previous_categories is not None else (before_categories or {})
+        self.previous_categories = dict(raw_cats)
+        self.new_category = new_category if new_category != "" else (target_category or "")
+        self._apply_fn = apply_fn or (lambda _: None)
+
+    def execute(self) -> None:
+        target_dict = {pid: self.new_category for pid in self.previous_categories}
+        self._apply_fn(target_dict)
+
+    def undo(self) -> None:
+        self._apply_fn(self.previous_categories)
 
 
 class UndoManager:

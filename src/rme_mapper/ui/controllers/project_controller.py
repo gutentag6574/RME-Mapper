@@ -37,6 +37,8 @@ class ProjectController(QObject):
         on_title_changed: Callable[[], None],
         set_status_message: Callable[[str, int], None] | None = None,
         settings_service: Any = None,
+        group_service: Any = None,
+        group_controller: Any = None,
     ) -> None:
         super().__init__(parent_widget)
         self._parent = parent_widget
@@ -48,6 +50,8 @@ class ProjectController(QObject):
         self._on_title_changed = on_title_changed
         self._set_status_message = set_status_message
         self._settings_service = settings_service
+        self._group_service = group_service
+        self._group_controller = group_controller
 
         # Владение состоянием проекта
         self._current_project_path: Path | None = None
@@ -59,6 +63,12 @@ class ProjectController(QObject):
         self._recovery_timer.setSingleShot(True)
         self._recovery_timer.setInterval(3000)
         self._recovery_timer.timeout.connect(self._save_recovery_snapshot_worker)
+
+    def set_group_service(self, service: Any) -> None:
+        self._group_service = service
+
+    def set_group_controller(self, controller: Any) -> None:
+        self._group_controller = controller
 
 
     @property
@@ -109,12 +119,14 @@ class ProjectController(QObject):
         try:
             points = self._point_service.get_points()
             profile = self._map_controller.active_profile
+            groups = self._group_service.list_groups() if self._group_service else []
             project_data = self._project_service.build_project_data(
                 map_path=self._map_controller.map_path,
                 layers=self._map_controller.loaded_layers,
                 points=points,
                 map_id=profile.id if profile else "",
                 map_profile=profile,
+                groups=groups,
             )
             curr_path = str(self._current_project_path) if self._current_project_path else None
             self._project_service.save_recovery_snapshot(project_data, curr_path)
@@ -162,6 +174,8 @@ class ProjectController(QObject):
             return False
 
         self._point_controller.clear_all_points()
+        if self._group_controller:
+            self._group_controller.clear_all_groups()
         self._map_controller.unload_map()
         self._current_project_path = None
         self._project_loaded = False
@@ -207,12 +221,14 @@ class ProjectController(QObject):
         try:
             points = self._point_service.get_points()
             profile = self._map_controller.active_profile
+            groups = self._group_service.list_groups() if self._group_service else []
             project_data = self._project_service.build_project_data(
                 map_path=self._map_controller.map_path,
                 layers=self._map_controller.loaded_layers,
                 points=points,
                 map_id=profile.id if profile else "",
                 map_profile=profile,
+                groups=groups,
             )
             saved_path = self._project_service.save_project(project_data, path)
             self._current_project_path = saved_path
@@ -384,9 +400,11 @@ class ProjectController(QObject):
 
 
     def apply_project_data(self, project: ProjectData) -> None:
-        """Восстановление состояния карты, видимости слоев, точек и зон из проекта."""
-        # 1. Очищаем существующие точки
+        """Восстановление состояния карты, видимости слоев, точек, зон и групп из проекта."""
+        # 1. Очищаем существующие точки и группы
         self._point_controller.clear_all_points()
+        if self._group_controller:
+            self._group_controller.apply_project_groups(project.groups)
 
         # 2. Восстанавливаем видимость слоев
         for layer in self._map_controller.loaded_layers:
@@ -419,6 +437,24 @@ class ProjectController(QObject):
                 zone_green=pt.zone_green,
                 zone_blue=pt.zone_blue,
                 zone_opacity=pt.zone_opacity,
+                object_number=pt.object_number,
+                description=pt.description,
+                category=pt.category,
+                visible=pt.visible,
+                stroke_red=pt.stroke_red,
+                stroke_green=pt.stroke_green,
+                stroke_blue=pt.stroke_blue,
+                stroke_width=pt.stroke_width,
+                opacity=pt.opacity,
+                zone_border_red=pt.zone_border_red,
+                zone_border_green=pt.zone_border_green,
+                zone_border_blue=pt.zone_border_blue,
+                zone_border_width=pt.zone_border_width,
+                zone_border_style=pt.zone_border_style,
+                group_id=pt.group_id,
             )
             self._point_controller._render_point_on_canvas(added_pt)
             self._point_controller.add_point_to_table(added_pt)
+
+        if self._group_controller:
+            self._group_controller.refresh_groups_ui()

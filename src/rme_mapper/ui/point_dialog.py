@@ -175,6 +175,7 @@ class PointDialogData:
     zone_border_blue: int = 138
     zone_border_width: float = 1.5
     zone_border_style: str = "solid"
+    group_id: str | None = None
 
     def __getitem__(self, index: int) -> Any:
         return (
@@ -227,6 +228,9 @@ class PointDialog(QDialog):
         initial_lat: float | None = None,
         initial_lon: float | None = None,
         categories: list[str] | None = None,
+        groups: list[Any] | None = None,
+        current_group_id: str | None = None,
+        group_id: str | None = None,
     ) -> None:
         super().__init__(parent)
         self._boundary_geometry = boundary_geometry
@@ -238,6 +242,8 @@ class PointDialog(QDialog):
         self._map_crs = map_crs
         self._default_name = default_name
         self._categories = list(categories or [])
+        self._groups = list(groups or [])
+        self._initial_group_id = current_group_id if current_group_id is not None else group_id
 
         self.setModal(True)
         self.resize(520, 580)
@@ -294,6 +300,19 @@ class PointDialog(QDialog):
             if cat and self.cat_combo.findText(cat) == -1:
                 self.cat_combo.addItem(cat)
         main_form.addRow(self.cat_label, self.cat_combo)
+
+        # 1.35 Группа (QComboBox: "Без группы", затем группы)
+        self.group_label = QLabel(tr("properties.group"), self)
+        self.group_combo = QComboBox(self)
+        self.group_combo.setObjectName("pointGroupCombo")
+        self.group_combo.addItem(tr("groups.ungrouped"), None)
+        for g in self._groups:
+            self.group_combo.addItem(g.name, g.id)
+        if self._initial_group_id:
+            idx = self.group_combo.findData(self._initial_group_id)
+            if idx != -1:
+                self.group_combo.setCurrentIndex(idx)
+        main_form.addRow(self.group_label, self.group_combo)
 
         # 1.4 Описание (QTextEdit, <=8192 символов)
         self.desc_label = QLabel("Описание:", self)
@@ -780,6 +799,10 @@ class PointDialog(QDialog):
             self.cat_label.setText(tr("dialog.point.category"))
         if hasattr(self, "cat_combo") and self.cat_combo.lineEdit():
             self.cat_combo.lineEdit().setPlaceholderText(tr("dialog.point.category_placeholder"))
+        if hasattr(self, "group_label"):
+            self.group_label.setText(tr("properties.group"))
+        if hasattr(self, "group_combo") and self.group_combo.count() > 0:
+            self.group_combo.setItemText(0, tr("groups.ungrouped"))
         if hasattr(self, "desc_label"):
             self.desc_label.setText(tr("dialog.point.description"))
         if hasattr(self, "desc_edit"):
@@ -888,6 +911,12 @@ class PointDialog(QDialog):
         self.name_edit.setText(point.name)
         self.num_edit.setText(point.object_number)
         self.cat_combo.setCurrentText(point.category)
+        if hasattr(self, "group_combo"):
+            idx = self.group_combo.findData(point.group_id)
+            if idx != -1:
+                self.group_combo.setCurrentIndex(idx)
+            else:
+                self.group_combo.setCurrentIndex(0)
         self.desc_edit.setPlainText(point.description)
 
         # Заполнение DD полей
@@ -1299,6 +1328,7 @@ class PointDialog(QDialog):
             zone_border_blue=zb_b,
             zone_border_width=zb_w,
             zone_border_style=zb_style,
+            group_id=self.group_combo.currentData() if hasattr(self, "group_combo") else None,
         )
         super().accept()
 
@@ -1311,6 +1341,15 @@ class PointDialog(QDialog):
         return self._parsed_data
 
     get_data = get_point_data
+
+    @property
+    def group_id_result(self) -> str | None:
+        """ID выбранной группы."""
+        if hasattr(self, "group_combo"):
+            idx = self.group_combo.currentIndex()
+            if idx >= 0:
+                return self.group_combo.itemData(idx)
+        return None
 
 
 # Псевдоним для обратной совместимости с тестами Этапов 4 и 5
