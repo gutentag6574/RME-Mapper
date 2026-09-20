@@ -49,6 +49,8 @@ class AppSettingsService:
     KEY_POINT_LABEL_CONTENT = "ui/point_label_content"
     KEY_SHOW_POINTS_VISIBLE = "ui/show_points_visible"
     KEY_SHOW_ZONES_VISIBLE = "ui/show_zones_visible"
+    KEY_SHOW_SCALE_INDICATOR = "ui/show_scale_indicator"
+    KEY_SHOW_COORDINATE_GRID = "ui/show_coordinate_grid"
     MAX_RECENT_ITEMS = 10
 
     def __init__(self, settings: Any = _AUTO) -> None:
@@ -520,6 +522,22 @@ class AppSettingsService:
     def set_show_zones_visible(self, visible: bool) -> None:
         """Сохранить глобальную видимость геодезических зон на холсте."""
         self._set_bool(self.KEY_SHOW_ZONES_VISIBLE, visible)
+
+    def get_show_scale_indicator(self) -> bool:
+        """Видимость экранного индикатора масштаба в левом верхнем углу (по умолчанию True)."""
+        return self._get_bool(self.KEY_SHOW_SCALE_INDICATOR, default=True)
+
+    def set_show_scale_indicator(self, visible: bool) -> None:
+        """Сохранить видимость экранного индикатора масштаба."""
+        self._set_bool(self.KEY_SHOW_SCALE_INDICATOR, visible)
+
+    def get_show_coordinate_grid(self) -> bool:
+        """Видимость экранной координатной сетки (по умолчанию False)."""
+        return self._get_bool(self.KEY_SHOW_COORDINATE_GRID, default=False)
+
+    def set_show_coordinate_grid(self, visible: bool) -> None:
+        """Сохранить видимость экранной координатной сетки."""
+        self._set_bool(self.KEY_SHOW_COORDINATE_GRID, visible)
 
     def get_import_presets(self) -> list[dict[str, Any]]:
         """Получить список сохраненных пресетов сопоставления колонок импорта."""

@@ -26,8 +26,11 @@ from PySide6.QtWidgets import (
     QFrame,
     QGraphicsEllipseItem,
     QGraphicsItem,
+    QGraphicsItemGroup,
+    QGraphicsLineItem,
     QGraphicsPathItem,
     QGraphicsPixmapItem,
+    QGraphicsPolygonItem,
     QGraphicsScene,
     QGraphicsSimpleTextItem,
     QGraphicsTextItem,
@@ -46,11 +49,15 @@ from shapely.geometry import (
     Polygon,
 )
 
+from rme_mapper.i18n import tr
+from rme_mapper.maps.scale_overlay import ScaleOverlayWidget
 from rme_mapper.models.map_layer import LayerRole, MapLayer
 from rme_mapper.models.map_point import MapPoint
 from rme_mapper.models.object_group import ObjectGroup
 from rme_mapper.services.coordinate_service import CoordinateService
 from rme_mapper.services.geodesic_service import GeodesicService
+from rme_mapper.services.grid_calculator import GridCalculator
+from rme_mapper.services.scale_service import ScaleService
 
 logger = logging.getLogger("rme_mapper.maps.canvas")
 
@@ -88,6 +95,9 @@ class MapCanvas(QGraphicsView):
     add_point_mode_cancelled = Signal()
     point_moved = Signal(str, float, float, float, float)  # point_id, final_map_x, final_map_y, start_map_x, start_map_y
     move_point_mode_cancelled = Signal()
+    measurement_updated = Signal(str)
+    measurement_finished = Signal(str)
+    measurement_cancelled = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -145,8 +155,31 @@ class MapCanvas(QGraphicsView):
         self._raster_debounce_timer.setInterval(250)
         self._raster_debounce_timer.timeout.connect(self._on_raster_debounce_timeout)
 
+        # Этап 19: Экранный масштаб и координатная сетка
+        self._show_scale_indicator = True
+        self._show_coordinate_grid = False
+        self._scale_overlay = ScaleOverlayWidget(self.viewport())
+        self._grid_item_group: QGraphicsItemGroup | None = None
+        self._grid_debounce_timer = QTimer(self)
+        self._grid_debounce_timer.setSingleShot(True)
+        self._grid_debounce_timer.setInterval(60)
+        self._grid_debounce_timer.timeout.connect(self._render_coordinate_grid)
+
+        # Этап 19: Инструменты измерений (Distance & Area)
+        self._measure_points: list[tuple[float, float]] = []
+        self._measure_temp_pos: tuple[float, float] | None = None
+        self._measure_active_items: list[QGraphicsItem] = []
+        self._measure_completed_items: list[QGraphicsItem] = []
+
+        # Состояние панорамирования средней кнопкой
+        self._is_middle_panning: bool = False
+        self._middle_pan_last_pos: QPointF | None = None
+
         self._setup_view_properties()
         self._create_controls()
+
+        self.horizontalScrollBar().valueChanged.connect(self._on_scroll_changed)
+        self.verticalScrollBar().valueChanged.connect(self._on_scroll_changed)
 
     def _setup_view_properties(self) -> None:
         """Настройка свойств холста и оптимизаций отрисовки."""
@@ -171,6 +204,22 @@ class MapCanvas(QGraphicsView):
         map_y = -scene_pt.y()
         self.cursor_position_changed.emit(map_x, map_y)
 
+        # Панорамирование средней кнопкой
+        if self._is_middle_panning and self._middle_pan_last_pos is not None:
+            delta = pos - self._middle_pan_last_pos
+            self._middle_pan_last_pos = pos
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
+            event.accept()
+            return
+
+        if self._interaction_mode in ("measure_distance", "measure_area"):
+            if self._measure_points:
+                self._measure_temp_pos = (scene_pt.x(), scene_pt.y())
+                self._update_measure_preview()
+            event.accept()
+            return
+
         if self._is_dragging_point and self._drag_point_id:
             item = self._user_point_items.get(self._drag_point_id)
             pt = self._points_data.get(self._drag_point_id)
@@ -192,7 +241,33 @@ class MapCanvas(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mousePressEvent(self, event: Any) -> None:
-        """Обработка клика мыши: выбор точки, создание точки или начало перемещения."""
+        """Обработка клика мыши: выбор точки, создание точки, измерение или начало перемещения."""
+        # Обработка панорамирования средней кнопкой мыши
+        if event.button() == Qt.MouseButton.MiddleButton:
+            self._is_middle_panning = True
+            pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            self._middle_pan_last_pos = pos
+            if self.viewport():
+                self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+            return
+
+        # Режимы измерений
+        if self._interaction_mode in ("measure_distance", "measure_area"):
+            if event.button() == Qt.MouseButton.LeftButton:
+                pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+                scene_pt = self.mapToScene(pos)
+                self._measure_points.append((scene_pt.x(), scene_pt.y()))
+                self._update_measure_preview()
+                event.accept()
+                return
+            elif event.button() == Qt.MouseButton.RightButton:
+                min_pts = 2 if self._interaction_mode == "measure_distance" else 3
+                if len(self._measure_points) >= min_pts:
+                    self._finish_measurement()
+                    event.accept()
+                    return
+
         if self._interaction_mode == "add_point" and event.button() == Qt.MouseButton.LeftButton:
             pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
             scene_pt = self.mapToScene(pos)
@@ -246,8 +321,27 @@ class MapCanvas(QGraphicsView):
 
         super().mousePressEvent(event)
 
+    def mouseDoubleClickEvent(self, event: Any) -> None:
+        """Двойной клик мыши: завершение измерения расстояния или площади."""
+        if self._interaction_mode in ("measure_distance", "measure_area") and event.button() == Qt.MouseButton.LeftButton:
+            self._finish_measurement()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
     def mouseReleaseEvent(self, event: Any) -> None:
-        """Завершение перетаскивания точки или навигации."""
+        """Завершение перетаскивания точки, панорамирования или навигации."""
+        if self._is_middle_panning and event.button() == Qt.MouseButton.MiddleButton:
+            self._is_middle_panning = False
+            self._middle_pan_last_pos = None
+            if self.viewport():
+                if self._interaction_mode in ("measure_distance", "measure_area", "add_point"):
+                    self.viewport().setCursor(Qt.CursorShape.CrossCursor)
+                else:
+                    self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+            event.accept()
+            return
+
         if self._is_dragging_point and self._drag_point_id:
             self._is_dragging_point = False
             pid = self._drag_point_id
@@ -282,8 +376,13 @@ class MapCanvas(QGraphicsView):
             self._raster_debounce_timer.start()
 
     def keyPressEvent(self, event: Any) -> None:
-        """Обработка клавиш холста: отмена режима добавления/перемещения точки по Esc."""
+        """Обработка клавиш холста: отмена режима добавления/перемещения точки или измерения по Esc."""
         if event.key() == Qt.Key.Key_Escape:
+            if self._interaction_mode in ("measure_distance", "measure_area"):
+                self.cancel_measurement()
+                event.accept()
+                return
+
             if self._is_dragging_point and self._drag_point_id and self._drag_start_scene_pos:
                 item = self._user_point_items.get(self._drag_point_id)
                 if item:
@@ -330,8 +429,14 @@ class MapCanvas(QGraphicsView):
         self.cursor_left.emit()
 
     def set_interaction_mode(self, mode: str) -> None:
-        """Установка режима взаимодействия с холстом: 'navigation', 'add_point', 'move_point'."""
+        """Установка режима взаимодействия с холстом."""
+        old_mode = self._interaction_mode
         self._interaction_mode = mode
+
+        # Если уходим из режима измерения, очищаем незавершенное измерение
+        if old_mode in ("measure_distance", "measure_area") and mode not in ("measure_distance", "measure_area"):
+            self._cancel_active_measurement(silent=False)
+
         if mode == "add_point":
             self.setDragMode(QGraphicsView.DragMode.NoDrag)
             if self.viewport():
@@ -340,14 +445,493 @@ class MapCanvas(QGraphicsView):
             self.setDragMode(QGraphicsView.DragMode.NoDrag)
             if self.viewport():
                 self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+        elif mode in ("measure_distance", "measure_area"):
+            self.setDragMode(QGraphicsView.DragMode.NoDrag)
+            self.setCursor(Qt.CursorShape.CrossCursor)
+            if self.viewport():
+                self.viewport().setCursor(Qt.CursorShape.CrossCursor)
         else:
             self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             if self.viewport():
                 self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
 
     @property
     def interaction_mode(self) -> str:
         return self._interaction_mode
+
+    # -------------------------------------------------------------------------
+    # Этап 19: Инструменты измерений (Distance & Area)
+    # -------------------------------------------------------------------------
+
+    def _calculate_measurement_distance(self, pts: list[tuple[float, float]]) -> float:
+        """Суммарное геодезическое расстояние по ломаной в метрах."""
+        if len(pts) < 2:
+            return 0.0
+        total_m = 0.0
+        active_crs = self._active_crs
+        for i in range(len(pts) - 1):
+            x1, y1 = pts[i][0], -pts[i][1]
+            x2, y2 = pts[i + 1][0], -pts[i + 1][1]
+            lon1, lat1 = CoordinateService.transform_xy(x1, y1, active_crs, "OGC:CRS84")
+            lon2, lat2 = CoordinateService.transform_xy(x2, y2, active_crs, "OGC:CRS84")
+            total_m += GeodesicService.calculate_distance(lon1, lat1, lon2, lat2)
+        return total_m
+
+    def _calculate_measurement_area_perimeter(self, pts: list[tuple[float, float]]) -> tuple[float, float]:
+        """Геодезическая площадь (м²) и периметр (м) полигона."""
+        if len(pts) < 3:
+            return 0.0, 0.0
+        active_crs = self._active_crs
+        lons: list[float] = []
+        lats: list[float] = []
+        for p in pts:
+            mx, my = p[0], -p[1]
+            lon, lat = CoordinateService.transform_xy(mx, my, active_crs, "OGC:CRS84")
+            lons.append(lon)
+            lats.append(lat)
+        return GeodesicService.calculate_area_perimeter(lons, lats)
+
+    def _update_measure_preview(self) -> None:
+        """Обновление графических элементов текущего незавершенного измерения."""
+        for item in self._measure_active_items:
+            if item.scene() == self._scene:
+                self._scene.removeItem(item)
+        self._measure_active_items.clear()
+
+        all_pts = list(self._measure_points)
+        if self._measure_temp_pos is not None:
+            all_pts.append(self._measure_temp_pos)
+
+        if not all_pts:
+            return
+
+        scale_x = self.transform().m11()
+        scale_y = abs(self.transform().m22())
+        if scale_x <= 0:
+            scale_x = 1.0
+        if scale_y <= 0:
+            scale_y = 1.0
+
+        line_pen = QPen(QColor("#2563EB"), 2.0, Qt.PenStyle.SolidLine)
+        line_pen.setCosmetic(True)
+
+        preview_pen = QPen(QColor("#3B82F6"), 1.5, Qt.PenStyle.DashLine)
+        preview_pen.setCosmetic(True)
+
+        # 1. Заливка полупрозрачным полигоном (для Area при >= 3 точках)
+        if self._interaction_mode == "measure_area" and len(all_pts) >= 3:
+            poly_path = QPainterPath()
+            poly_path.moveTo(all_pts[0][0], all_pts[0][1])
+            for pt in all_pts[1:]:
+                poly_path.lineTo(pt[0], pt[1])
+            poly_path.closeSubpath()
+
+            poly_item = QGraphicsPathItem(poly_path)
+            poly_item.setBrush(QBrush(QColor(37, 99, 235, 45)))
+            poly_item.setPen(QPen(Qt.PenStyle.NoPen))
+            poly_item.setZValue(115.0)
+            self._scene.addItem(poly_item)
+            self._measure_active_items.append(poly_item)
+
+        # 2. Отрезки линий
+        fixed_count = len(self._measure_points)
+        for i in range(fixed_count - 1):
+            p1 = self._measure_points[i]
+            p2 = self._measure_points[i + 1]
+            seg = QGraphicsLineItem(p1[0], p1[1], p2[0], p2[1])
+            seg.setPen(line_pen)
+            seg.setZValue(120.0)
+            self._scene.addItem(seg)
+            self._measure_active_items.append(seg)
+
+        if self._measure_temp_pos is not None and fixed_count > 0:
+            last_fixed = self._measure_points[-1]
+            rubber = QGraphicsLineItem(last_fixed[0], last_fixed[1], self._measure_temp_pos[0], self._measure_temp_pos[1])
+            rubber.setPen(preview_pen)
+            rubber.setZValue(120.0)
+            self._scene.addItem(rubber)
+            self._measure_active_items.append(rubber)
+
+            if self._interaction_mode == "measure_area" and fixed_count >= 2:
+                first_pt = self._measure_points[0]
+                close_rubber = QGraphicsLineItem(self._measure_temp_pos[0], self._measure_temp_pos[1], first_pt[0], first_pt[1])
+                close_rubber.setPen(preview_pen)
+                close_rubber.setZValue(120.0)
+                self._scene.addItem(close_rubber)
+                self._measure_active_items.append(close_rubber)
+
+        # 3. Вершины (маркеры)
+        vertex_brush = QBrush(QColor("#FFFFFF"))
+        vertex_pen = QPen(QColor("#1D4ED8"), 1.5)
+        vertex_pen.setCosmetic(True)
+        r_scene_x = 4.0 / scale_x
+        r_scene_y = 4.0 / scale_y
+
+        for pt in self._measure_points:
+            v_item = QGraphicsEllipseItem(pt[0] - r_scene_x, pt[1] - r_scene_y, r_scene_x * 2, r_scene_y * 2)
+            v_item.setBrush(vertex_brush)
+            v_item.setPen(vertex_pen)
+            v_item.setZValue(125.0)
+            self._scene.addItem(v_item)
+            self._measure_active_items.append(v_item)
+
+        # 4. Расчет и отображение подписи результата
+        if self._interaction_mode == "measure_distance":
+            dist_m = self._calculate_measurement_distance(all_pts)
+            dist_str = GeodesicService.format_distance(dist_m)
+            result_text = tr("measure.distance_result", dist=dist_str)
+        else:
+            area_m2, perim_m = self._calculate_measurement_area_perimeter(all_pts)
+            area_str = GeodesicService.format_area(area_m2)
+            perim_str = GeodesicService.format_distance(perim_m)
+            result_text = tr("measure.area_result", area=area_str, perim=perim_str)
+
+        anchor_pt = self._measure_temp_pos or (self._measure_points[-1] if self._measure_points else None)
+        min_pts_for_badge = 2 if self._interaction_mode == "measure_distance" else 3
+        if anchor_pt and len(all_pts) >= min_pts_for_badge:
+            badge = QGraphicsSimpleTextItem(result_text)
+            badge.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+            badge.setBrush(QBrush(QColor("#0F172A")))
+            badge.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+            badge.setPos(anchor_pt[0] + 10.0 / scale_x, anchor_pt[1] - 18.0 / scale_y)
+            badge.setZValue(130.0)
+            self._scene.addItem(badge)
+            self._measure_active_items.append(badge)
+
+        self.measurement_updated.emit(result_text)
+
+    def _finish_measurement(self) -> None:
+        """Завершение текущего измерения."""
+        min_pts = 2 if self._interaction_mode == "measure_distance" else 3
+        if len(self._measure_points) < min_pts:
+            self.cancel_measurement()
+            return
+
+        self._measure_temp_pos = None
+        pts = list(self._measure_points)
+
+        for item in self._measure_active_items:
+            if item.scene() == self._scene:
+                self._scene.removeItem(item)
+        self._measure_active_items.clear()
+
+        scale_x = self.transform().m11()
+        scale_y = abs(self.transform().m22())
+        if scale_x <= 0:
+            scale_x = 1.0
+        if scale_y <= 0:
+            scale_y = 1.0
+
+        line_pen = QPen(QColor("#1D4ED8"), 2.0, Qt.PenStyle.SolidLine)
+        line_pen.setCosmetic(True)
+
+        if self._interaction_mode == "measure_area" and len(pts) >= 3:
+            poly_path = QPainterPath()
+            poly_path.moveTo(pts[0][0], pts[0][1])
+            for pt in pts[1:]:
+                poly_path.lineTo(pt[0], pt[1])
+            poly_path.closeSubpath()
+
+            poly_item = QGraphicsPathItem(poly_path)
+            poly_item.setBrush(QBrush(QColor(37, 99, 235, 45)))
+            poly_item.setPen(line_pen)
+            poly_item.setZValue(115.0)
+            self._scene.addItem(poly_item)
+            self._measure_completed_items.append(poly_item)
+
+            area_m2, perim_m = self._calculate_measurement_area_perimeter(pts)
+            area_str = GeodesicService.format_area(area_m2)
+            perim_str = GeodesicService.format_distance(perim_m)
+            final_text = tr("measure.area_result", area=area_str, perim=perim_str)
+        else:
+            for i in range(len(pts) - 1):
+                seg = QGraphicsLineItem(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1])
+                seg.setPen(line_pen)
+                seg.setZValue(120.0)
+                self._scene.addItem(seg)
+                self._measure_completed_items.append(seg)
+
+            dist_m = self._calculate_measurement_distance(pts)
+            dist_str = GeodesicService.format_distance(dist_m)
+            final_text = tr("measure.distance_result", dist=dist_str)
+
+        vertex_brush = QBrush(QColor("#FFFFFF"))
+        vertex_pen = QPen(QColor("#1E3A8A"), 1.5)
+        vertex_pen.setCosmetic(True)
+        r_scene_x = 4.0 / scale_x
+        r_scene_y = 4.0 / scale_y
+
+        for pt in pts:
+            v_item = QGraphicsEllipseItem(pt[0] - r_scene_x, pt[1] - r_scene_y, r_scene_x * 2, r_scene_y * 2)
+            v_item.setBrush(vertex_brush)
+            v_item.setPen(vertex_pen)
+            v_item.setZValue(125.0)
+            self._scene.addItem(v_item)
+            self._measure_completed_items.append(v_item)
+
+        badge = QGraphicsSimpleTextItem(final_text)
+        badge.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        badge.setBrush(QBrush(QColor("#0F172A")))
+        badge.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+        badge.setPos(pts[-1][0] + 10.0 / scale_x, pts[-1][1] - 18.0 / scale_y)
+        badge.setZValue(130.0)
+        self._scene.addItem(badge)
+        self._measure_completed_items.append(badge)
+
+        self._measure_points.clear()
+        self._measure_temp_pos = None
+
+        self.set_interaction_mode("navigation")
+        self.measurement_finished.emit(final_text)
+
+    def cancel_measurement(self) -> None:
+        """Отмена текущего незавершенного измерения по Esc или переключении инструмента."""
+        self._cancel_active_measurement(silent=False)
+
+    def _cancel_active_measurement(self, silent: bool = False) -> None:
+        for item in self._measure_active_items:
+            if item.scene() == self._scene:
+                self._scene.removeItem(item)
+        self._measure_active_items.clear()
+        self._measure_points.clear()
+        self._measure_temp_pos = None
+        if self._interaction_mode in ("measure_distance", "measure_area"):
+            self._interaction_mode = "navigation"
+            self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            if self.viewport():
+                self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+        if not silent:
+            self.measurement_cancelled.emit()
+
+    def clear_measurements(self) -> None:
+        """Очистка всех измерений (активных и завершенных) с холста."""
+        for item in self._measure_active_items:
+            if item.scene() == self._scene:
+                self._scene.removeItem(item)
+        self._measure_active_items.clear()
+
+        for item in self._measure_completed_items:
+            if item.scene() == self._scene:
+                self._scene.removeItem(item)
+        self._measure_completed_items.clear()
+
+        self._measure_points.clear()
+        self._measure_temp_pos = None
+
+    def has_measurements(self) -> bool:
+        """Проверка наличия созданных элементов измерений."""
+        return bool(self._measure_points or self._measure_completed_items or self._measure_active_items)
+
+    @property
+    def mode(self) -> str:
+        """Режим взаимодействия холста."""
+        if self._interaction_mode == "navigation":
+            return "default"
+        return self._interaction_mode
+
+    def start_measurement(self, mode: str) -> None:
+        """Запуск режима измерения ('measure_distance' или 'measure_area')."""
+        self.set_interaction_mode(mode)
+
+    def _add_measurement_vertex(self, scene_pos: QPointF | tuple[float, float]) -> None:
+        """Добавление вершины измерения в координатах сцены (вспомогательный метод)."""
+        if isinstance(scene_pos, QPointF):
+            pt = (scene_pos.x(), scene_pos.y())
+        else:
+            pt = (float(scene_pos[0]), float(scene_pos[1]))
+        self._measure_points.append(pt)
+        self._update_measure_preview()
+
+    @property
+    def _measure_vertices(self) -> list[QPointF]:
+        """Список зафиксированных вершин текущего измерения."""
+        return [QPointF(p[0], p[1]) for p in self._measure_points]
+
+    @property
+    def _finished_measurements(self) -> list[QGraphicsItem]:
+        """Список завершенных графических элементов измерений."""
+        return self._measure_completed_items
+
+    @property
+    def _rubber_band_line(self) -> QGraphicsLineItem | None:
+        """Элемент резиновой линии следующего сегмента."""
+        for item in self._measure_active_items:
+            if isinstance(item, QGraphicsLineItem):
+                return item
+        return None
+
+    def _update_rubber_band(self, pos: QPointF) -> None:
+        """Обновление позиции плавающего курсора для резиновой линии."""
+        self._measure_temp_pos = (pos.x(), pos.y())
+        self._update_measure_preview()
+
+    def _calculate_current_measurement(self) -> tuple[float, float]:
+        """Расчет текущих метрик (дистанция/площадь, периметр) по зафиксированным точкам."""
+        if self._interaction_mode == "measure_area":
+            return self._calculate_measurement_area_perimeter(self._measure_points)
+        else:
+            return self._calculate_measurement_distance(self._measure_points), 0.0
+
+    # -------------------------------------------------------------------------
+    # Этап 19: Масштабная линейка и координатная сетка
+    # -------------------------------------------------------------------------
+
+    def update_scale_indicator(self) -> None:
+        """Обновление экранного индикатора масштаба в левом верхнем углу."""
+        if not hasattr(self, "_scale_overlay"):
+            return
+
+        if not self._show_scale_indicator:
+            self._scale_overlay.set_indicator_visible(False)
+            return
+
+        # Проверка наличия активной карты
+        if not self._boundary_bounds and not self._layer_items and not self._raster_item and not self._scene.items():
+            self._scale_overlay.set_map_loaded(False)
+            return
+
+        vp = self.viewport()
+        vp_w = float(vp.width()) if (vp and vp.width() > 50) else float(self.width() if self.width() > 50 else 800)
+        vp_h = float(vp.height()) if (vp and vp.height() > 50) else float(self.height() if self.height() > 50 else 600)
+
+        center_x = vp_w / 2.0
+        center_y = vp_h / 2.0
+        half_span_px = 60.0
+
+        p1 = self.mapToScene(QPointF(center_x - half_span_px, center_y).toPoint())
+        p2 = self.mapToScene(QPointF(center_x + half_span_px, center_y).toPoint())
+
+        map_x1, map_y = p1.x(), -p1.y()
+        map_x2 = p2.x()
+
+        res = ScaleService.calculate_scale_for_span(
+            map_x1,
+            map_x2,
+            map_y,
+            half_span_px * 2.0,
+            self._active_crs,
+        )
+        if res is not None:
+            nice_dist, actual_px, label = res
+            self._scale_overlay.set_map_loaded(True)
+            self._scale_overlay.set_indicator_visible(True)
+            self._scale_overlay.update_scale(label, actual_px, distance_m=nice_dist)
+            self._scale_overlay.move(12, 12)
+            self._scale_overlay.raise_()
+        else:
+            self._scale_overlay.hide()
+
+    def set_scale_indicator_visible(self, visible: bool) -> None:
+        """Включение или выключение экранного индикатора масштаба."""
+        self._show_scale_indicator = visible
+        if hasattr(self, "_scale_overlay"):
+            self._scale_overlay.set_indicator_visible(visible)
+            if visible:
+                self.update_scale_indicator()
+
+    @property
+    def show_scale_indicator(self) -> bool:
+        return self._show_scale_indicator
+
+    def set_coordinate_grid_visible(self, visible: bool) -> None:
+        """Включение или выключение отображения координатной сетки."""
+        self._show_coordinate_grid = visible
+        if visible:
+            self._render_coordinate_grid()
+        else:
+            self._clear_coordinate_grid()
+
+    @property
+    def show_coordinate_grid(self) -> bool:
+        return self._show_coordinate_grid
+
+    def _on_scroll_changed(self) -> None:
+        """Обработка смещения полос прокрутки для обновления масштаба и сетки."""
+        self.update_scale_indicator()
+        if self._show_coordinate_grid:
+            self._grid_debounce_timer.start()
+
+    def _render_coordinate_grid(self) -> None:
+        """Расчет и перерисовка линий и подписей координатной сетки."""
+        if not self._show_coordinate_grid:
+            self._clear_coordinate_grid()
+            return
+
+        if not self._boundary_bounds and not self._layer_items and not self._raster_item:
+            self._clear_coordinate_grid()
+            return
+
+        vp_rect = self.viewport().rect()
+        if vp_rect.width() < 50 or vp_rect.height() < 50:
+            vp_rect = self.rect()
+            if vp_rect.width() < 50 or vp_rect.height() < 50:
+                from PySide6.QtCore import QRect
+                vp_rect = QRect(0, 0, 800, 600)
+
+        visible_scene_rect = self.mapToScene(vp_rect).boundingRect()
+        min_x = visible_scene_rect.left()
+        max_x = visible_scene_rect.right()
+        min_y = -visible_scene_rect.bottom()
+        max_y = -visible_scene_rect.top()
+
+        grid_res = GridCalculator.calculate_grid((min_x, min_y, max_x, max_y), self._active_crs)
+        if grid_res is None:
+            self._clear_coordinate_grid()
+            return
+
+        self._clear_coordinate_grid()
+        self._grid_item_group = QGraphicsItemGroup()
+        self._grid_item_group.setZValue(80.0)
+
+        pen = QPen(QColor(148, 163, 184, 110), 1.0, Qt.PenStyle.DotLine)
+        pen.setCosmetic(True)
+
+        scale_x = self.transform().m11()
+        scale_y = abs(self.transform().m22())
+        if scale_x <= 0:
+            scale_x = 1.0
+        if scale_y <= 0:
+            scale_y = 1.0
+
+        label_font = QFont("Segoe UI", 8)
+
+        # 1. Вертикальные линии (X / Longitude)
+        for vl in grid_res.vertical_lines:
+            line = QGraphicsLineItem(vl.coord, -max_y, vl.coord, -min_y)
+            line.setPen(pen)
+            self._grid_item_group.addToGroup(line)
+
+            lbl_item = QGraphicsSimpleTextItem(vl.label)
+            lbl_item.setFont(label_font)
+            lbl_item.setBrush(QBrush(QColor("#475569")))
+            lbl_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+            lbl_item.setPos(vl.coord + 2.0 / scale_x, -max_y + 4.0 / scale_y)
+            self._grid_item_group.addToGroup(lbl_item)
+
+        # 2. Горизонтальные линии (Y / Latitude)
+        for hl in grid_res.horizontal_lines:
+            line = QGraphicsLineItem(min_x, -hl.coord, max_x, -hl.coord)
+            line.setPen(pen)
+            self._grid_item_group.addToGroup(line)
+
+            lbl_item = QGraphicsSimpleTextItem(hl.label)
+            lbl_item.setFont(label_font)
+            lbl_item.setBrush(QBrush(QColor("#475569")))
+            lbl_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+            lbl_item.setPos(min_x + 4.0 / scale_x, -hl.coord - 12.0 / scale_y)
+            self._grid_item_group.addToGroup(lbl_item)
+
+        self._scene.addItem(self._grid_item_group)
+
+    def _clear_coordinate_grid(self) -> None:
+        """Удаление координатной сетки со сцены."""
+        if self._grid_item_group is not None:
+            if self._grid_item_group.scene() == self._scene:
+                self._scene.removeItem(self._grid_item_group)
+            self._grid_item_group = None
+
 
 
     def _create_controls(self) -> None:
@@ -461,14 +1045,21 @@ class MapCanvas(QGraphicsView):
         if hasattr(self, "btn_open_map"):
             self.btn_open_map.setText(tr("startup.open_map_btn"))
 
-    def show_empty_state(self) -> None:
+        if hasattr(self, "_scale_overlay") and self._scale_overlay.is_indicator_visible():
+            self.update_scale_indicator()
+        if self._show_coordinate_grid:
+            self._render_coordinate_grid()
 
+    def show_empty_state(self) -> None:
         """Показ экрана пустого состояния холста."""
         if hasattr(self, "empty_overlay"):
             self.empty_overlay.setVisible(True)
             self.empty_overlay.raise_()
         if hasattr(self, "btn_fit"):
             self.btn_fit.setVisible(False)
+        if hasattr(self, "_scale_overlay"):
+            self._scale_overlay.set_map_loaded(False)
+        self._clear_coordinate_grid()
 
     def hide_empty_state(self) -> None:
         """Скрытие экрана пустого состояния холста при наличии загруженных данных."""
@@ -476,9 +1067,19 @@ class MapCanvas(QGraphicsView):
             self.empty_overlay.setVisible(False)
         if hasattr(self, "btn_fit"):
             self.btn_fit.setVisible(True)
+        if hasattr(self, "_scale_overlay"):
+            self._scale_overlay.set_map_loaded(True)
+            self.update_scale_indicator()
+        if self._show_coordinate_grid:
+            self._grid_debounce_timer.start()
 
     def clear_map(self) -> None:
-        """Полная очистка карты (слои, границы, точки, зоны, растр)."""
+        """Полная очистка карты (слои, границы, точки, зоны, растр, сетка, измерения)."""
+        self.clear_measurements()
+        self._clear_coordinate_grid()
+        if hasattr(self, "_scale_overlay"):
+            self._scale_overlay.set_map_loaded(False)
+
         self.clear_user_points()
         for item in self._layer_items.values():
             self._scene.removeItem(item)
@@ -1351,6 +1952,9 @@ class MapCanvas(QGraphicsView):
 
     def set_active_crs(self, crs: str) -> None:
         self._active_crs = crs
+        self.update_scale_indicator()
+        if self._show_coordinate_grid:
+            self._render_coordinate_grid()
 
     def add_point(self, point: MapPoint, map_x: float | None = None, map_y: float | None = None) -> None:
         """Псевдоним для add_user_point."""
@@ -1516,6 +2120,9 @@ class MapCanvas(QGraphicsView):
         self._current_zoom = 1.0
         if self.viewport().width() > 100 and self.viewport().height() > 100:
             self._initial_fit_done = True
+        self.update_scale_indicator()
+        if self._show_coordinate_grid:
+            self._render_coordinate_grid()
         logger.debug("Выполнен fit_to_view для охвата: %s", padded_rect)
 
     def set_error(self, message: str) -> None:
@@ -1554,6 +2161,9 @@ class MapCanvas(QGraphicsView):
             self.scale(factor, factor)
             self._current_zoom = new_zoom
             self._recalculate_labels_layout()
+            self.update_scale_indicator()
+            if self._show_coordinate_grid:
+                self._grid_debounce_timer.start()
             if self._raster_provider and self._raster_item and self._raster_item.isVisible():
                 self._raster_debounce_timer.start()
             event.accept()
@@ -1577,6 +2187,15 @@ class MapCanvas(QGraphicsView):
             btn_width,
             btn_height,
         )
+
+        if hasattr(self, "_scale_overlay"):
+            self._scale_overlay.move(12, 12)
+        self.update_scale_indicator()
+        if self._show_coordinate_grid:
+            if self._grid_item_group is None:
+                self._render_coordinate_grid()
+            else:
+                self._grid_debounce_timer.start()
 
         if hasattr(self, "empty_overlay"):
             self.empty_overlay.setGeometry(0, 0, self.viewport().width(), self.viewport().height())

@@ -196,6 +196,11 @@ class MainWindow(QMainWindow):
         self.map_canvas.map_point_clicked.connect(lambda mx, my: self.add_pt_map_action.setChecked(False))
         self.points_panel.selection_changed.connect(self._on_selection_changed_for_actions)
 
+        # Сигналы измерений
+        self.map_canvas.measurement_updated.connect(self._on_measurement_updated)
+        self.map_canvas.measurement_finished.connect(self._on_measurement_finished)
+        self.map_canvas.measurement_cancelled.connect(self._on_measurement_cancelled)
+
         # Тема оформления
         self._theme_manager = get_theme_manager()
         self._theme_manager.apply_theme(self)
@@ -363,6 +368,27 @@ class MainWindow(QMainWindow):
         self.export_map_image_action.setEnabled(False)
         self.export_menu.addAction(self.export_map_image_action)
 
+        # Меню: Инструменты
+        self.tools_menu = menu_bar.addMenu("")
+        self.measure_distance_action = QAction(self)
+        self.measure_distance_action.setCheckable(True)
+        self.measure_distance_action.toggled.connect(self._toggle_measure_distance)
+        self.measure_distance_action.setEnabled(False)
+        self.tools_menu.addAction(self.measure_distance_action)
+
+        self.measure_area_action = QAction(self)
+        self.measure_area_action.setCheckable(True)
+        self.measure_area_action.toggled.connect(self._toggle_measure_area)
+        self.measure_area_action.setEnabled(False)
+        self.tools_menu.addAction(self.measure_area_action)
+
+        self.tools_menu.addSeparator()
+
+        self.clear_measurements_action = QAction(self)
+        self.clear_measurements_action.triggered.connect(self._clear_measurements)
+        self.clear_measurements_action.setEnabled(False)
+        self.tools_menu.addAction(self.clear_measurements_action)
+
         # Меню: Вид
         self.view_menu = menu_bar.addMenu("")
 
@@ -454,6 +480,20 @@ class MainWindow(QMainWindow):
         self.view_menu.addAction(self.show_zones_action)
 
         self.view_menu.addSeparator()
+
+        self.toggle_scale_action = QAction(self)
+        self.toggle_scale_action.setCheckable(True)
+        self.toggle_scale_action.setChecked(self._settings_service.get_show_scale_indicator())
+        self.toggle_scale_action.toggled.connect(self._toggle_scale_indicator)
+        self.view_menu.addAction(self.toggle_scale_action)
+
+        self.toggle_grid_action = QAction(self)
+        self.toggle_grid_action.setCheckable(True)
+        self.toggle_grid_action.setChecked(self._settings_service.get_show_coordinate_grid())
+        self.toggle_grid_action.toggled.connect(self._toggle_coordinate_grid)
+        self.view_menu.addAction(self.toggle_grid_action)
+
+        self.view_menu.addSeparator()
         self.view_menu.addAction(self.show_all_points_action)
         self.view_menu.addAction(self.zoom_to_selected_action)
 
@@ -509,6 +549,8 @@ class MainWindow(QMainWindow):
             self.add_pt_map_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView))
             self.move_pt_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_ArrowRight))
             self.fit_map_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_TitleBarMaxButton))
+            self.measure_distance_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_FileDialogInfoView))
+            self.measure_area_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView))
 
         # Добавление существующих действий в тулбар (без создания дубликатов)
         self.main_toolbar.addAction(self.open_map_action)
@@ -521,6 +563,10 @@ class MainWindow(QMainWindow):
         self.main_toolbar.addAction(self.add_pt_action)
         self.main_toolbar.addAction(self.add_pt_map_action)
         self.main_toolbar.addAction(self.move_pt_action)
+        self.main_toolbar.addSeparator()
+        self.main_toolbar.addAction(self.measure_distance_action)
+        self.main_toolbar.addAction(self.measure_area_action)
+        self.main_toolbar.addSeparator()
         self.main_toolbar.addAction(self.fit_map_action)
 
     def _create_central_layout(self) -> None:
@@ -688,6 +734,7 @@ class MainWindow(QMainWindow):
 
     def _on_map_loaded(self, crs: str) -> None:
         """Слушатель успешной загрузки карты контроллером."""
+        self.map_canvas.set_active_crs(crs)
         self.point_controller.reproject_all_points(crs)
         if hasattr(self, "map_crs_label"):
             self.map_crs_label.setText(crs)
@@ -697,6 +744,10 @@ class MainWindow(QMainWindow):
         self._update_map_dependent_actions(True)
         if hasattr(self, "points_panel"):
             self._on_points_count_changed(self.points_panel.total_count, self.points_panel.shown_count)
+        if hasattr(self, "toggle_grid_action") and self.toggle_grid_action.isChecked():
+            self.map_canvas.set_coordinate_grid_visible(True)
+        if hasattr(self, "toggle_scale_action") and self.toggle_scale_action.isChecked():
+            self.map_canvas.set_scale_indicator_visible(True)
 
     def _on_map_title_changed(self, title: str) -> None:
         """Слушатель изменения заголовка карты."""
@@ -751,6 +802,19 @@ class MainWindow(QMainWindow):
         if hasattr(self, "zoom_to_selected_action"):
             has_sel = len(self.points_panel.selected_point_ids()) > 0 if hasattr(self, "points_panel") else False
             self.zoom_to_selected_action.setEnabled(enabled and has_sel)
+        if hasattr(self, "measure_distance_action"):
+            self.measure_distance_action.setEnabled(enabled)
+            if not enabled and self.measure_distance_action.isChecked():
+                self.measure_distance_action.setChecked(False)
+        if hasattr(self, "measure_area_action"):
+            self.measure_area_action.setEnabled(enabled)
+            if not enabled and self.measure_area_action.isChecked():
+                self.measure_area_action.setChecked(False)
+        if hasattr(self, "clear_measurements_action"):
+            has_meas = self.map_canvas.has_measurements() if hasattr(self, "map_canvas") else False
+            self.clear_measurements_action.setEnabled(enabled and has_meas)
+        if not enabled and hasattr(self, "map_canvas"):
+            self.map_canvas.clear_measurements()
 
     def _on_selection_changed_for_actions(self) -> None:
         """Обновление доступности действий меню Правка и Координаты при изменении выделения."""
@@ -803,16 +867,126 @@ class MainWindow(QMainWindow):
         """Переключение режима интерактивного создания точки кликом по карте."""
         if checked:
             if self.map_controller.active_profile is None and self.map_controller.map_path is None:
+                self.add_pt_map_action.blockSignals(True)
                 self.add_pt_map_action.setChecked(False)
+                self.add_pt_map_action.blockSignals(False)
                 QMessageBox.information(
                     self,
                     tr("dialog.no_map_title"),
                     tr("dialog.no_map_text"),
                 )
                 return
+            if hasattr(self, "measure_distance_action") and self.measure_distance_action.isChecked():
+                self.measure_distance_action.blockSignals(True)
+                self.measure_distance_action.setChecked(False)
+                self.measure_distance_action.blockSignals(False)
+            if hasattr(self, "measure_area_action") and self.measure_area_action.isChecked():
+                self.measure_area_action.blockSignals(True)
+                self.measure_area_action.setChecked(False)
+                self.measure_area_action.blockSignals(False)
+            self.map_canvas.cancel_measurement()
             self.point_controller.start_add_point_on_map_mode()
         else:
             self.point_controller.cancel_add_point_on_map_mode()
+
+    def _toggle_measure_distance(self, checked: bool) -> None:
+        """Переключение режима измерения расстояния."""
+        if checked:
+            if self.map_controller.active_profile is None and self.map_controller.map_path is None:
+                self.measure_distance_action.blockSignals(True)
+                self.measure_distance_action.setChecked(False)
+                self.measure_distance_action.blockSignals(False)
+                QMessageBox.information(
+                    self,
+                    tr("dialog.no_map_title"),
+                    tr("dialog.no_map_text"),
+                )
+                return
+            if hasattr(self, "measure_area_action") and self.measure_area_action.isChecked():
+                self.measure_area_action.blockSignals(True)
+                self.measure_area_action.setChecked(False)
+                self.measure_area_action.blockSignals(False)
+            if hasattr(self, "add_pt_map_action") and self.add_pt_map_action.isChecked():
+                self.add_pt_map_action.blockSignals(True)
+                self.add_pt_map_action.setChecked(False)
+                self.add_pt_map_action.blockSignals(False)
+            if hasattr(self, "point_controller"):
+                self.point_controller.cancel_move_point_mode()
+            self.map_canvas.start_measurement("measure_distance")
+        else:
+            if self.map_canvas.interaction_mode == "measure_distance":
+                self.map_canvas.cancel_measurement()
+
+    def _toggle_measure_area(self, checked: bool) -> None:
+        """Переключение режима измерения площади."""
+        if checked:
+            if self.map_controller.active_profile is None and self.map_controller.map_path is None:
+                self.measure_area_action.blockSignals(True)
+                self.measure_area_action.setChecked(False)
+                self.measure_area_action.blockSignals(False)
+                QMessageBox.information(
+                    self,
+                    tr("dialog.no_map_title"),
+                    tr("dialog.no_map_text"),
+                )
+                return
+            if hasattr(self, "measure_distance_action") and self.measure_distance_action.isChecked():
+                self.measure_distance_action.blockSignals(True)
+                self.measure_distance_action.setChecked(False)
+                self.measure_distance_action.blockSignals(False)
+            if hasattr(self, "add_pt_map_action") and self.add_pt_map_action.isChecked():
+                self.add_pt_map_action.blockSignals(True)
+                self.add_pt_map_action.setChecked(False)
+                self.add_pt_map_action.blockSignals(False)
+            if hasattr(self, "point_controller"):
+                self.point_controller.cancel_move_point_mode()
+            self.map_canvas.start_measurement("measure_area")
+        else:
+            if self.map_canvas.interaction_mode == "measure_area":
+                self.map_canvas.cancel_measurement()
+
+    def _clear_measurements(self) -> None:
+        """Очистка всех измерений на карте."""
+        self.map_canvas.clear_measurements()
+        if hasattr(self, "clear_measurements_action"):
+            self.clear_measurements_action.setEnabled(False)
+        self._show_status_message(tr("measure.cleared"), 3000)
+
+    def _on_measurement_updated(self, text: str) -> None:
+        """Обработка обновления промежуточных результатов измерения."""
+        self._show_status_message(text)
+        if hasattr(self, "clear_measurements_action"):
+            self.clear_measurements_action.setEnabled(self.map_canvas.has_measurements())
+
+    def _on_measurement_finished(self, text: str) -> None:
+        """Обработка завершения измерения полилинии или полигона."""
+        self._show_status_message(text)
+        if hasattr(self, "measure_distance_action"):
+            self.measure_distance_action.setChecked(False)
+        if hasattr(self, "measure_area_action"):
+            self.measure_area_action.setChecked(False)
+        if hasattr(self, "clear_measurements_action"):
+            self.clear_measurements_action.setEnabled(self.map_canvas.has_measurements())
+
+    def _on_measurement_cancelled(self) -> None:
+        """Обработка отмены текущего режима измерения."""
+        if hasattr(self, "measure_distance_action"):
+            self.measure_distance_action.setChecked(False)
+        if hasattr(self, "measure_area_action"):
+            self.measure_area_action.setChecked(False)
+        self._show_status_message(tr("measure.cancelled"), 3000)
+        if hasattr(self, "clear_measurements_action"):
+            self.clear_measurements_action.setEnabled(self.map_canvas.has_measurements())
+
+    def _toggle_scale_indicator(self, checked: bool) -> None:
+        """Переключение видимости экранного масштаба."""
+        self._settings_service.set_show_scale_indicator(checked)
+        self.map_canvas.set_scale_indicator_visible(checked)
+
+    def _toggle_coordinate_grid(self, checked: bool) -> None:
+        """Переключение видимости координатной сетки."""
+        self._settings_service.set_show_coordinate_grid(checked)
+        self.map_canvas.set_coordinate_grid_visible(checked)
 
     def _set_labels_mode(self, mode: str) -> None:
         """Переключение режима отображения подписей точек с проверкой порога производительности."""
@@ -959,6 +1133,16 @@ class MainWindow(QMainWindow):
             self.show_zones_action.setChecked(show_zn)
         self.map_canvas.set_all_zones_visible(show_zn)
 
+        scale_vis = self._settings_service.get_show_scale_indicator()
+        if hasattr(self, "toggle_scale_action"):
+            self.toggle_scale_action.setChecked(scale_vis)
+        self.map_canvas.set_scale_indicator_visible(scale_vis)
+
+        grid_vis = self._settings_service.get_show_coordinate_grid()
+        if hasattr(self, "toggle_grid_action"):
+            self.toggle_grid_action.setChecked(grid_vis)
+        self.map_canvas.set_coordinate_grid_visible(grid_vis)
+
     def save_ui_state(self, force: bool = False) -> None:
         """Сохранение геометрии, состояния сплиттера и видимости панелей."""
         is_max = self.isMaximized()
@@ -1082,6 +1266,24 @@ class MainWindow(QMainWindow):
             self.show_points_action.setText(tr("action.show_points"))
         if hasattr(self, "show_zones_action"):
             self.show_zones_action.setText(tr("action.show_zones"))
+        if hasattr(self, "tools_menu"):
+            self.tools_menu.setTitle(tr("menu.tools"))
+        if hasattr(self, "measure_distance_action"):
+            self.measure_distance_action.setText(tr("action.measure_distance"))
+            self.measure_distance_action.setToolTip(tr("tooltip.measure_distance"))
+            self.measure_distance_action.setStatusTip(tr("action.measure_distance_tip"))
+        if hasattr(self, "measure_area_action"):
+            self.measure_area_action.setText(tr("action.measure_area"))
+            self.measure_area_action.setToolTip(tr("tooltip.measure_area"))
+            self.measure_area_action.setStatusTip(tr("action.measure_area_tip"))
+        if hasattr(self, "clear_measurements_action"):
+            self.clear_measurements_action.setText(tr("action.clear_measurements"))
+            self.clear_measurements_action.setToolTip(tr("tooltip.clear_measurements"))
+            self.clear_measurements_action.setStatusTip(tr("action.clear_measurements_tip"))
+        if hasattr(self, "toggle_scale_action"):
+            self.toggle_scale_action.setText(tr("menu.scale_indicator"))
+        if hasattr(self, "toggle_grid_action"):
+            self.toggle_grid_action.setText(tr("menu.coordinate_grid"))
 
         self.layers_panel.retranslate_ui()
         if hasattr(self, "groups_panel"):

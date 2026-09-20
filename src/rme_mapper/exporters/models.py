@@ -41,6 +41,7 @@ class ImageExportOptions:
     legend_position: str = "bottom_right"  # 'bottom_right', 'bottom_left', 'top_right', 'top_left'
     include_scale_bar: bool = True
     include_north_arrow: bool = True
+    include_grid: bool = False
 
     # Фон и качество
     background_color: str = "#FFFFFF"

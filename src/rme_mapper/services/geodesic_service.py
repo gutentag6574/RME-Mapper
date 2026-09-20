@@ -153,3 +153,70 @@ class GeodesicService:
                 return f"{int(radius_m)} {unit_m}"
             return f"{radius_m:.1f}".rstrip("0").rstrip(".") + f" {unit_m}"
 
+    @classmethod
+    def calculate_area_perimeter(
+        cls,
+        lons: list[float],
+        lats: list[float],
+    ) -> tuple[float, float]:
+        """Вычисление геодезической площади (м²) и периметра (м) замкнутого полигона на WGS84.
+
+        Возвращает:
+            tuple[float, float]: (abs(area_m2), perimeter_m).
+        """
+        if len(lons) < 3 or len(lats) < 3:
+            return 0.0, 0.0
+
+        geod = cls.get_geod()
+        area, perimeter = geod.polygon_area_perimeter(lons, lats)
+        return abs(float(area)), abs(float(perimeter))
+
+    @classmethod
+    def format_distance(cls, distance_m: float, lang: str | None = None) -> str:
+        """Форматирование геодезического расстояния (м / км) для UI."""
+        if distance_m < 0:
+            distance_m = 0.0
+
+        try:
+            from rme_mapper.i18n import get_language
+            active_lang = lang or get_language()
+        except Exception:
+            active_lang = "ru"
+
+        unit_km = "km" if active_lang == "en" else "км"
+        unit_m = "m" if active_lang == "en" else "м"
+
+        if distance_m >= 1000.0:
+            km = distance_m / 1000.0
+            return f"{km:.2f} {unit_km}"
+        else:
+            if distance_m.is_integer():
+                return f"{int(distance_m)} {unit_m}"
+            return f"{distance_m:.1f} {unit_m}"
+
+    @classmethod
+    def format_area(cls, area_m2: float, lang: str | None = None) -> str:
+        """Форматирование геодезической площади (м² / га / км²) для UI."""
+        abs_area = abs(area_m2)
+
+        try:
+            from rme_mapper.i18n import get_language
+            active_lang = lang or get_language()
+        except Exception:
+            active_lang = "ru"
+
+        unit_m2 = "m²" if active_lang == "en" else "м²"
+        unit_ha = "ha" if active_lang == "en" else "га"
+        unit_km2 = "km²" if active_lang == "en" else "км²"
+
+        if abs_area >= 1_000_000.0:
+            km2 = abs_area / 1_000_000.0
+            return f"{km2:.2f} {unit_km2}"
+        elif abs_area >= 10_000.0:
+            ha = abs_area / 10_000.0
+            return f"{ha:.2f} {unit_ha}"
+        else:
+            if abs_area.is_integer():
+                return f"{int(abs_area)} {unit_m2}"
+            return f"{abs_area:.1f} {unit_m2}"
+

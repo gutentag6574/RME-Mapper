@@ -33,6 +33,7 @@ from rme_mapper.models.map_layer import MapLayer
 from rme_mapper.models.map_point import MapPoint
 from rme_mapper.services.coordinate_service import CoordinateService
 from rme_mapper.services.geodesic_service import GeodesicService
+from rme_mapper.services.grid_calculator import GridCalculator
 
 logger = logging.getLogger("rme_mapper.exporters.renderer")
 
@@ -214,6 +215,20 @@ class MapRenderer:
 
             # Коэффициент масштабирования экранных элементов
             scale_factor = options.scale_factor()
+
+            # 4.5. Отрисовка координатной сетки (над базовыми слоями, под зонами и точками)
+            if options.include_grid:
+                cls._render_grid(
+                    painter=painter,
+                    extent=adj_extent,
+                    active_crs=active_crs,
+                    min_x=min_x,
+                    max_y=max_y,
+                    scale=scale,
+                    width=width,
+                    height=height,
+                    scale_factor=scale_factor,
+                )
 
             # 5. Отрисовка геодезических зон
             user_points = points or []
@@ -629,3 +644,50 @@ class MapRenderer:
             # Основной текст
             painter.setPen(QPen(QColor("#1E293B")))
             painter.drawText(label_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, label_text)
+
+    @classmethod
+    def _render_grid(
+        cls,
+        painter: QPainter,
+        extent: tuple[float, float, float, float],
+        active_crs: str,
+        min_x: float,
+        max_y: float,
+        scale: float,
+        width: int,
+        height: int,
+        scale_factor: float,
+    ) -> None:
+        """Отрисовка координатной сетки с подписями при экспорте карты."""
+        grid_res = GridCalculator.calculate_grid(extent, active_crs)
+        if not grid_res:
+            return
+
+        pen = QPen(QColor(120, 130, 140, 110), max(1.0, 1.0 * scale_factor))
+        pen.setStyle(Qt.PenStyle.DashLine)
+        pen.setDashPattern([4, 4])
+
+        font_size = max(8, round(9.0 * scale_factor))
+        font = QFont("Segoe UI", font_size)
+        text_pen = QPen(QColor(70, 80, 90, 220))
+
+        # 1. Вертикальные линии
+        for line in grid_res.vertical_lines:
+            gx = (line.coord - min_x) * scale
+            painter.setPen(pen)
+            painter.drawLine(QPointF(gx, 0.0), QPointF(gx, float(height)))
+
+            painter.setFont(font)
+            painter.setPen(text_pen)
+            painter.drawText(QPointF(gx + 4.0 * scale_factor, 14.0 * scale_factor), line.label)
+
+        # 2. Горизонтальные линии
+        for line in grid_res.horizontal_lines:
+            gy = (max_y - line.coord) * scale
+            painter.setPen(pen)
+            painter.drawLine(QPointF(0.0, gy), QPointF(float(width), gy))
+
+            painter.setFont(font)
+            painter.setPen(text_pen)
+            painter.drawText(QPointF(6.0 * scale_factor, gy - 4.0 * scale_factor), line.label)
+

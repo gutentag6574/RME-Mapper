@@ -569,8 +569,9 @@ class PointController(QObject):
 
     def cancel_move_point_mode(self) -> None:
         """Отмена режима перемещения точки на холсте."""
-        self._map_canvas.set_interaction_mode("navigation")
-        self._set_status("")
+        if self._map_canvas.interaction_mode == "move_point":
+            self._map_canvas.set_interaction_mode("navigation")
+            self._set_status("")
 
     def on_point_moved_on_canvas(
         self, point_id: str, final_x: float, final_y: float, start_x: float, start_y: float

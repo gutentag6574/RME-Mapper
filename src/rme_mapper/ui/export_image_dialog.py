@@ -419,6 +419,12 @@ class ExportImageDialog(QDialog):
         self.chk_north_arrow.setChecked(True)
         grid.addWidget(self.chk_north_arrow, 3, 1)
 
+        # Координатная сетка
+        self.chk_grid = QCheckBox(tr("export.include_grid"), box)
+        self.chk_grid.setObjectName("chkExportGrid")
+        self.chk_grid.setChecked(False)
+        grid.addWidget(self.chk_grid, 4, 0)
+
         return box
 
     def _create_quality_section(self) -> QGroupBox:
@@ -648,6 +654,7 @@ class ExportImageDialog(QDialog):
             legend_position=options.legend_position,
             include_scale_bar=options.include_scale_bar,
             include_north_arrow=options.include_north_arrow,
+            include_grid=options.include_grid,
             background_color=options.background_color,
             transparent_background=options.transparent_background,
         )
@@ -768,6 +775,7 @@ class ExportImageDialog(QDialog):
             legend_position=str(self.legend_pos_combo.currentData()),
             include_scale_bar=self.chk_scale_bar.isChecked(),
             include_north_arrow=self.chk_north_arrow.isChecked(),
+            include_grid=self.chk_grid.isChecked(),
             background_color="#FFFFFF" if is_transparent else bg_val,
             transparent_background=is_transparent,
             jpeg_quality=self.quality_spin.value(),
