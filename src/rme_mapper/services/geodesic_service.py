@@ -9,10 +9,15 @@ from shapely.geometry import Polygon
 logger = logging.getLogger("rme_mapper.services.geodesic")
 
 
+MAX_CIRCLE_CACHE_SIZE = 2048
+
+
 class GeodesicService:
     """Сервис точных геодезических расчетов и построения окружностей на эллипсоиде WGS84."""
 
     _geod: pyproj.Geod | None = None
+    _circle_cache: dict[tuple[float, float, float, int], Polygon] = {}
+    MAX_CIRCLE_CACHE_SIZE: int = MAX_CIRCLE_CACHE_SIZE
 
     @classmethod
     def get_geod(cls) -> pyproj.Geod:
@@ -20,6 +25,16 @@ class GeodesicService:
         if cls._geod is None:
             cls._geod = pyproj.Geod(ellps="WGS84")
         return cls._geod
+
+    @classmethod
+    def clear_circle_cache(cls) -> None:
+        """Очистка кэша геодезических полигонов окружностей."""
+        cls._circle_cache.clear()
+
+    @classmethod
+    def circle_cache_size(cls) -> int:
+        """Количество закэшированных геодезических полигонов."""
+        return len(cls._circle_cache)
 
     @classmethod
     def create_geodesic_circle(
@@ -37,15 +52,7 @@ class GeodesicService:
 
         Использует прямую геодезическую задачу (Geod.fwd) на эллипсоиде WGS84.
         Координаты возвращаются в системе OGC:CRS84 (lon, lat).
-
-        Параметры:
-            longitude: Долгота центральной точки (или lon).
-            latitude: Широта центральной точки (или lat).
-            radius_m: Радиус окружности в метрах (должен быть > 0).
-            segments: Количество сегментов аппроксимации (или num_points, минимум 16, по умолчанию 128).
-
-        Возвращает:
-            shapely.geometry.Polygon: Замкнутый полигон окружности.
+        Результаты кэшируются в ограниченном LRU-кэше (до MAX_CIRCLE_CACHE_SIZE записей).
         """
         if longitude is None and lon is not None:
             longitude = lon
@@ -63,6 +70,15 @@ class GeodesicService:
         if segments < 16:
             raise ValueError(f"Количество сегментов должно быть не менее 16. Получено: {segments}")
 
+        cache_key = (
+            round(float(longitude), 6),
+            round(float(latitude), 6),
+            round(float(radius_m), 2),
+            int(segments),
+        )
+        if cache_key in cls._circle_cache:
+            return cls._circle_cache[cache_key]
+
         geod = cls.get_geod()
         coords: list[tuple[float, float]] = []
 
@@ -76,6 +92,15 @@ class GeodesicService:
         coords.append(coords[0])
 
         polygon = Polygon(coords)
+
+        # Вытеснение при превышении лимита кэша (FIFO/LRU)
+        if len(cls._circle_cache) >= cls.MAX_CIRCLE_CACHE_SIZE:
+            # Удаляем первую четверть записей
+            keys_to_evict = list(cls._circle_cache.keys())[:cls.MAX_CIRCLE_CACHE_SIZE // 4]
+            for k in keys_to_evict:
+                cls._circle_cache.pop(k, None)
+
+        cls._circle_cache[cache_key] = polygon
         return polygon
 
     @classmethod

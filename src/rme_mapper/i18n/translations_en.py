@@ -52,6 +52,7 @@ TRANSLATIONS_EN: dict[str, str] = {
     "action.show_zones": "Show Zones",
     "action.toggle_point_visibility": "Show / Hide Point",
     "action.about": "About...",
+    "action.quick_start": "Quick Start",
     "action.view_toolbar": "Toolbar",
     "action.view_layers_points": "Layers and Points Panel",
     "action.view_properties": "Properties Panel",
@@ -68,6 +69,7 @@ TRANSLATIONS_EN: dict[str, str] = {
     "tooltip.fit_map": "Fit Map",
     "tooltip.show_all_points": "Show all points on map",
     "tooltip.zoom_to_selected": "Zoom to selected points",
+    "tooltip.quick_start": "A short guide to the main workflow",
 
     # Panels
     "panel.layers": "Layers",
@@ -78,6 +80,10 @@ TRANSLATIONS_EN: dict[str, str] = {
     "btn.add_point": "+ Add Point",
     "btn.edit_point": "Edit",
     "btn.delete_point": "Delete",
+    "btn.create_group": "+ Group",
+
+    "quick_start.title": "Quick Start",
+    "quick_start.text": "1. Open a map or project.\n2. Add points manually or import a table.\n3. Select a point to edit its properties.\n4. Export the map or objects from the Export menu.",
 
     # Empty startup overlay
     "startup.title": "GeoPoint Mapper",
@@ -941,6 +947,5 @@ TRANSLATIONS_EN: dict[str, str] = {
     "export_objects.field_zone_border_style": "Zone Border Style",
     "export_objects.field_internal_id": "Internal ID (UUID)",
 }
-
 
 

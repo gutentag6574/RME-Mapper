@@ -448,43 +448,11 @@ class ProjectController(QObject):
                 self._map_controller.set_layer_visibility(layer.id, vis)
 
         # 3. Восстанавливаем точки и зоны
-        for pt_data in project.points:
-            pt = pt_data.to_map_point()
-            added_pt = self._point_service.add_point(
-                name=pt.name,
-                latitude=pt.latitude,
-                longitude=pt.longitude,
-                source_crs=pt.source_crs,
-                point_id=pt.id,
-                symbol=pt.symbol,
-                size=pt.size,
-                red=pt.red,
-                green=pt.green,
-                blue=pt.blue,
-                zone_enabled=pt.zone_enabled,
-                radius_m=pt.radius_m,
-                zone_red=pt.zone_red,
-                zone_green=pt.zone_green,
-                zone_blue=pt.zone_blue,
-                zone_opacity=pt.zone_opacity,
-                object_number=pt.object_number,
-                description=pt.description,
-                category=pt.category,
-                visible=pt.visible,
-                stroke_red=pt.stroke_red,
-                stroke_green=pt.stroke_green,
-                stroke_blue=pt.stroke_blue,
-                stroke_width=pt.stroke_width,
-                opacity=pt.opacity,
-                zone_border_red=pt.zone_border_red,
-                zone_border_green=pt.zone_border_green,
-                zone_border_blue=pt.zone_border_blue,
-                zone_border_width=pt.zone_border_width,
-                zone_border_style=pt.zone_border_style,
-                group_id=pt.group_id,
-            )
-            self._point_controller._render_point_on_canvas(added_pt)
-            self._point_controller.add_point_to_table(added_pt)
+        if project.points:
+            pts_to_add = [pt_data.to_map_point() for pt_data in project.points]
+            added_pts = self._point_service.add_points_bulk(pts_to_add)
+            self._point_controller.render_points_batch(added_pts)
+            self._point_controller.populate_points_table_batch(added_pts)
 
         if self._group_controller:
             self._group_controller.refresh_groups_ui()

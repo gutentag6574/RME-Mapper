@@ -95,7 +95,7 @@ class DeleteMultiplePointsCommand(UndoCommand):
     ) -> None:
         super().__init__(description)
         self.points_with_indices = [
-            (copy.deepcopy(pt), idx) for pt, idx in points_with_indices
+            (copy.copy(pt), idx) for pt, idx in points_with_indices
         ]
         self._restore_fn = restore_fn
         self._remove_fn = remove_fn
@@ -108,7 +108,7 @@ class DeleteMultiplePointsCommand(UndoCommand):
         # Восстанавливаем точки в порядке возрастания исходных индексов
         sorted_points = sorted(self.points_with_indices, key=lambda x: x[1])
         for pt, idx in sorted_points:
-            self._restore_fn(copy.deepcopy(pt), idx)
+            self._restore_fn(copy.copy(pt), idx)
 
 
 class EditPointCommand(UndoCommand):
@@ -122,15 +122,15 @@ class EditPointCommand(UndoCommand):
         description: str = "Изменить точку",
     ) -> None:
         super().__init__(description)
-        self.before_point = copy.deepcopy(before_point)
-        self.after_point = copy.deepcopy(after_point)
+        self.before_point = copy.copy(before_point)
+        self.after_point = copy.copy(after_point)
         self._apply_fn = apply_fn
 
     def execute(self) -> None:
-        self._apply_fn(copy.deepcopy(self.after_point))
+        self._apply_fn(copy.copy(self.after_point))
 
     def undo(self) -> None:
-        self._apply_fn(copy.deepcopy(self.before_point))
+        self._apply_fn(copy.copy(self.before_point))
 
 
 class MovePointCommand(UndoCommand):
@@ -144,15 +144,15 @@ class MovePointCommand(UndoCommand):
         description: str = "Переместить точку",
     ) -> None:
         super().__init__(description)
-        self.before_point = copy.deepcopy(before_point)
-        self.after_point = copy.deepcopy(after_point)
+        self.before_point = copy.copy(before_point)
+        self.after_point = copy.copy(after_point)
         self._apply_fn = apply_fn
 
     def execute(self) -> None:
-        self._apply_fn(copy.deepcopy(self.after_point))
+        self._apply_fn(copy.copy(self.after_point))
 
     def undo(self) -> None:
-        self._apply_fn(copy.deepcopy(self.before_point))
+        self._apply_fn(copy.copy(self.before_point))
 
 
 class BulkEditStyleCommand(UndoCommand):
@@ -166,15 +166,15 @@ class BulkEditStyleCommand(UndoCommand):
         description: str = "Изменить стили точек",
     ) -> None:
         super().__init__(description)
-        self.before_points = [copy.deepcopy(p) for p in before_points]
-        self.after_points = [copy.deepcopy(p) for p in after_points]
+        self.before_points = [copy.copy(p) for p in before_points]
+        self.after_points = [copy.copy(p) for p in after_points]
         self._apply_fn = apply_fn
 
     def execute(self) -> None:
-        self._apply_fn([copy.deepcopy(p) for p in self.after_points])
+        self._apply_fn([copy.copy(p) for p in self.after_points])
 
     def undo(self) -> None:
-        self._apply_fn([copy.deepcopy(p) for p in self.before_points])
+        self._apply_fn([copy.copy(p) for p in self.before_points])
 
 
 class ImportPointsCommand(UndoCommand):
@@ -191,7 +191,7 @@ class ImportPointsCommand(UndoCommand):
         description: str = "Импорт точек",
     ) -> None:
         super().__init__(description)
-        self.points = [copy.deepcopy(p) for p in points]
+        self.points = [copy.copy(p) for p in points]
         self._add_fn = add_fn
         self._remove_fn = remove_fn
         self.created_groups = [copy.deepcopy(g) for g in (created_groups or [])]
@@ -201,7 +201,7 @@ class ImportPointsCommand(UndoCommand):
     def execute(self) -> None:
         if self._add_groups_fn and self.created_groups:
             self._add_groups_fn([copy.deepcopy(g) for g in self.created_groups])
-        self._add_fn([copy.deepcopy(p) for p in self.points])
+        self._add_fn([copy.copy(p) for p in self.points])
 
     def undo(self) -> None:
         self._remove_fn([p.id for p in self.points])

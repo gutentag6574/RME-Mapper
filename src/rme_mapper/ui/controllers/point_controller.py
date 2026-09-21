@@ -213,8 +213,8 @@ class PointController(QObject):
         """Пакетная низкоуровневая вставка точек в модель, таблицу и на холст."""
         for p in points:
             self._point_service._points[p.id] = p
-            self.add_point_to_table(p)
-            self._render_point_on_canvas(p)
+        self.render_points_batch(points)
+        self.populate_points_table_batch(self._point_service.get_points())
         if self._group_controller:
             self._group_controller.refresh_groups_ui()
         self._on_undo_state_changed()
@@ -222,15 +222,14 @@ class PointController(QObject):
     def _cmd_remove_points(self, point_ids: list[str]) -> None:
         """Пакетное низкоуровневое удаление точек из модели, таблицы и с холста."""
         pid_set = set(point_ids)
-        for row in range(len(self._table_point_ids) - 1, -1, -1):
-            pid = self._table_point_ids[row]
-            if pid in pid_set:
-                self._table_point_ids.pop(row)
-                self._points_panel.remove_row(row)
+        self._table_point_ids = [pid for pid in self._table_point_ids if pid not in pid_set]
+        self._points_panel.remove_rows_by_point_ids(pid_set)
 
-        for pid in point_ids:
-            self._point_service.remove_point(pid)
-            self._map_canvas.remove_user_point(pid)
+        with self._map_canvas.defer_labels_layout():
+            for pid in point_ids:
+                self._point_service.remove_point(pid)
+                self._map_canvas.remove_user_point(pid)
+
         if self._group_controller:
             self._group_controller.refresh_groups_ui()
         self._on_undo_state_changed()
@@ -423,11 +422,12 @@ class PointController(QObject):
                 if reply != QMessageBox.StandardButton.Yes:
                     return
 
+            table_index_map = {pid: i for i, pid in enumerate(self._table_point_ids)}
             pts_with_indices: list[tuple[MapPoint, int]] = []
             for pid in selected_ids:
                 pt = self._point_service.get_point(pid)
-                if pt and pid in self._table_point_ids:
-                    idx = self._table_point_ids.index(pid)
+                if pt and pid in table_index_map:
+                    idx = table_index_map[pid]
                     pts_with_indices.append((pt, idx))
 
             cmd = DeleteMultiplePointsCommand(
@@ -858,6 +858,38 @@ class PointController(QObject):
             self._map_canvas.update_user_point(point, map_x=mx, map_y=my, zone_polygon=zone_poly)
         else:
             self._map_canvas.add_user_point(point, map_x=mx, map_y=my, zone_polygon=zone_poly)
+
+    def render_points_batch(self, points: list[MapPoint]) -> None:
+        """Пакетное проецирование и отрисовка множества точек на холсте."""
+        if not points:
+            return
+        active_crs = self._get_active_crs()
+        batch_data = []
+        for point in points:
+            mx, my = CoordinateService.transform_xy(
+                point.longitude, point.latitude,
+                source_crs=point.source_crs,
+                target_crs=active_crs,
+            )
+            zone_poly = None
+            if point.zone_enabled and point.radius_m > 0:
+                geo_c = GeodesicService.create_geodesic_circle(
+                    point.longitude, point.latitude, point.radius_m
+                )
+                zone_poly = CoordinateService.transform_polygon(
+                    geo_c,
+                    source_crs="EPSG:4326",
+                    target_crs=active_crs,
+                )
+            batch_data.append((point, mx, my, zone_poly))
+
+        self._map_canvas.add_user_points_batch(batch_data)
+
+    def populate_points_table_batch(self, points: list[MapPoint]) -> None:
+        """Пакетное заполнение таблицы точек."""
+        self._table_point_ids = [p.id for p in points]
+        self._points_panel.points_table.setRowCount(0)
+        self._points_panel.populate_points_batch(points)
 
     def reproject_all_points(self, target_crs: str) -> None:
         """Пересчет экранных координат всех точек и зон под новую CRS карты."""

@@ -365,7 +365,8 @@ class MainWindow(QMainWindow):
         self.coords_menu.addAction(self.add_pt_map_action)
 
         self.move_pt_action = QAction(self)
-        self.move_pt_action.setShortcut(QKeySequence("Ctrl+M"))
+        # Ctrl+M already opens a map; movement is a secondary action.
+        self.move_pt_action.setShortcut(QKeySequence("Ctrl+Shift+V"))
         self.move_pt_action.triggered.connect(lambda: self.point_controller.start_move_point_mode())
         self.move_pt_action.setEnabled(False)
         self.coords_menu.addAction(self.move_pt_action)
@@ -412,12 +413,14 @@ class MainWindow(QMainWindow):
         # Меню: Инструменты
         self.tools_menu = menu_bar.addMenu("")
         self.measure_distance_action = QAction(self)
+        self.measure_distance_action.setShortcut(QKeySequence("Ctrl+Shift+M"))
         self.measure_distance_action.setCheckable(True)
         self.measure_distance_action.toggled.connect(self._toggle_measure_distance)
         self.measure_distance_action.setEnabled(False)
         self.tools_menu.addAction(self.measure_distance_action)
 
         self.measure_area_action = QAction(self)
+        self.measure_area_action.setShortcut(QKeySequence("Ctrl+Shift+G"))
         self.measure_area_action.setCheckable(True)
         self.measure_area_action.toggled.connect(self._toggle_measure_area)
         self.measure_area_action.setEnabled(False)
@@ -571,6 +574,10 @@ class MainWindow(QMainWindow):
 
         # Меню: Справка
         self.help_menu = menu_bar.addMenu("")
+        self.quick_start_action = QAction(self)
+        self.quick_start_action.triggered.connect(self.show_quick_start)
+        self.help_menu.addAction(self.quick_start_action)
+        self.help_menu.addSeparator()
         self.about_action = QAction(self)
         self.about_action.triggered.connect(self.show_about_dialog)
         self.help_menu.addAction(self.about_action)
@@ -607,12 +614,6 @@ class MainWindow(QMainWindow):
         self.main_toolbar.addAction(self.redo_action)
         self.main_toolbar.addSeparator()
         self.main_toolbar.addAction(self.add_pt_action)
-        self.main_toolbar.addAction(self.add_pt_map_action)
-        self.main_toolbar.addAction(self.move_pt_action)
-        self.main_toolbar.addSeparator()
-        self.main_toolbar.addAction(self.measure_distance_action)
-        self.main_toolbar.addAction(self.measure_area_action)
-        self.main_toolbar.addSeparator()
         self.main_toolbar.addAction(self.fit_map_action)
 
     def _create_central_layout(self) -> None:
@@ -638,7 +639,7 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(separator1)
 
         self.groups_panel = GroupsPanel(self.left_panel)
-        self.groups_panel.setMaximumHeight(220)
+        self.groups_panel.setMaximumHeight(132)
         left_layout.addWidget(self.groups_panel)
 
         separator2 = QFrame()
@@ -1314,6 +1315,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, "zoom_to_selected_action"):
             self.zoom_to_selected_action.setText(tr("action.zoom_to_selected"))
             self.zoom_to_selected_action.setToolTip(tr("tooltip.zoom_to_selected"))
+        if hasattr(self, "quick_start_action"):
+            self.quick_start_action.setText(tr("action.quick_start"))
+            self.quick_start_action.setToolTip(tr("tooltip.quick_start"))
         self.about_action.setText(tr("action.about"))
 
         if hasattr(self, "toggle_toolbar_action"):
@@ -1423,6 +1427,10 @@ class MainWindow(QMainWindow):
         """Открытие диалогового окна 'О программе'."""
         dlg = AboutDialog(self)
         dlg.exec()
+
+    def show_quick_start(self) -> None:
+        """Показать короткую встроенную инструкцию для первого запуска."""
+        QMessageBox.information(self, tr("quick_start.title"), tr("quick_start.text"))
 
     def _check_recovery_snapshot_on_startup(self) -> None:
         """Проверка наличия аварийного снимка предыдущей сессии при запуске."""

@@ -40,7 +40,7 @@ SUPPORTED_FORMAT = PRIMARY_FORMAT
 PROJECT_EXTENSION = PRIMARY_EXTENSION
 
 
-MAX_PROJECT_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+MAX_PROJECT_FILE_SIZE = 128 * 1024 * 1024  # 128 MB (supports up to 100,000 points JSON)
 MAX_PROJECT_POINTS = 100_000
 
 
@@ -209,7 +209,7 @@ class ProjectService:
 
         if target.stat().st_size > cls.MAX_FILE_SIZE:
             raise ValueError(
-                f"Размер файла проекта превышает допустимый предел ({cls.MAX_FILE_SIZE // (1024*1024)} МБ): {target}"
+                f"Размер файла проекта превышает допустимый предел ({cls.MAX_FILE_SIZE // (1024*1024)} МБ, базовый лимит 50 МБ): {target}"
             )
 
         logger.info("Чтение проекта из: %s", target)

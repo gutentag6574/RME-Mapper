@@ -1,0 +1,139 @@
+{
+  "startup": {
+    "elapsed_s": 0.0818,
+    "peak_ram_mb": 205.46
+  },
+  "model_creation_1000": {
+    "elapsed_s": 0.003,
+    "peak_ram_mb": 207.57,
+    "object_count": 1000
+  },
+  "model_creation_10000": {
+    "elapsed_s": 0.0257,
+    "peak_ram_mb": 227.36,
+    "object_count": 10000
+  },
+  "model_creation_50000": {
+    "elapsed_s": 0.1636,
+    "peak_ram_mb": 326.64,
+    "object_count": 50000
+  },
+  "model_creation_100000": {
+    "elapsed_s": 0.3632,
+    "peak_ram_mb": 508.89,
+    "object_count": 100000
+  },
+  "project_save_1000": {
+    "elapsed_s": 0.0285,
+    "file_size_mb": 0.84,
+    "peak_ram_mb": 508.89
+  },
+  "project_load_1000": {
+    "elapsed_s": 0.0159,
+    "peak_ram_mb": 508.89
+  },
+  "project_save_10000": {
+    "elapsed_s": 0.318,
+    "file_size_mb": 8.4,
+    "peak_ram_mb": 508.89
+  },
+  "project_load_10000": {
+    "elapsed_s": 0.1696,
+    "peak_ram_mb": 508.89
+  },
+  "project_save_50000": {
+    "elapsed_s": 1.5318,
+    "file_size_mb": 42.11,
+    "peak_ram_mb": 838.19
+  },
+  "project_load_50000": {
+    "elapsed_s": 0.9452,
+    "peak_ram_mb": 838.19
+  },
+  "project_save_100000": {
+    "elapsed_s": 3.4365,
+    "file_size_mb": 84.25,
+    "peak_ram_mb": 1334.88
+  },
+  "project_load_100000": {
+    "elapsed_s": 2.0728,
+    "peak_ram_mb": 1334.88
+  },
+  "group_counters_1000": {
+    "elapsed_s": 0.0016,
+    "groups_count": 30,
+    "points_count": 1000
+  },
+  "group_counters_10000": {
+    "elapsed_s": 0.0201,
+    "groups_count": 30,
+    "points_count": 10000
+  },
+  "group_counters_50000": {
+    "elapsed_s": 0.3465,
+    "groups_count": 30,
+    "points_count": 50000
+  },
+  "group_counters_100000": {
+    "elapsed_s": 0.7651,
+    "groups_count": 30,
+    "points_count": 100000
+  },
+  "zones_calculation_1000": {
+    "elapsed_s": 0.0096,
+    "zones_count": 1000
+  },
+  "zones_calculation_5000": {
+    "elapsed_s": 0.0071,
+    "zones_count": 5000
+  },
+  "zones_calculation_10000": {
+    "elapsed_s": 0.0137,
+    "zones_count": 10000
+  },
+  "panel_populate_1000": {
+    "elapsed_s": 0.0329
+  },
+  "panel_search_1000": {
+    "elapsed_s": 0.0038
+  },
+  "panel_filter_1000": {
+    "elapsed_s": 0.0036
+  },
+  "panel_populate_5000": {
+    "elapsed_s": 0.1776
+  },
+  "panel_search_5000": {
+    "elapsed_s": 0.0265
+  },
+  "panel_filter_5000": {
+    "elapsed_s": 0.0239
+  },
+  "canvas_markers_1000": {
+    "elapsed_s": 0.1203,
+    "scene_items": 2250
+  },
+  "canvas_labels_1000": {
+    "elapsed_s": 0.0294
+  },
+  "canvas_markers_5000": {
+    "elapsed_s": 0.4047,
+    "scene_items": 11250
+  },
+  "canvas_labels_5000": {
+    "elapsed_s": 0.1759
+  },
+  "export_csv_100k": {
+    "elapsed_s": 1.4297,
+    "file_size_mb": 6.3
+  },
+  "export_geojson_100k": {
+    "elapsed_s": 2.148,
+    "file_size_mb": 24.97
+  },
+  "image_export_4k": {
+    "elapsed_s": 0.4479,
+    "width": 3840,
+    "height": 2160
+  }
+}

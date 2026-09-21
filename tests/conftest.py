@@ -10,11 +10,11 @@ from rme_mapper.services.project_service import ProjectService
 # устанавливается до создания QApplication и импортов виджетов карты.
 os.environ.setdefault(
     "RME_MAPPER_CACHE_DIR",
-    str(Path(__file__).resolve().parent.parent / "scratch" / "pytest" / "online_tiles"),
+    str(Path(__file__).resolve().parent.parent / "scratch" / "test-runtime" / "online_tiles"),
 )
 os.environ.setdefault(
     "RME_MAPPER_SETTINGS_DIR",
-    str(Path(__file__).resolve().parent.parent / "scratch" / "pytest" / "settings"),
+    str(Path(__file__).resolve().parent.parent / "scratch" / "test-runtime" / "settings"),
 )
 
 

@@ -228,6 +228,17 @@ class PointService:
         """Получение списка точек, принадлежащих указанной группе (или Ungrouped при None)."""
         return [p for p in self._points.values() if p.group_id == group_id]
 
+    def count_points_by_groups(self) -> dict[str | None, int]:
+        """Подсчет количества точек во всех группах за один проход O(N)."""
+        from collections import Counter
+        return dict(Counter(p.group_id for p in self._points.values()))
+
+    def add_points_bulk(self, points: list[MapPoint]) -> list[MapPoint]:
+        """Массовое добавление готовых точек в хранилище за один проход."""
+        for p in points:
+            self._points[p.id] = p
+        return points
+
     def get_used_categories(self) -> list[str]:
         """Получение списка уникальных непустых категорий всех точек проекта."""
         cats = {p.category.strip() for p in self._points.values() if p.category and p.category.strip()}

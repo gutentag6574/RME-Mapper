@@ -75,10 +75,9 @@ class GroupController(QObject):
     def refresh_groups_ui(self) -> None:
         """Полное обновление состояния панели групп и холста карты."""
         groups = self._group_service.list_groups()
-        counts: dict[str | None, int] = {}
-        for g in groups:
-            counts[g.id] = len(self._point_service.get_points_by_group(g.id))
-        counts[None] = len(self._point_service.get_points_by_group(None))
+        counts_by_group = self._point_service.count_points_by_groups()
+        counts: dict[str | None, int] = {g.id: counts_by_group.get(g.id, 0) for g in groups}
+        counts[None] = counts_by_group.get(None, 0)
 
         total_pts = len(self._point_service)
         self._groups_panel.set_groups_and_counts(groups, counts, total_pts)

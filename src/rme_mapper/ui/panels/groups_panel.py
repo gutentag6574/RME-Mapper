@@ -64,7 +64,7 @@ class GroupsPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
 
-        # 1. Шапка: Заголовок "ГРУППЫ" и компактная кнопка "+"
+        # 1. Шапка: заголовок и понятная кнопка создания группы.
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -76,9 +76,9 @@ class GroupsPanel(QWidget):
         header_layout.addWidget(self.title_label)
         header_layout.addStretch()
 
-        self.btn_create = QPushButton("+", self)
+        self.btn_create = QPushButton(self)
         self.btn_create.setObjectName("btnCreateGroup")
-        self.btn_create.setFixedSize(24, 24)
+        self.btn_create.setFixedHeight(28)
         self.btn_create.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_create.setToolTip(tr("action.create_group"))
         self.btn_create.clicked.connect(self.create_group_requested.emit)
@@ -129,6 +129,7 @@ class GroupsPanel(QWidget):
     def retranslate_ui(self) -> None:
         """Обновление локализованных строк."""
         self.title_label.setText(tr("panel.groups"))
+        self.btn_create.setText(tr("btn.create_group"))
         self.btn_create.setToolTip(tr("action.create_group"))
         self._refresh_tree_items()
 
@@ -142,6 +143,7 @@ class GroupsPanel(QWidget):
         self._groups = list(groups)
         self._counts = dict(counts)
         self._total_count = total_count
+        self.setMaximumHeight(132 if not self._groups else 220)
         self._refresh_tree_items()
 
     def update_counts(self, counts: dict[str | None, int], total_count: int) -> None:

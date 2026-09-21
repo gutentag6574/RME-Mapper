@@ -52,6 +52,7 @@ TRANSLATIONS_RU: dict[str, str] = {
     "action.show_zones": "Показывать зоны",
     "action.toggle_point_visibility": "Показать / Скрыть точку",
     "action.about": "О программе...",
+    "action.quick_start": "Быстрый старт",
     "action.view_toolbar": "Панель инструментов",
     "action.view_layers_points": "Панель слоев и точек",
     "action.view_properties": "Панель свойств",
@@ -68,6 +69,7 @@ TRANSLATIONS_RU: dict[str, str] = {
     "tooltip.fit_map": "Показать всю карту",
     "tooltip.show_all_points": "Показать все точки",
     "tooltip.zoom_to_selected": "Показать выбранные точки",
+    "tooltip.quick_start": "Краткая инструкция по основному сценарию работы",
 
     # Панели главного окна
     "panel.layers": "Слои",
@@ -78,6 +80,10 @@ TRANSLATIONS_RU: dict[str, str] = {
     "btn.add_point": "+ Добавить точку",
     "btn.edit_point": "Редактировать",
     "btn.delete_point": "Удалить",
+    "btn.create_group": "+ Группа",
+
+    "quick_start.title": "Быстрый старт",
+    "quick_start.text": "1. Откройте карту или проект.\n2. Добавьте точки вручную или импортируйте таблицу.\n3. Выберите точку, чтобы изменить её свойства.\n4. Экспортируйте карту или список объектов через меню «Экспорт».",
 
     # Оверлей пустого старта
     "startup.title": "GeoPoint Mapper",
@@ -941,5 +947,4 @@ TRANSLATIONS_RU: dict[str, str] = {
     "export_objects.field_zone_border_style": "Стиль границы зоны",
     "export_objects.field_internal_id": "Внутренний ID (UUID)",
 }
-
 
