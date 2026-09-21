@@ -73,6 +73,7 @@ TRANSLATIONS_RU: dict[str, str] = {
 
     # Панели главного окна
     "panel.layers": "Слои",
+    "panel.layers_empty": "Откройте карту, чтобы увидеть её слои.",
     "panel.points": "Точки",
     "panel.properties": "Свойства",
 

@@ -537,10 +537,6 @@ class MainWindow(QMainWindow):
         self.toggle_grid_action.toggled.connect(self._toggle_coordinate_grid)
         self.view_menu.addAction(self.toggle_grid_action)
 
-        self.view_menu.addSeparator()
-        self.view_menu.addAction(self.show_all_points_action)
-        self.view_menu.addAction(self.zoom_to_selected_action)
-
         # Меню: Настройки
         self.settings_menu = menu_bar.addMenu("")
 

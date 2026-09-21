@@ -760,16 +760,16 @@ class PointDialog(QDialog):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
+        self.btn_cancel = QPushButton("Отмена", self)
+        self.btn_cancel.setObjectName("btnAddPointCancel")
+        self.btn_cancel.clicked.connect(self.reject)
+        btn_layout.addWidget(self.btn_cancel)
+
         self.btn_add = QPushButton("Сохранить" if self.mode == "EDIT" else "Добавить", self)
         self.btn_add.setObjectName("btnAddPointSubmit")
         self.btn_add.setDefault(True)
         self.btn_add.clicked.connect(self._validate_and_submit)
         btn_layout.addWidget(self.btn_add)
-
-        self.btn_cancel = QPushButton("Отмена", self)
-        self.btn_cancel.setObjectName("btnAddPointCancel")
-        self.btn_cancel.clicked.connect(self.reject)
-        btn_layout.addWidget(self.btn_cancel)
 
         layout.addLayout(btn_layout)
 

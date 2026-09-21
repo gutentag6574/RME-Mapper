@@ -166,6 +166,23 @@ def get_light_stylesheet() -> str:
         color: {c.TEXT_DISABLED};
         border-color: {c.BORDER};
     }}
+    QPushButton:default {{
+        background-color: {c.ACCENT};
+        color: #FFFFFF;
+        border-color: {c.ACCENT};
+        font-weight: 600;
+    }}
+    QPushButton:default:hover {{ background-color: {c.ACCENT_HOVER}; }}
+
+    QGroupBox {{
+        color: {c.TEXT_PRIMARY};
+        border: 1px solid {c.BORDER};
+        border-radius: 6px;
+        margin-top: 12px;
+        padding: 10px;
+        font-weight: 600;
+    }}
+    QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; }}
 
     /* Акцентная кнопка добавления */
     QPushButton#btnAddPoint {{
@@ -181,6 +198,23 @@ def get_light_stylesheet() -> str:
     QPushButton#btnAddPoint, QPushButton#btnEditPoint, QPushButton#btnDeletePoint {{
         padding: 4px 6px;
         font-size: 11px;
+    }}
+
+    QPushButton#btnCreateGroup {{
+        background-color: {c.ACCENT_LIGHT};
+        border-color: #BFDBFE;
+        color: {c.ACCENT};
+        font-weight: 600;
+        padding: 3px 8px;
+    }}
+    QPushButton#btnOpenProjectCanvas, QPushButton#btnImportPointsCanvas {{
+        color: {c.TEXT_SECONDARY};
+        border-color: transparent;
+        padding: 4px 7px;
+    }}
+    QPushButton#btnOpenProjectCanvas:hover, QPushButton#btnImportPointsCanvas:hover {{
+        color: {c.ACCENT};
+        background-color: {c.ACCENT_LIGHT};
     }}
 
     /* Сдержанная кнопка удаления */
@@ -204,6 +238,16 @@ def get_light_stylesheet() -> str:
     QLineEdit:focus {{
         border-color: {c.BORDER_FOCUS};
     }}
+
+    QComboBox {{
+        background: {c.BG_PANEL};
+        border: 1px solid {c.BORDER};
+        border-radius: 4px;
+        padding: 4px 8px;
+        min-height: 18px;
+    }}
+    QComboBox:hover, QComboBox:focus {{ border-color: {c.BORDER_FOCUS}; }}
+    QComboBox::drop-down {{ border: none; width: 22px; }}
 
     /* --- Таблица (QTableWidget) --- */
     QTableWidget {{
@@ -269,6 +313,28 @@ def get_light_stylesheet() -> str:
         border-radius: 6px;
         background-color: {c.BG_PANEL};
     }}
+
+    /* --- Диалоги и навигационные списки --- */
+    QDialog {{
+        background-color: {c.BG_APP};
+    }}
+    QDialog QLabel {{ color: {c.TEXT_PRIMARY}; }}
+    QTabWidget::pane {{ border: 1px solid {c.BORDER}; border-radius: 6px; top: -1px; }}
+    QTabBar::tab {{ background: {c.BG_APP}; color: {c.TEXT_SECONDARY}; padding: 7px 12px; margin-right: 2px; border: 1px solid transparent; border-top-left-radius: 5px; border-top-right-radius: 5px; }}
+    QTabBar::tab:selected {{ background: {c.BG_PANEL}; color: {c.ACCENT}; border-color: {c.BORDER}; border-bottom-color: {c.BG_PANEL}; font-weight: 600; }}
+    QMessageBox {{ background-color: {c.BG_PANEL}; }}
+    QTreeWidget {{
+        background-color: {c.BG_PANEL};
+        border: 1px solid {c.BORDER};
+        border-radius: 6px;
+        padding: 3px;
+    }}
+    QTreeWidget::item {{ padding: 5px 6px; border-radius: 4px; }}
+    QTreeWidget::item:selected {{ background-color: {c.SELECTION_BG}; color: {c.SELECTION_TEXT}; }}
+    QScrollBar:vertical {{ background: transparent; width: 10px; margin: 3px; }}
+    QScrollBar::handle:vertical {{ background: #CBD5E1; border-radius: 4px; min-height: 28px; }}
+    QScrollBar::handle:vertical:hover {{ background: #94A3B8; }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
     """
 
 

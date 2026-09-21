@@ -198,17 +198,16 @@ class ExportImageDialog(QDialog):
 
         bottom_layout.addStretch()
 
-        self.btn_export = QPushButton(tr("export.btn_export"), self)
-        self.btn_export.setObjectName("btnExecuteExport")
-        self.btn_export.setDefault(True)
-        self.btn_export.setStyleSheet("font-weight: bold; padding: 6px 18px;")
-        self.btn_export.clicked.connect(self._on_export_clicked)
-        bottom_layout.addWidget(self.btn_export)
-
         self.btn_cancel = QPushButton(tr("export.btn_cancel"), self)
         self.btn_cancel.setObjectName("btnCancelExport")
         self.btn_cancel.clicked.connect(self.reject)
         bottom_layout.addWidget(self.btn_cancel)
+
+        self.btn_export = QPushButton(tr("export.btn_export"), self)
+        self.btn_export.setObjectName("btnExecuteExport")
+        self.btn_export.setDefault(True)
+        self.btn_export.clicked.connect(self._on_export_clicked)
+        bottom_layout.addWidget(self.btn_export)
 
         main_layout.addLayout(bottom_layout)
 

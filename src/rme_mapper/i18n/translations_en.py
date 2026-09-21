@@ -73,6 +73,7 @@ TRANSLATIONS_EN: dict[str, str] = {
 
     # Panels
     "panel.layers": "Layers",
+    "panel.layers_empty": "Open a map to view its layers.",
     "panel.points": "Points",
     "panel.properties": "Properties",
 

@@ -227,16 +227,15 @@ class ExportObjectsDialog(QDialog):
 
         # 7. Нижние кнопки управления
         bottom_layout = QHBoxLayout()
-        self.btn_export = QPushButton(tr("export_objects.btn_export"))
-        self.btn_export.setDefault(True)
-        self.btn_export.setStyleSheet("font-weight: bold; padding: 6px 16px;")
-        self.btn_export.clicked.connect(self._on_export_clicked)
-
         self.btn_cancel = QPushButton(tr("export_objects.btn_cancel"))
         self.btn_cancel.clicked.connect(self.reject)
 
         bottom_layout.addStretch()
         bottom_layout.addWidget(self.btn_cancel)
+
+        self.btn_export = QPushButton(tr("export_objects.btn_export"))
+        self.btn_export.setDefault(True)
+        self.btn_export.clicked.connect(self._on_export_clicked)
         bottom_layout.addWidget(self.btn_export)
         main_layout.addLayout(bottom_layout)
 

@@ -44,16 +44,25 @@ class LayersPanel(QWidget):
         self.layers_layout.setSpacing(4)
         layout.addWidget(self.layers_container)
 
+        self.empty_label = QLabel(self)
+        self.empty_label.setObjectName("layersEmptyLabel")
+        self.empty_label.setWordWrap(True)
+        self.empty_label.setStyleSheet("color: #6B7280; padding: 8px 4px;")
+        layout.addWidget(self.empty_label)
+
         self.retranslate_ui()
 
     def retranslate_ui(self) -> None:
         """Обновление локализованных текстов панели слоев."""
         self.title_label.setText(tr("panel.layers"))
+        self.empty_label.setText(tr("panel.layers_empty"))
+        self.empty_label.setVisible(not self._layers)
 
     def set_layers(self, layers: list[MapLayer]) -> None:
         """Построение списка чекбоксов для переданного набора слоев."""
         self.clear_layers()
         self._layers = list(layers)
+        self.empty_label.setVisible(not self._layers)
 
         for layer in self._layers:
             chk = QCheckBox(layer.display_name)
@@ -84,3 +93,5 @@ class LayersPanel(QWidget):
             chk.deleteLater()
         self.layer_checkboxes.clear()
         self._layers.clear()
+        if hasattr(self, "empty_label"):
+            self.empty_label.setVisible(True)

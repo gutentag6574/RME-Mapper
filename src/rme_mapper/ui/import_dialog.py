@@ -159,18 +159,15 @@ class ImportDialog(QDialog):
         buttons_layout = QHBoxLayout()
         buttons_layout.addStretch()
 
-        self.btn_import = QPushButton(tr("dialog.import_btn_all"))
-        self.btn_import.setEnabled(False)
-        self.btn_import.setStyleSheet(
-            "QPushButton:enabled { background-color: #2563EB; color: #FFFFFF; font-weight: bold; border-radius: 4px; padding: 6px 16px; }"
-            "QPushButton:enabled:hover { background-color: #1D4ED8; }"
-        )
-        self.btn_import.clicked.connect(self.accept)
-        buttons_layout.addWidget(self.btn_import)
-
         self.btn_cancel = QPushButton(tr("btn.cancel"))
         self.btn_cancel.clicked.connect(self.reject)
         buttons_layout.addWidget(self.btn_cancel)
+
+        self.btn_import = QPushButton(tr("dialog.import_btn_all"))
+        self.btn_import.setEnabled(False)
+        self.btn_import.setDefault(True)
+        self.btn_import.clicked.connect(self.accept)
+        buttons_layout.addWidget(self.btn_import)
 
         main_layout.addLayout(buttons_layout)
 
