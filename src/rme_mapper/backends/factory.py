@@ -113,31 +113,25 @@ class BackendFactory:
             raise KeyError(f"Невозможно установить неизвестный растровый бэкенд по умолчанию: '{name}'")
         cls._default_raster_backend = key
 
-    # --- Capability API (Этап 16) ---
+    # --- Capability API (Этап 16 / Этап 24) ---
 
     @classmethod
     def supports_geopackage(cls) -> bool:
         """Проверка поддержки формата векторных карт GeoPackage в текущей среде."""
-        return True
+        from rme_mapper.services.runtime_capabilities import RuntimeCapabilities
+        return RuntimeCapabilities.supports_geopackage()
 
     @classmethod
     def supports_geotiff(cls) -> bool:
         """Проверка поддержки растровых карт GeoTIFF в текущей среде."""
-        try:
-            from rme_mapper.backends.modern_raster import ModernGeoTiffBackend
-            return ModernGeoTiffBackend.is_available()
-        except Exception:
-            return False
+        from rme_mapper.services.runtime_capabilities import RuntimeCapabilities
+        return RuntimeCapabilities.supports_geotiff()
 
     @classmethod
     def supports_source_type(cls, source_type: str) -> bool:
-        """Проверка поддержки типа источника карты ('geopackage', 'geotiff')."""
-        st = source_type.strip().lower()
-        if st == "geopackage":
-            return cls.supports_geopackage()
-        elif st == "geotiff":
-            return cls.supports_geotiff()
-        return False
+        """Проверка поддержки типа источника карты ('geopackage', 'geotiff', 'online_xyz', 'georeferenced_image')."""
+        from rme_mapper.services.runtime_capabilities import RuntimeCapabilities
+        return RuntimeCapabilities.supports_source_type(source_type)
 
 
 def get_backend(name: str | None = None) -> MapDataBackend:

@@ -53,7 +53,7 @@ class ProjectService:
     @staticmethod
     def get_recovery_snapshot_path() -> Path:
         """Путь к файлу аварийного восстановления."""
-        base = os.environ.get("LOCALAPPDATA")
+        base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
         if base:
             return Path(base) / "GeoPointMapper" / "recovery_snapshot.json"
         return Path.home() / ".geopoint_mapper" / "recovery_snapshot.json"
@@ -429,6 +429,7 @@ class ProjectService:
         crs: str | None = None,
         boundary_layer: str | None = None,
         map_profile: Any = None,
+        preserve_map_data: ProjectMapData | None = None,
     ) -> ProjectData:
         """Сборка модели ProjectData из текущего состояния приложения."""
         if map_profile is not None:
@@ -471,22 +472,25 @@ class ProjectService:
         control_points = getattr(map_profile, "control_points", None) if map_profile else None
         transformation_type = getattr(map_profile, "transformation_type", "affine") if map_profile else "affine"
 
-        map_data = ProjectMapData(
-            map_id=map_id,
-            relative_path=rel_path,
-            name=map_name,
-            source_type=source_type,
-            crs=crs,
-            boundary_layer=boundary_layer,
-            layers=profile_layers_meta,
-            provider_id=provider_id,
-            map_type=map_type,
-            affine_transform=list(affine_transform) if affine_transform is not None else None,
-            control_points=[
-                cp.to_dict() if hasattr(cp, "to_dict") else dict(cp) for cp in control_points
-            ] if control_points is not None else None,
-            transformation_type=transformation_type,
-        )
+        if map_profile is None and not map_path and not map_id and preserve_map_data is not None:
+            map_data = preserve_map_data
+        else:
+            map_data = ProjectMapData(
+                map_id=map_id,
+                relative_path=rel_path,
+                name=map_name,
+                source_type=source_type,
+                crs=crs,
+                boundary_layer=boundary_layer,
+                layers=profile_layers_meta,
+                provider_id=provider_id,
+                map_type=map_type,
+                affine_transform=list(affine_transform) if affine_transform is not None else None,
+                control_points=[
+                    cp.to_dict() if hasattr(cp, "to_dict") else dict(cp) for cp in control_points
+                ] if control_points is not None else None,
+                transformation_type=transformation_type,
+            )
 
         layers_state = {layer.id: layer.visible for layer in (layers or [])}
         points_data = [ProjectPointData.from_map_point(p) for p in (points or [])]

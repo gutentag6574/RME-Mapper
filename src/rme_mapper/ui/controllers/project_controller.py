@@ -57,6 +57,7 @@ class ProjectController(QObject):
         self._current_project_path: Path | None = None
         self._is_modified: bool = False
         self._project_loaded: bool = False
+        self._unsupported_map_data: Any = None
 
         # Таймер аварийного снимка (debounce 3 секунды)
         self._recovery_timer = QTimer(self)
@@ -133,6 +134,7 @@ class ProjectController(QObject):
             points = self._point_service.get_points()
             profile = self._map_controller.active_profile
             groups = self._group_service.list_groups() if self._group_service else []
+            preserve_map = self._unsupported_map_data if (profile is None and not self._map_controller.map_path) else None
             project_data = self._project_service.build_project_data(
                 map_path=self._map_controller.map_path,
                 layers=self._map_controller.loaded_layers,
@@ -140,6 +142,7 @@ class ProjectController(QObject):
                 map_id=profile.id if profile else "",
                 map_profile=profile,
                 groups=groups,
+                preserve_map_data=preserve_map,
             )
             curr_path = str(self._current_project_path) if self._current_project_path else None
             self._project_service.save_recovery_snapshot(project_data, curr_path)
@@ -192,6 +195,7 @@ class ProjectController(QObject):
         self._map_controller.unload_map()
         self._current_project_path = None
         self._project_loaded = False
+        self._unsupported_map_data = None
         self.set_modified(False)
         self._project_service.clear_recovery_snapshot()
         self._set_status(tr("status.no_map"))
@@ -235,6 +239,7 @@ class ProjectController(QObject):
             points = self._point_service.get_points()
             profile = self._map_controller.active_profile
             groups = self._group_service.list_groups() if self._group_service else []
+            preserve_map = self._unsupported_map_data if (profile is None and not self._map_controller.map_path) else None
             project_data = self._project_service.build_project_data(
                 map_path=self._map_controller.map_path,
                 layers=self._map_controller.loaded_layers,
@@ -242,6 +247,7 @@ class ProjectController(QObject):
                 map_id=profile.id if profile else "",
                 map_profile=profile,
                 groups=groups,
+                preserve_map_data=preserve_map,
             )
             saved_path = self._project_service.save_project(project_data, path)
             self._current_project_path = saved_path
@@ -334,7 +340,20 @@ class ProjectController(QObject):
 
     def _resolve_and_apply_project(self, project: ProjectData, path: Path | None) -> bool:
         """Разрешение связанных слоев карты и применение структуры проекта."""
+        from rme_mapper.services.runtime_capabilities import RuntimeCapabilities
+
         if project.map.source_type == "online_xyz":
+            if not RuntimeCapabilities.supports_online_maps():
+                logger.warning(
+                    "Онлайн-карты недоступны в текущей конфигурации (требуется безопасный TLS). "
+                    "Проект открыт без базовой подложки, метаданные сохранены."
+                )
+                self._unsupported_map_data = project.map
+                self._map_controller.unload_map()
+                self.apply_project_data(project)
+                self._set_status(tr("status.online_maps_unsupported") or "Онлайн-карты недоступны на данной платформе. Проект открыт без подложки.", 5000)
+                return True
+
             online_prof = MapProfile(
                 id=project.map.map_id or f"online_{project.map.provider_id or 'osm_standard'}",
                 name=project.map.name or "Online Map",
@@ -344,8 +363,31 @@ class ProjectController(QObject):
                 provider_id=project.map.provider_id or "osm_standard",
                 map_type=project.map.map_type,
             )
+            self._unsupported_map_data = None
             self._map_controller.load_map(online_prof)
             self.apply_project_data(project)
+            return True
+
+        if project.map.source_type == "geotiff" and not RuntimeCapabilities.supports_geotiff():
+            logger.warning(
+                "Растровые карты GeoTIFF недоступны в текущей конфигурации. "
+                "Проект открыт без базовой подложки, метаданные сохранены."
+            )
+            self._unsupported_map_data = project.map
+            self._map_controller.unload_map()
+            self.apply_project_data(project)
+            self._set_status("GeoTIFF недоступен на данной платформе. Проект открыт без подложки.", 5000)
+            return True
+
+        if project.map.source_type == "geopackage" and not RuntimeCapabilities.supports_geopackage():
+            logger.warning(
+                "Карты GeoPackage недоступны в текущей конфигурации. "
+                "Проект открыт без базовой подложки, метаданные сохранены."
+            )
+            self._unsupported_map_data = project.map
+            self._map_controller.unload_map()
+            self.apply_project_data(project)
+            self._set_status("GeoPackage недоступен на данной платформе. Проект открыт без подложки.", 5000)
             return True
 
         target_map_path: Path | None = None
@@ -397,13 +439,17 @@ class ProjectController(QObject):
                     return False
                 target_map_path = Path(chosen)
                 target_profile = None
+                self._unsupported_map_data = None
             else:  # btn_no_map
                 target_map_path = None
                 target_profile = None
+                self._unsupported_map_data = project.map
 
         if target_profile:
+            self._unsupported_map_data = None
             self._map_controller.load_map(target_profile)
         elif target_map_path and target_map_path.exists():
+            self._unsupported_map_data = None
             s_type = project.map.source_type or ("geotiff" if target_map_path.suffix.lower() in (".tif", ".tiff") else "geopackage")
             if project.map.layers or s_type in ("geotiff", "georeferenced_image"):
                 runtime_prof = MapProfile(

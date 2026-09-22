@@ -1373,6 +1373,8 @@ class MainWindow(QMainWindow):
         if hasattr(self, "point_controller"):
             self.point_controller.retranslate_ui()
 
+        self._apply_runtime_capabilities()
+
         # Обновление заголовка карты и строки состояния
         if self.map_controller.active_profile:
             map_name = self.map_controller.active_profile.name
@@ -1681,11 +1683,48 @@ class MainWindow(QMainWindow):
         self.point_controller.delete_point_workflow(confirm=confirm)
 
     # -------------------------------------------------------------------------
-    # Этап 20: Управление онлайн-картами
+    # Этап 20 / Этап 24: Управление онлайн-картами и деградация возможностей
     # -------------------------------------------------------------------------
+
+    def _apply_runtime_capabilities(self) -> None:
+        """Применение ограничений рантайм-возможностей к элементам интерфейса (Feature Degradation)."""
+        from rme_mapper.services.runtime_capabilities import RuntimeCapabilities
+
+        if not RuntimeCapabilities.supports_online_maps():
+            reason = (
+                "Онлайн-карты недоступны: безопасный стек TLS 1.2+ не поддерживается в данной сборке."
+                if not RuntimeCapabilities.supports_secure_tls()
+                else "Онлайн-карты недоступны: сетевой менеджер не поддерживается."
+            )
+            if hasattr(self, "online_map_menu"):
+                self.online_map_menu.setEnabled(False)
+                self.online_map_menu.setToolTip(reason)
+            for act in (
+                getattr(self, "online_standard_action", None),
+                getattr(self, "online_satellite_action", None),
+                getattr(self, "online_hybrid_action", None),
+                getattr(self, "select_online_basemap_action", None),
+                getattr(self, "clear_tile_cache_action", None),
+            ):
+                if act is not None:
+                    act.setEnabled(False)
+                    act.setToolTip(reason)
+
+        if not RuntimeCapabilities.supports_georeferencing():
+            if hasattr(self, "georeference_image_action"):
+                self.georeference_image_action.setEnabled(False)
+                self.georeference_image_action.setToolTip("Геопривязка недоступна в данной сборке.")
 
     def load_online_standard_map(self) -> None:
         """Загрузка стандартной онлайн-карты OpenStreetMap."""
+        from rme_mapper.services.runtime_capabilities import RuntimeCapabilities
+        if not RuntimeCapabilities.supports_online_maps():
+            QMessageBox.warning(
+                self,
+                tr("dialog.online_map.title") or "Онлайн-карты",
+                "Онлайн-карты недоступны: безопасный стек TLS 1.2+ не поддерживается на данной платформе.",
+            )
+            return
         from rme_mapper.models.online_provider import ProviderRegistry
         provider = ProviderRegistry.get_provider("osm_standard")
         if provider:
@@ -1693,6 +1732,14 @@ class MainWindow(QMainWindow):
 
     def load_online_satellite_map(self) -> None:
         """Загрузка спутниковой онлайн-карты."""
+        from rme_mapper.services.runtime_capabilities import RuntimeCapabilities
+        if not RuntimeCapabilities.supports_online_maps():
+            QMessageBox.warning(
+                self,
+                tr("dialog.online_map.title") or "Онлайн-карты",
+                "Онлайн-карты недоступны: безопасный стек TLS 1.2+ не поддерживается на данной платформе.",
+            )
+            return
         from rme_mapper.models.online_provider import ProviderRegistry
         provider = ProviderRegistry.get_provider("mapbox_satellite")
         if not provider:
@@ -1710,6 +1757,14 @@ class MainWindow(QMainWindow):
 
     def load_online_hybrid_map(self) -> None:
         """Загрузка гибридной онлайн-карты."""
+        from rme_mapper.services.runtime_capabilities import RuntimeCapabilities
+        if not RuntimeCapabilities.supports_online_maps():
+            QMessageBox.warning(
+                self,
+                tr("dialog.online_map.title") or "Онлайн-карты",
+                "Онлайн-карты недоступны: безопасный стек TLS 1.2+ не поддерживается на данной платформе.",
+            )
+            return
         from rme_mapper.models.online_provider import ProviderRegistry
         provider = ProviderRegistry.get_provider("mapbox_hybrid")
         if not provider:
@@ -1727,6 +1782,14 @@ class MainWindow(QMainWindow):
 
     def open_online_basemap_dialog(self, current_provider: Any = None) -> None:
         """Открытие диалога выбора онлайн-подложки."""
+        from rme_mapper.services.runtime_capabilities import RuntimeCapabilities
+        if not RuntimeCapabilities.supports_online_maps():
+            QMessageBox.warning(
+                self,
+                tr("dialog.online_map.title") or "Онлайн-карты",
+                "Онлайн-карты недоступны: безопасный стек TLS 1.2+ не поддерживается на данной платформе.",
+            )
+            return
         from rme_mapper.ui.online_basemap_dialog import OnlineBasemapDialog
         active_provider = current_provider or (
             self.map_canvas.online_tile_manager().provider

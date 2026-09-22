@@ -30,6 +30,12 @@ def main() -> int:
     logger = logging.getLogger("rme_mapper")
     logger.info("Запуск приложения %s...", APP_NAME)
 
+    try:
+        from rme_mapper.services.runtime_capabilities import RuntimeCapabilities
+        RuntimeCapabilities.log_runtime_environment()
+    except Exception as e:
+        logger.warning("Не удалось записать параметры окружения: %s", e)
+
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
