@@ -1,4 +1,6 @@
 """Дисковый кэш тайлов онлайн-карт (TileDiskCache) с LRU-очисткой, валидацией и HTTP-метаданными."""
+from __future__ import annotations
+
 
 import email.utils
 import json

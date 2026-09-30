@@ -5,6 +5,8 @@
 - Оформление экспортируемой карты (заголовок, легенда, масштабная линейка, стрелка севера);
 - Сериализацию и сохранение файлов проектов.
 """
+from __future__ import annotations
+
 
 from rme_mapper.exporters.decorations import MapDecorationRenderer
 from rme_mapper.exporters.image_export_service import ImageExportService

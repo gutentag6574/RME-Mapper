@@ -1,4 +1,6 @@
 """Точка входа приложения RME-Mapper."""
+from __future__ import annotations
+
 
 import logging
 import sys

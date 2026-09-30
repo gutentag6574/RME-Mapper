@@ -1,4 +1,6 @@
 """Валидатор географических координат в формате десятичных градусов (DD) и DMS."""
+from __future__ import annotations
+
 
 from typing import Any
 import logging

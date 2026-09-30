@@ -1,4 +1,6 @@
 """Диалог настройки и запуска экспорта карты в изображение (ExportImageDialog)."""
+from __future__ import annotations
+
 
 import logging
 from pathlib import Path

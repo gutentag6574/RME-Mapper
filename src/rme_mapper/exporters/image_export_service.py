@@ -1,4 +1,6 @@
 """Сервис сохранения и экспорта растрового изображения карты (ImageExportService)."""
+from __future__ import annotations
+
 
 import logging
 import os

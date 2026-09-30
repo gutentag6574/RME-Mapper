@@ -12,6 +12,8 @@
 - Корректный учет скоупов (All, Selected, Visible)
 - Поддержку больших наборов данных (до 100 000 точек без утечек памяти)
 """
+from __future__ import annotations
+
 
 from collections.abc import Iterable
 import csv

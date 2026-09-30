@@ -1,4 +1,6 @@
 """Диалоговое окно создания и редактирования пользовательской точки (DD / DMS, стиль, цвет, географическая зона)."""
+from __future__ import annotations
+
 
 import logging
 from dataclasses import dataclass

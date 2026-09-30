@@ -1,4 +1,6 @@
 """Диалоговое окно массового изменения категории точек (ChangeCategoryDialog)."""
+from __future__ import annotations
+
 
 import logging
 

@@ -2,6 +2,8 @@
 
 Содержит чистые структуры данных без зависимостей от графического интерфейса Qt.
 """
+from __future__ import annotations
+
 
 from dataclasses import dataclass, field
 from enum import Enum

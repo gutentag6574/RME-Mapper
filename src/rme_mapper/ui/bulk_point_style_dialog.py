@@ -1,4 +1,6 @@
 """Диалоговое окно группового изменения стиля выбранных точек (BulkPointStyleDialog)."""
+from __future__ import annotations
+
 
 import logging
 from typing import Any

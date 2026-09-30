@@ -1,4 +1,6 @@
 """Сервис сохранения, загрузки и валидации проектов GeoPoint Mapper (*.gpmap, *.rmeproject)."""
+from __future__ import annotations
+
 
 import json
 import logging

@@ -1,4 +1,6 @@
 """Фабрика и реестр ГИС-бэкендов (BackendFactory / GISBackendRegistry)."""
+from __future__ import annotations
+
 
 import logging
 from typing import Type

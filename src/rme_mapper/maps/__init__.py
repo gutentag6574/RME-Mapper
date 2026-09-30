@@ -5,6 +5,8 @@
 - Интерактивный холст карты (MapCanvas);
 - Пути к картографическим данным.
 """
+from __future__ import annotations
+
 
 from rme_mapper.maps.map_canvas import MapCanvas
 from rme_mapper.maps.map_config import get_default_geopackage_path, get_project_root

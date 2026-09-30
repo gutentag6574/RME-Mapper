@@ -1,4 +1,6 @@
 """Модель данных для предпросмотра сырых строк таблицы (RawPreviewModel)."""
+from __future__ import annotations
+
 
 from typing import Any
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt

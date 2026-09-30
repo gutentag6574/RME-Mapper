@@ -1,4 +1,6 @@
 """Пакет UI-панелей приложения GeoPoint Mapper."""
+from __future__ import annotations
+
 
 from rme_mapper.ui.panels.groups_panel import GroupsPanel
 from rme_mapper.ui.panels.layers_panel import LayersPanel

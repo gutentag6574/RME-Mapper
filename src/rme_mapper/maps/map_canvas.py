@@ -1,4 +1,6 @@
 """Виджет интерактивного отображения карты на базе QGraphicsView."""
+from __future__ import annotations
+
 
 import logging
 import math

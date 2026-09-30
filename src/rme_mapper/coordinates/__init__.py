@@ -5,6 +5,8 @@
 - Валидацию диапазонов широты (-90..90) и долготы (-180..180);
 - Нормализацию форматов и направлений.
 """
+from __future__ import annotations
+
 
 from rme_mapper.coordinates.converter import dms_to_decimal
 from rme_mapper.coordinates.validator import CoordinateValidator, ValidationError

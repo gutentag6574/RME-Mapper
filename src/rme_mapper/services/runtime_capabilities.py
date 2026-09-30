@@ -4,6 +4,8 @@
 (наличие GIS-библиотек, растровых бэкендов, безопасного TLS, поддержки форматов)
 без размазывания платформенных проверок по кодовой базе.
 """
+from __future__ import annotations
+
 
 import logging
 import platform
@@ -96,10 +98,13 @@ class RuntimeCapabilities:
                 return False
             # Проверяем поддержку SSL в QtNetwork
             try:
+                from rme_mapper.qt_compat import QtNetwork
+                if QtNetwork is not None and hasattr(QtNetwork, "QSslSocket"):
+                    return QtNetwork.QSslSocket.supportsSsl()
                 from PySide6.QtNetwork import QSslSocket
                 return QSslSocket.supportsSsl()
-            except ImportError:
-                return True
+            except Exception:
+                return False
         except Exception:
             return False
 
@@ -114,10 +119,14 @@ class RuntimeCapabilities:
             return False
 
         try:
+            from rme_mapper.qt_compat import QtNetwork
+            if QtNetwork is not None and hasattr(QtNetwork, "QNetworkAccessManager"):
+                return True
             from PySide6.QtNetwork import QNetworkAccessManager
             return True
         except ImportError:
             return False
+
 
     @classmethod
     def supports_geopackage(cls) -> bool:

@@ -1,4 +1,6 @@
 """Контроллер экспорта карты в растровое изображение."""
+from __future__ import annotations
+
 
 from collections.abc import Callable
 import logging

@@ -1,4 +1,6 @@
 """Диалоговое окно создания и редактирования группы объектов (GroupDialog)."""
+from __future__ import annotations
+
 
 import logging
 

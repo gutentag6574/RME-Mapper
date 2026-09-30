@@ -6,6 +6,8 @@
 - Управление видимостью групп;
 - Валидацию уникальности имён групп (case-insensitive).
 """
+from __future__ import annotations
+
 
 import logging
 from typing import Iterator

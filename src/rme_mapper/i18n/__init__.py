@@ -1,4 +1,6 @@
 """Пакет интернационализации и локализации (i18n) приложения GeoPoint Mapper."""
+from __future__ import annotations
+
 
 from rme_mapper.i18n.translation_service import (
     DEFAULT_LANGUAGE,

@@ -4,6 +4,8 @@
 для согласованного, современного и быстрого интерфейса на базе Qt.
 Подготовлен для поддержки тем Light, Dark и System.
 """
+from __future__ import annotations
+
 
 import logging
 from typing import Any

@@ -1,4 +1,6 @@
 """Модели и конфигурация провайдеров онлайн-карт (OnlineTileProvider)."""
+from __future__ import annotations
+
 
 from dataclasses import dataclass, field
 from enum import Enum

@@ -1,4 +1,6 @@
 """Единый источник сведений о приложении GeoPoint Mapper, версии и метаданных сборки."""
+from __future__ import annotations
+
 
 from typing import Final
 

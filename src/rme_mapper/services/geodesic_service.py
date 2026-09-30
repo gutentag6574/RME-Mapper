@@ -1,4 +1,6 @@
 """Сервис геодезических вычислений на эллипсоиде WGS84 через pyproj.Geod."""
+from __future__ import annotations
+
 
 import logging
 from typing import Any

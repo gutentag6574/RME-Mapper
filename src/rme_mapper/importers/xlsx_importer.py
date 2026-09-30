@@ -3,6 +3,8 @@
 Использует библиотеку openpyxl в режиме строгого чтения данных (read_only=True, data_only=True)
 без исполнения макросов, формул или внешних ссылок.
 """
+from __future__ import annotations
+
 
 from pathlib import Path
 from typing import Any

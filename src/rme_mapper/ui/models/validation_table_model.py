@@ -1,4 +1,6 @@
 """Модель данных для таблицы результатов валидации импорта (ValidationTableModel)."""
+from __future__ import annotations
+
 
 from typing import Any
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt

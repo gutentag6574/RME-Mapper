@@ -1,4 +1,6 @@
 """Диалоговое окно экспорта объектов в форматы CSV, XLSX, TXT, GeoJSON (Stage 22)."""
+from __future__ import annotations
+
 
 import logging
 import os

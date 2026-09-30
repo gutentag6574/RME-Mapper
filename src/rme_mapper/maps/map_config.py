@@ -1,4 +1,6 @@
 """Централизованная конфигурация путей к картографическим данным."""
+from __future__ import annotations
+
 
 from pathlib import Path
 

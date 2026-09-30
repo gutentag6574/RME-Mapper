@@ -1,4 +1,6 @@
 """Сервис универсальной работы с координатами, геометрическими проверками и трансформацией CRS."""
+from __future__ import annotations
+
 
 from functools import lru_cache
 import logging

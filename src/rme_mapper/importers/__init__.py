@@ -1,4 +1,6 @@
 """Пакет подсистемы пакетного импорта точек из табличных файлов (XLSX, CSV, TXT)."""
+from __future__ import annotations
+
 
 from rme_mapper.importers.models import (
     CoordinateFormat,

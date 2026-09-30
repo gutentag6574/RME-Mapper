@@ -1,4 +1,6 @@
 """Модели данных и опции экспорта карты в растровое изображение."""
+from __future__ import annotations
+
 
 from dataclasses import dataclass
 import math

@@ -3,6 +3,8 @@
 Не содержит зависимостей от виджетов Qt и графических элементов сцены.
 Работает исключительно со структурами данных модели MapPoint.
 """
+from __future__ import annotations
+
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable

@@ -1,4 +1,6 @@
 """Модель и валидатор визуального стиля пользовательской точки."""
+from __future__ import annotations
+
 
 import logging
 from dataclasses import dataclass

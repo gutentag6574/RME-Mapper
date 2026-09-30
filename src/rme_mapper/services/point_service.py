@@ -1,4 +1,6 @@
 """Менеджер хранения и управления пользовательскими точками в памяти."""
+from __future__ import annotations
+
 
 import logging
 from typing import Any, Iterator

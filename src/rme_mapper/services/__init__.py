@@ -7,6 +7,8 @@
 - Координатные вычисления и геометрические проверки (CoordinateService);
 - Преобразование систем координат (CRS transformation) через pyproj.
 """
+from __future__ import annotations
+
 
 from rme_mapper.services.app_settings_service import AppSettingsService
 from rme_mapper.services.coordinate_service import CoordinateService

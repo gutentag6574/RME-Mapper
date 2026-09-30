@@ -1,4 +1,6 @@
 """Математика тайлов XYZ, проекции Web Mercator (EPSG:3857) и преобразования координат сцены."""
+from __future__ import annotations
+
 
 import math
 from PySide6.QtCore import QPointF, QRectF

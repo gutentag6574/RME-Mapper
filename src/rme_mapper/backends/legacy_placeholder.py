@@ -1,4 +1,6 @@
 """Архитектурный плейсхолдер для будущего бэкенда устаревших платформ (LegacyGeoPackageBackend)."""
+from __future__ import annotations
+
 
 from pathlib import Path
 from typing import Any

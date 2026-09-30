@@ -1,4 +1,6 @@
 """Сервис хранения пользовательских настроек приложения (AppSettingsService)."""
+from __future__ import annotations
+
 
 import logging
 import os

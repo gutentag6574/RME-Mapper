@@ -1,4 +1,6 @@
 """Контроллер управления пользовательскими точками."""
+from __future__ import annotations
+
 
 from collections.abc import Callable
 import copy

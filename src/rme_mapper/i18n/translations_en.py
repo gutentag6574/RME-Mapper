@@ -1,4 +1,6 @@
 """English translations dictionary (en) for GeoPoint Mapper."""
+from __future__ import annotations
+
 
 TRANSLATIONS_EN: dict[str, str] = {
     # Application and general info

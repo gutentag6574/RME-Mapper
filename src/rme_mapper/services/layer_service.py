@@ -1,4 +1,6 @@
 """Сервис обнаружения, типизации и кэширования картографических слоев."""
+from __future__ import annotations
+
 
 import json
 import logging

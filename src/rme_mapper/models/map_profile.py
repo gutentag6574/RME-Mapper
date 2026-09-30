@@ -1,4 +1,6 @@
 """Универсальная модель профиля карты (MapProfile)."""
+from __future__ import annotations
+
 
 from dataclasses import asdict, dataclass, field
 import logging

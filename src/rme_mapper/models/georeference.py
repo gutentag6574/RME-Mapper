@@ -1,4 +1,6 @@
 """Модели данных для ручной геопривязки изображений по контрольным точкам (Stage 21)."""
+from __future__ import annotations
+
 
 from dataclasses import asdict, dataclass, field
 import math

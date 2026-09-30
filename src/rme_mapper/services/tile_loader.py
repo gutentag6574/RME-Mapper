@@ -1,4 +1,6 @@
 """Асинхронный сетевой загрузчик тайлов на базе QNetworkAccessManager (TileLoader)."""
+from __future__ import annotations
+
 
 from collections import deque
 import email.utils

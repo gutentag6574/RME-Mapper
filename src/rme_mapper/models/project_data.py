@@ -1,4 +1,6 @@
 """Модели структуры данных проекта GeoPoint Mapper (*.gpmap, *.rmeproject)."""
+from __future__ import annotations
+
 
 from dataclasses import asdict, dataclass, field
 from typing import Any

@@ -7,6 +7,8 @@
 - Фильтрацию таблицы точек при выборе группы;
 - Контекстное меню управления группой.
 """
+from __future__ import annotations
+
 
 import logging
 from typing import Any

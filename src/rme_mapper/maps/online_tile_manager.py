@@ -1,4 +1,6 @@
 """Менеджер подложки онлайн-тайлов на MapCanvas (OnlineTileManager)."""
+from __future__ import annotations
+
 
 from collections import OrderedDict
 import logging

@@ -1,4 +1,6 @@
 """Пакет пользовательского интерфейса GeoPoint Mapper."""
+from __future__ import annotations
+
 
 from rme_mapper.ui.about_dialog import AboutDialog
 from rme_mapper.ui.point_dialog import AddPointDialog, PointDialog

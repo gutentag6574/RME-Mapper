@@ -1,4 +1,6 @@
 """Пакет бэкендов доступа к ГИС-данным GeoPoint Mapper."""
+from __future__ import annotations
+
 
 from rme_mapper.backends.base import MapDataBackend
 from rme_mapper.backends.modern import ModernGeoPackageBackend

@@ -3,6 +3,8 @@
 Предоставляет выбор файла, режима координат (Auto/DD/DMS), отображение сводки
 (всего/корректных/ошибок/предупреждений) и список первых обнаруженных ошибок.
 """
+from __future__ import annotations
+
 
 from pathlib import Path
 from typing import Any

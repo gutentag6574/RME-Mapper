@@ -7,6 +7,8 @@
 4. Построчная проверка данных и фильтрация (ValidationPage)
 5. Итоговое подтверждение параметров импорта (SummaryPage)
 """
+from __future__ import annotations
+
 
 from collections.abc import Callable
 import logging

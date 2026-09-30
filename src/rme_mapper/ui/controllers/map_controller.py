@@ -1,4 +1,6 @@
 """Контроллер управления картой, слоями и координатной системой."""
+from __future__ import annotations
+
 
 from collections.abc import Callable
 import logging

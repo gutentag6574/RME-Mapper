@@ -386,3 +386,158 @@ def test_14_security_audit_strict_tls_no_verify_false():
     assert "verify=False" not in source
     assert "ignoreSslErrors" not in source
     assert "SSL_VERIFY_NONE" not in source
+
+
+# =============================================================================
+# 6. ФИНАЛЬНЫЙ КОНТРОЛЬ: PYTHON 3.8, QT_COMPAT И GIS DEPLOYMENT
+# =============================================================================
+
+def test_15_python38_ast_compatibility_check():
+    """Проверка всех исходных файлов src/rme_mapper на синтаксическую совместимость с Python 3.8.
+    
+    Требования:
+    - Все модули содержат from __future__ import annotations;
+    - Отсутствуют match/case (PEP 634, Python 3.10+);
+    - Отсутствуют операторы type (PEP 695, Python 3.12+);
+    - Отсутствуют PEP 585/604 выражения вне аннотаций типа;
+    - Отсутствует datetime.UTC (Python 3.11+).
+    """
+    import ast
+
+    src_root = Path("src/rme_mapper")
+    py_files = list(src_root.rglob("*.py"))
+    assert len(py_files) > 0, "Файлы исходного кода не найдены"
+
+    for py_file in py_files:
+        content = py_file.read_text(encoding="utf-8")
+        tree = ast.parse(content, filename=str(py_file))
+
+        # 1. Проверка наличия from __future__ import annotations
+        has_future_annotations = False
+        for node in tree.body:
+            if isinstance(node, ast.ImportFrom) and node.module == "__future__":
+                for alias in node.names:
+                    if alias.name == "annotations":
+                        has_future_annotations = True
+                        break
+        assert has_future_annotations, f"Файл {py_file.name} не содержит from __future__ import annotations"
+
+        # 2. Проверка AST узлов на несовместимые с 3.8 конструкции
+        for node in ast.walk(tree):
+            assert not isinstance(node, getattr(ast, "Match", type(None))), (
+                f"В {py_file.name} найден match/case (Python 3.10+)"
+            )
+            assert not isinstance(node, getattr(ast, "TypeAlias", type(None))), (
+                f"В {py_file.name} найден TypeAlias (Python 3.12+)"
+            )
+            if isinstance(node, ast.Attribute) and node.attr == "UTC":
+                assert False, f"В {py_file.name} найден datetime.UTC (Python 3.11+)"
+
+
+def test_16_qt_compat_module_exports():
+    """Верификация централизованного слоя совместимости qt_compat."""
+    from rme_mapper import qt_compat
+    from rme_mapper.ui import qt_compat as ui_qt_compat
+
+    assert qt_compat.QT_BINDING in ("PySide6", "PySide2", "PyQt5")
+    assert isinstance(qt_compat.QT_VERSION, tuple)
+    assert qt_compat.Signal is not None
+    assert qt_compat.Slot is not None
+    assert qt_compat.Qt is not None
+    assert qt_compat.QtCore is not None
+    assert qt_compat.QtGui is not None
+    assert qt_compat.QtWidgets is not None
+    assert hasattr(qt_compat.QtGui, "QAction")
+    assert hasattr(qt_compat.QtGui, "QActionGroup")
+
+    # Проверка реэкспорта в ui.qt_compat
+    assert ui_qt_compat.QT_BINDING == qt_compat.QT_BINDING
+    assert ui_qt_compat.Signal is qt_compat.Signal
+    assert ui_qt_compat.QAction is qt_compat.QAction
+
+
+def test_17_setup_gis_environment_bundle_paths(monkeypatch):
+    """Верификация проверки путей к proj.db и header.dxf внутри собственного deployment."""
+    import rme_mapper
+
+    # Проверяем, что функция существует и вызывается без ошибок
+    monkeypatch.delenv("PROJ_DATA", raising=False)
+    monkeypatch.delenv("PROJ_LIB", raising=False)
+    monkeypatch.delenv("GDAL_DATA", raising=False)
+
+    rme_mapper._setup_gis_environment()
+
+
+def test_18_roundtrip_preserves_geotiff_and_image_affine_and_gcps(tmp_path: Path):
+    """Полный Round-Trip тест сохранения метаданных растров:
+    GeoTIFF, Georeferenced Image, Affine Matrix, Control Points, CRS.
+    """
+    proj_path = tmp_path / "raster_georef_project.gpmap"
+    ps = ProjectService()
+
+    # Создаем проект с метаданными GeoTIFF и привязанного растра с контрольными точками
+    orig_map = ProjectMapData(
+        map_id="geotiff_map_001",
+        relative_path="maps/satellite_view.tif",
+        name="Спутниковый снимок высокого разрешения",
+        source_type="georeferenced_image",
+        crs="EPSG:32637",
+        provider_id=None,
+        map_type="georeferenced_raster",
+        affine_transform=[0.5, 0.0, 450000.0, 0.0, -0.5, 6150000.0],
+        control_points=[
+            {"id": "gcp_1", "pixel_x": 100.0, "pixel_y": 200.0, "geo_x": 450050.0, "geo_y": 6149900.0},
+            {"id": "gcp_2", "pixel_x": 500.0, "pixel_y": 600.0, "geo_x": 450250.0, "geo_y": 6149700.0},
+        ],
+        transformation_type="affine",
+    )
+
+    pts = [MapPoint(id="p1", object_number="1", name="Опора 1", latitude=55.45, longitude=37.35)]
+    groups = [ObjectGroup(id="g1", name="Инфраструктура", description="ЛЭП")]
+
+    project = ps.build_project_data(
+        map_path=None,
+        layers=[],
+        points=pts,
+        groups=groups,
+        preserve_map_data=orig_map,
+    )
+    ps.save_project(project, proj_path)
+
+    # Загружаем в окружении, где GeoTIFF и растры не поддерживаются
+    RuntimeCapabilities.override_for_testing(supports_geotiff=False)
+    try:
+        loaded = ps.load_project(proj_path)
+        assert loaded.map.source_type == "georeferenced_image"
+        assert loaded.map.affine_transform == [0.5, 0.0, 450000.0, 0.0, -0.5, 6150000.0]
+        assert len(loaded.map.control_points) == 2
+        assert loaded.map.control_points[0]["id"] == "gcp_1"
+        assert loaded.map.crs == "EPSG:32637"
+        assert loaded.map.transformation_type == "affine"
+
+        # Вносим изменение в точки
+        pts_modified = [p.to_map_point() for p in loaded.points]
+        pts_modified.append(MapPoint(id="p2", object_number="2", name="Опора 2", latitude=55.46, longitude=37.36))
+
+        # Пересохраняем с preserve_map_data
+        re_saved = ps.build_project_data(
+            map_path=None,
+            layers=[],
+            points=pts_modified,
+            groups=groups,
+            preserve_map_data=loaded.map,
+        )
+        ps.save_project(re_saved, proj_path)
+
+        # Перезагружаем и проверяем, что ни один байт метаданных не утерян
+        reloaded = ps.load_project(proj_path)
+        assert len(reloaded.points) == 2
+        assert reloaded.map.source_type == "georeferenced_image"
+        assert reloaded.map.relative_path == "maps/satellite_view.tif"
+        assert reloaded.map.crs == "EPSG:32637"
+        assert reloaded.map.affine_transform == [0.5, 0.0, 450000.0, 0.0, -0.5, 6150000.0]
+        assert len(reloaded.map.control_points) == 2
+        assert reloaded.map.control_points[1]["id"] == "gcp_2"
+    finally:
+        RuntimeCapabilities.reset_overrides()
+

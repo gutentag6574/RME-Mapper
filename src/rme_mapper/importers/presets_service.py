@@ -1,4 +1,6 @@
 """Сервис сохранения и загрузки пресетов сопоставления колонок импорта."""
+from __future__ import annotations
+
 
 import json
 import logging

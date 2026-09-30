@@ -1,4 +1,6 @@
 """Диалог выбора и настройки онлайн-картографической подложки (OnlineBasemapDialog)."""
+from __future__ import annotations
+
 
 import logging
 from typing import Any

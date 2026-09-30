@@ -2,6 +2,8 @@
 
 Координирует работу панели групп, сервиса групп, undo-менеджера, холста карты и таблицы точек.
 """
+from __future__ import annotations
+
 
 import copy
 import logging

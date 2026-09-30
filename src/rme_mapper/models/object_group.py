@@ -4,6 +4,8 @@
 позволяющая структурировать и фильтровать точки на карте.
 Не является геометрией GIS.
 """
+from __future__ import annotations
+
 
 from dataclasses import asdict, dataclass, field
 import re

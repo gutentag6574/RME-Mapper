@@ -1,4 +1,6 @@
 """Современная реализация растрового бэкенда ModernGeoTiffBackend на базе rasterio."""
+from __future__ import annotations
+
 
 import logging
 import math

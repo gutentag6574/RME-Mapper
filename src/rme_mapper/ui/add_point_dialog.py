@@ -3,6 +3,8 @@
 This module re-exports PointDialog and AddPointDialog from point_dialog.py
 for backward compatibility with existing tests and scripts.
 """
+from __future__ import annotations
+
 
 from rme_mapper.ui.point_dialog import (
     AddPointDialog,

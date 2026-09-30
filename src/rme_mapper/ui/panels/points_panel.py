@@ -1,4 +1,6 @@
 """Панель управления пользовательскими точками и таблицей точек."""
+from __future__ import annotations
+
 
 import logging
 from typing import Any

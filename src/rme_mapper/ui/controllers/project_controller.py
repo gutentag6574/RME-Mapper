@@ -1,4 +1,6 @@
 """Контроллер управления жизненным циклом проектов (*.gpmap / *.rmeproject)."""
+from __future__ import annotations
+
 
 from collections.abc import Callable
 import logging

@@ -1,4 +1,6 @@
 """Современная реализация ГИС-бэкенда на базе GeoPandas, pyogrio и Shapely."""
+from __future__ import annotations
+
 
 import logging
 from pathlib import Path

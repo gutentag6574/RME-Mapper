@@ -1,4 +1,6 @@
 """Словарь переводов на русский язык (ru) для GeoPoint Mapper."""
+from __future__ import annotations
+
 
 TRANSLATIONS_RU: dict[str, str] = {
     # Приложение и общие сведения

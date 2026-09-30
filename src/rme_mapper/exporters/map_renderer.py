@@ -1,4 +1,6 @@
 """Независимый картографический рендерер карты в QImage без привязки к размеру окна."""
+from __future__ import annotations
+
 
 import logging
 import math

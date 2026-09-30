@@ -1,4 +1,6 @@
 """Экранный оверлей масштабной линейки (ScaleOverlayWidget) в левом верхнем углу холста карты."""
+from __future__ import annotations
+
 
 import logging
 from typing import Any

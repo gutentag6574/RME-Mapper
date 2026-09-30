@@ -5,6 +5,8 @@
 - Картографических слоев (MapLayer, LayerRole);
 - Проектов (Project, ProjectSettings).
 """
+from __future__ import annotations
+
 
 from rme_mapper.models.map_layer import DEFAULT_Z_ORDERS, LayerRole, MapLayer
 from rme_mapper.models.map_point import MapPoint

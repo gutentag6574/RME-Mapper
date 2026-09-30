@@ -1,4 +1,6 @@
 """Контроллер пользовательского сценария пакетного импорта точек."""
+from __future__ import annotations
+
 
 from collections.abc import Callable
 import logging

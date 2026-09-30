@@ -1,4 +1,6 @@
 """Единый сервис локализации и переводов (TranslationService) для GeoPoint Mapper."""
+from __future__ import annotations
+
 
 import logging
 from typing import Any, Callable

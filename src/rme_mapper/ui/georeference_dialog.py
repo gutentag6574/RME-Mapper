@@ -1,4 +1,6 @@
 """Интерактивный диалог ручной геопривязки изображений по контрольным точкам (GeoreferenceDialog)."""
+from __future__ import annotations
+
 
 import logging
 import math

@@ -7,6 +7,8 @@
 4. Расчет остаточных невязок и RMSE в физических единицах (метрах).
 5. Экспорт World File (.pgw, .jgw, .tfw, .prj) без изменения исходного файла.
 """
+from __future__ import annotations
+
 
 import logging
 import math

@@ -1,4 +1,6 @@
 """Сервис обнаружения, загрузки и управления каталогом профилей карт (MapCatalogService)."""
+from __future__ import annotations
+
 
 import json
 import logging
