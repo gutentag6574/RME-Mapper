@@ -49,3 +49,5 @@ ehthumbs.db
 Desktop.ini
 # Temporary scratch files
 scratch/
+tools/innosetup/
+release/

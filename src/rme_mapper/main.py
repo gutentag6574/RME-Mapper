@@ -11,6 +11,8 @@ project_src = Path(__file__).resolve().parent.parent
 if str(project_src) not in sys.path:
     sys.path.insert(0, str(project_src))
 
+import rme_mapper  # noqa: F401 - инициализирует PROJ_DATA, GDAL_DATA и DLL каталоги
+
 from PySide6.QtWidgets import QApplication
 
 from rme_mapper.app_info import APP_NAME
@@ -42,7 +44,70 @@ def main() -> int:
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
 
+    # Установка официальной иконки приложения
+    try:
+        from PySide6.QtGui import QIcon
+        res_dir = Path(__file__).resolve().parent / "resources"
+        icon_path = res_dir / "icon.png" if (res_dir / "icon.png").exists() else res_dir / "icon.ico"
+        if icon_path.exists():
+            app_icon = QIcon(str(icon_path))
+            app.setWindowIcon(app_icon)
+    except Exception as e:
+        logger.debug("Не удалось загрузить иконку приложения: %s", e)
+
     window = MainWindow()
+    if 'app_icon' in locals() and not app_icon.isNull():
+        window.setWindowIcon(app_icon)
+
+    # Специальный режим быстрой автономной валидации запуска (Smoke Test)
+    if "--smoke-test" in sys.argv:
+        logger.info("Режим --smoke-test: валидация инициализации ГИС-подсистемы и UI...")
+        try:
+            # 1. Валидация CoordinateService (WGS84, Web Mercator, UTM)
+            from rme_mapper.services.coordinate_service import CoordinateService
+            x, y = CoordinateService.transform_xy(37.6173, 55.7558, "EPSG:4326", "EPSG:3857")
+            lon, lat = CoordinateService.transform_xy(x, y, "EPSG:3857", "EPSG:4326")
+            if abs(lon - 37.6173) > 1e-4 or abs(lat - 55.7558) > 1e-4:
+                raise RuntimeError(f"Сбой трансформации координат: ({lon}, {lat})")
+
+            # 2. Валидация ProjectData и ProjectPointData
+            from rme_mapper.models.project_data import ProjectData, ProjectPointData
+            pt_data = ProjectPointData(id="smoke_1", name="Smoke Point", latitude=55.7558, longitude=37.6173)
+            proj = ProjectData(points=[pt_data])
+            d = proj.to_dict()
+            restored = ProjectData.from_dict(d)
+            if len(restored.points) != 1 or restored.points[0].name != "Smoke Point":
+                raise RuntimeError("Сбой сериализации/десериализации проекта в smoke test")
+
+            # 3. Валидация AppSettingsService
+            from rme_mapper.services.app_settings_service import AppSettingsService
+            settings = AppSettingsService()
+            _ = settings.get_language()
+
+            # 4. Валидация BackendFactory (GeoPackage и GeoTIFF)
+            from rme_mapper.backends.factory import BackendFactory
+            gpkg_backend = BackendFactory.get_backend()
+            raster_backend = BackendFactory.get_raster_backend()
+            if gpkg_backend is None or raster_backend is None:
+                raise RuntimeError("Бэкенды GeoPackage/GeoTIFF не инициализированы")
+
+            app.processEvents()
+            window.show()
+            app.processEvents()
+            window.close()
+            app.processEvents()
+            try:
+                Path("smoke_success.txt").write_text("SMOKE-TEST SUCCESS", encoding="utf-8")
+            except Exception:
+                pass
+            logger.info("[SMOKE-TEST] SUCCESS: Интерфейс и ГИС-модули успешно инициализированы.")
+            print("[SMOKE-TEST] SUCCESS")
+            return 0
+        except Exception as e:
+            logger.error("[SMOKE-TEST] Ошибка при валидации: %s", e, exc_info=True)
+            print(f"[SMOKE-TEST] FAILED: {e}", file=sys.stderr)
+            return 1
+
     window.show()
 
     exit_code = app.exec()
