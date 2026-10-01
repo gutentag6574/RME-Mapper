@@ -2,7 +2,9 @@
 ; Tested with Inno Setup 6/7
 
 #define MyAppName "GeoPoint Mapper"
-#define MyAppVersion "0.12.0"
+#ifndef MyAppVersion
+#define MyAppVersion "1.0.0"
+#endif
 #define MyAppPublisher "Кульдеев Вадим Алексеевич"
 #define MyAppURL "https://github.com/gutentag6574/RME-Mapper"
 #define MyAppExeName "GeoPointMapper.exe"

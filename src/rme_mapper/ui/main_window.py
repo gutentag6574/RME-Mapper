@@ -58,6 +58,69 @@ from rme_mapper.ui.theme_manager import get_theme_manager
 logger = logging.getLogger("rme_mapper.ui.main_window")
 
 
+def sanitize_window_geometry(
+    target_rect: QRect,
+    screen_geometries: list[QRect] | None = None,
+    primary_geometry: QRect | None = None,
+) -> QRect:
+    """Нормализация и валидация геометрии окна для гарантированной доступности заголовка.
+
+    - Определяет экран с максимальным пересечением целевого прямоугольника.
+    - Если пересечения нет (монитор отключен), используется primary_geometry.
+    - Ограничивает ширину и высоту размерами рабочей области (availableGeometry).
+    - Гарантирует, что верхняя граница окна (title bar) находится в пределах рабочей области:
+      y >= avail.top() и y <= avail.bottom() - safety_margin.
+    - Гарантирует горизонтальную видимость окна.
+    - Корректно работает с отрицательными координатами многомониторных конфигураций.
+    """
+    screens = screen_geometries or []
+    best_screen_rect: QRect | None = None
+    max_overlap_area = 0
+
+    for s_rect in screens:
+        intersect = s_rect.intersected(target_rect)
+        if not intersect.isEmpty():
+            area = intersect.width() * intersect.height()
+            if area > max_overlap_area:
+                max_overlap_area = area
+                best_screen_rect = s_rect
+
+    # Если окно не пересекает ни один экран (отключенный монитор / мусорные координаты)
+    if best_screen_rect is None or max_overlap_area <= 0:
+        if primary_geometry is not None:
+            best_screen_rect = primary_geometry
+        elif screens:
+            best_screen_rect = screens[0]
+        else:
+            best_screen_rect = QRect(0, 0, 1400, 850)
+
+    avail = best_screen_rect
+
+    # 1. Ограничение размеров рабочей областью
+    w = min(max(320, target_rect.width()), avail.width())
+    h = min(max(240, target_rect.height()), avail.height())
+
+    # 2. Нормализация координаты Y (гарантия доступности строки заголовка)
+    min_y = avail.top()
+    max_y = avail.top() + max(0, avail.height() - min(h, 40))
+    y = max(min_y, min(target_rect.y(), max_y))
+
+    # 3. Нормализация координаты X (гарантия горизонтальной доступности)
+    min_x = avail.left()
+    max_x = avail.left() + max(0, avail.width() - min(w, 80))
+    if w <= avail.width():
+        max_x_bounded = avail.left() + avail.width() - w
+        x = max(min_x, min(target_rect.x(), max_x_bounded))
+    else:
+        x = max(min_x, min(target_rect.x(), max_x))
+
+    if h <= avail.height():
+        max_y_bounded = avail.top() + avail.height() - h
+        y = max(min_y, min(y, max_y_bounded))
+
+    return QRect(x, y, w, h)
+
+
 class MainWindow(QMainWindow):
     """Главное окно приложения GeoPoint Mapper."""
 
@@ -70,9 +133,10 @@ class MainWindow(QMainWindow):
         map_profile: MapProfile | None = None,
         map_path: Path | str | None = None,
         backend: MapDataBackend | None = None,
+        project_path: Path | str | None = None,
     ) -> None:
         super().__init__(parent)
-        self.resize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
+        self._apply_default_geometry()
 
         self._backend: MapDataBackend = backend or get_backend()
         self._settings_service = AppSettingsService()
@@ -218,8 +282,10 @@ class MainWindow(QMainWindow):
         # Проверка аварийного снимка при запуске
         self._check_recovery_snapshot_on_startup()
 
-        # Загрузка карты при старте при наличии параметров
-        if map_profile is not None:
+        # Загрузка проекта или карты при старте при наличии параметров
+        if project_path is not None:
+            self.open_project(project_path)
+        elif map_profile is not None:
             self.load_map(map_profile)
         elif map_path is not None:
             self.load_map(map_path)
@@ -1129,29 +1195,33 @@ class MainWindow(QMainWindow):
         self._settings_service.set_statusbar_visible(visible)
 
     def _apply_default_geometry(self) -> None:
-        """Установка геометрии по умолчанию (1400x850) с центрированием на экране."""
-        self.resize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
+        """Установка геометрии по умолчанию (1400x850) с адаптацией под экран."""
         screen = QGuiApplication.primaryScreen()
         if screen:
             avail = screen.availableGeometry()
-            x = avail.x() + max(0, (avail.width() - self.DEFAULT_WIDTH) // 2)
-            y = avail.y() + max(0, (avail.height() - self.DEFAULT_HEIGHT) // 2)
+            margin_w = 40
+            margin_h = 60
+            target_w = min(self.DEFAULT_WIDTH, max(640, avail.width() - margin_w))
+            target_h = min(self.DEFAULT_HEIGHT, max(480, avail.height() - margin_h))
+            self.resize(target_w, target_h)
+            x = avail.x() + max(0, (avail.width() - target_w) // 2)
+            y = avail.y() + max(0, (avail.height() - target_h) // 2)
             self.move(x, y)
+        else:
+            self.resize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
 
     def restore_ui_state(self) -> None:
         """Восстановление геометрии, состояния сплиттера и видимости панелей."""
         geom = self._settings_service.get_window_geometry()
-        if geom:
-            target_rect = QRect(geom["x"], geom["y"], geom["width"], geom["height"])
-            valid_screen = False
-            for screen in QGuiApplication.screens():
-                if screen.availableGeometry().intersects(target_rect):
-                    valid_screen = True
-                    break
-            if valid_screen:
-                self.setGeometry(target_rect)
-            else:
-                self._apply_default_geometry()
+        screens = QGuiApplication.screens()
+        primary = QGuiApplication.primaryScreen()
+        screen_geoms = [s.availableGeometry() for s in screens] if screens else []
+        primary_geom = primary.availableGeometry() if primary else (screen_geoms[0] if screen_geoms else None)
+
+        if geom and isinstance(geom, dict) and "width" in geom and "height" in geom:
+            target_rect = QRect(geom.get("x", 0), geom.get("y", 0), geom["width"], geom["height"])
+            sanitized = sanitize_window_geometry(target_rect, screen_geoms, primary_geom)
+            self.setGeometry(sanitized)
         else:
             self._apply_default_geometry()
 
@@ -1411,8 +1481,6 @@ class MainWindow(QMainWindow):
 
         if hasattr(self, "points_panel"):
             self._on_points_count_changed(self.points_panel.total_count, self.points_panel.shown_count)
-
-        self._update_window_title()
 
         self._update_window_title()
 

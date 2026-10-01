@@ -1,6 +1,6 @@
 # GeoPoint Mapper — Руководство по сборке и выпуску релизов
 
-В данном документе описан регламент подготовки, сборки, валидации и выпуска автономных дистрибутивов **GeoPoint Mapper** версии **0.12.0** для операционных систем Windows (x64).
+В данном документе описан регламент подготовки, сборки, валидации и выпуска автономных дистрибутивов **GeoPoint Mapper** версии **1.0.0** для операционных систем Windows (x64).
 
 ---
 
@@ -11,10 +11,10 @@ GeoPoint Mapper поставляется в трёх автономных вар
 1. **Standalone Application Directory** (`release/standalone/GeoPointMapper/`):
    - Автономный каталог с исполняемым файлом `GeoPointMapper.exe` и подкаталогом `_internal/`.
    - Запускается напрямую без распаковки во временные директории и без прав администратора.
-2. **Portable Package** (`release/portable/GeoPointMapper-0.12.0-portable.zip`):
+2. **Portable Package** (`release/portable/GeoPointMapper-1.0.0-portable.zip`):
    - ZIP-архив с предупакованным автономным приложением.
    - Готов к переносу на USB-носителях и запуску из произвольного каталога (включая пути с пробелами и кириллицей).
-3. **Windows Installer** (`release/installer/GeoPointMapper-0.12.0-Setup-x64.exe`):
+3. **Windows Installer** (`release/installer/GeoPointMapper-1.0.0-Setup-x64.exe`):
    - Полнофункциональный инсталлятор на базе Inno Setup.
    - Безопасная per-user установка в `%LOCALAPPDATA%\Programs\GeoPoint Mapper` (не требует UAC / прав администратора).
    - Создает ярлыки в меню «Пуск» и на Рабочем столе, регистрирует ассоциацию файлов проектов `*.gpmap`.
@@ -69,13 +69,13 @@ python build_release.py
 ```
 
 ### Этапы автоматического конвейера:
-1. **Валидация версий**: сверка версии `0.12.0` в `pyproject.toml`, `src/rme_mapper/app_info.py`, `GeoPointMapper.spec`, `packaging/file_version_info.txt` и `packaging/installer.iss`.
+1. **Валидация версий**: сверка версии `1.0.0` в `pyproject.toml`, `src/rme_mapper/app_info.py`, `GeoPointMapper.spec`, `packaging/file_version_info.txt` и `packaging/installer.iss`.
 2. **Очистка**: удаление предыдущих `build/`, `dist/`, `release/`.
 3. **PyInstaller Build**: генерация автономного каталога приложения `dist/GeoPointMapper/`.
 4. **Валидация компонентов**: проверка через `tools/validate_release.py` наличия `GeoPointMapper.exe`, `qwindows.dll`, `proj.db`, `header.dxf`, иконок и отсутствия dev-мусора.
 5. **Smoke Test**: запуск `GeoPointMapper.exe --smoke-test` в изолированном окружении без системных переменных Python.
-6. **Portable ZIP**: архивация каталога в `release/portable/GeoPointMapper-0.12.0-portable.zip`.
-7. **Installer Build**: компиляция инсталлятора через `ISCC.exe` в `release/installer/GeoPointMapper-0.12.0-Setup-x64.exe`.
+6. **Portable ZIP**: архивация каталога в `release/portable/GeoPointMapper-1.0.0-portable.zip`.
+7. **Installer Build**: компиляция инсталлятора через `ISCC.exe` в `release/installer/GeoPointMapper-1.0.0-Setup-x64.exe`.
 8. **Манифест и контрольные суммы**: формирование `release/release_manifest.json` и `release/SHA256SUMS.txt`.
 
 ---
@@ -87,9 +87,9 @@ python build_release.py
 ```
 release/
 ├── installer/
-│   └── GeoPointMapper-0.12.0-Setup-x64.exe
+│   └── GeoPointMapper-1.0.0-Setup-x64.exe
 ├── portable/
-│   └── GeoPointMapper-0.12.0-portable.zip
+│   └── GeoPointMapper-1.0.0-portable.zip
 ├── standalone/
 │   └── GeoPointMapper/
 │       ├── GeoPointMapper.exe
@@ -115,7 +115,7 @@ release/
 3. **Проверка Installer**:
    - Запустить тихую установку:
      ```cmd
-     release\installer\GeoPointMapper-0.12.0-Setup-x64.exe /SP- /VERYSILENT /SUPPRESSMSGBOXES /CURRENTUSER /DIR="C:\TestInstall\GeoPointMapper"
+     release\installer\GeoPointMapper-1.0.0-Setup-x64.exe /SP- /VERYSILENT /SUPPRESSMSGBOXES /CURRENTUSER /DIR="C:\TestInstall\GeoPointMapper"
      ```
    - Проверить наличие ярлыков и деинсталлятора.
    - Запустить установленное приложение:

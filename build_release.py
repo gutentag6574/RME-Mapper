@@ -180,9 +180,20 @@ def create_portable_zip(dist_dir: Path, output_zip: Path) -> Path:
     log(f"Portable архив создан: {output_zip} ({output_zip.stat().st_size / (1024*1024):.1f} MB)")
     return output_zip
 
-def build_installer(iss_file: Path) -> Path:
+def get_canonical_version() -> str:
+    """Получение канонической версии приложения из src/rme_mapper/app_info.py."""
+    import re
+    app_info_path = PROJECT_ROOT / "src" / "rme_mapper" / "app_info.py"
+    content = app_info_path.read_text(encoding="utf-8")
+    m = re.search(r'APP_VERSION:\s*Final\[str\]\s*=\s*["\']([^"\']+)["\']', content)
+    if not m:
+        raise ValueError(f"Не удалось извлечь APP_VERSION из {app_info_path}")
+    return m.group(1)
+
+
+def build_installer(iss_file: Path, app_version: str) -> Path:
     """Компиляция инсталлятора через Inno Setup Compiler (ISCC)."""
-    log("Компиляция инсталлятора через Inno Setup...")
+    log(f"Компиляция инсталлятора для версии {app_version} через Inno Setup...")
     iscc_candidates = [
         shutil.which("iscc"),
         str(PROJECT_ROOT / "tools" / "innosetup" / "ISCC.exe"),
@@ -193,19 +204,21 @@ def build_installer(iss_file: Path) -> Path:
     if not iscc_exe:
         raise FileNotFoundError("Inno Setup Compiler (ISCC.exe) не найден.")
 
-    cmd = [iscc_exe, "/Q", str(iss_file)]
+    cmd = [iscc_exe, f"/DMyAppVersion={app_version}", "/Q", str(iss_file)]
     subprocess.run(cmd, cwd=PROJECT_ROOT / "packaging", check=True)
 
-    installer_output = PROJECT_ROOT / "release" / "installer" / "GeoPointMapper-0.12.0-Setup-x64.exe"
+    installer_output = PROJECT_ROOT / "release" / "installer" / f"GeoPointMapper-{app_version}-Setup-x64.exe"
     if not installer_output.exists():
         raise RuntimeError(f"Инсталлятор не найден по пути: {installer_output}")
 
     log(f"Инсталлятор успешно создан: {installer_output} ({installer_output.stat().st_size / (1024*1024):.1f} MB)")
     return installer_output
 
+
 def main() -> int:
     start_time = datetime.datetime.now()
-    log("=== ЗАПУСК СБОРКИ РЕЛИЗА GEOPOINT MAPPER v0.12.0 ===")
+    app_version = get_canonical_version()
+    log(f"=== ЗАПУСК СБОРКИ РЕЛИЗА GEOPOINT MAPPER v{app_version} ===")
 
     skip_pyinstaller = "--skip-pyinstaller" in sys.argv
 
@@ -214,8 +227,7 @@ def main() -> int:
         error("Требуется Python 3.12 или новее.")
         return 1
 
-    expected_version = "0.12.0"
-    if not check_version_consistency(expected_version):
+    if not check_version_consistency(app_version):
         return 1
 
     # 2. Очистка
@@ -241,18 +253,18 @@ def main() -> int:
     run_smoke_test(release_standalone / "GeoPointMapper.exe")
 
     # 7. Portable ZIP
-    portable_zip = PROJECT_ROOT / "release" / "portable" / f"GeoPointMapper-{expected_version}-portable.zip"
+    portable_zip = PROJECT_ROOT / "release" / "portable" / f"GeoPointMapper-{app_version}-portable.zip"
     create_portable_zip(dist_dir, portable_zip)
 
     # 8. Инсталлятор
     iss_path = PROJECT_ROOT / "packaging" / "installer.iss"
-    installer_exe = build_installer(iss_path)
+    installer_exe = build_installer(iss_path, app_version)
 
     # 9. Формирование манифеста и чек-сумм
     log("Формирование release_manifest.json и SHA256SUMS.txt...")
     artifacts = [
         {
-            "name": f"GeoPointMapper-{expected_version}-portable.zip",
+            "name": f"GeoPointMapper-{app_version}-portable.zip",
             "type": "portable_zip",
             "path": f"portable/{portable_zip.name}",
             "size_bytes": portable_zip.stat().st_size,
@@ -276,7 +288,7 @@ def main() -> int:
 
     manifest = {
         "product": "GeoPoint Mapper",
-        "version": expected_version,
+        "version": app_version,
         "build_date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "git_commit": get_git_commit(),
         "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",

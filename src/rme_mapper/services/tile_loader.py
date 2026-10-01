@@ -12,11 +12,12 @@ from typing import Any
 from PySide6.QtCore import QByteArray, QObject, QTimer, QUrl, Signal
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
+from rme_mapper.app_info import APP_NAME, APP_VERSION
 from rme_mapper.services.tile_cache import TileDiskCache
 
 logger = logging.getLogger("rme_mapper.services.tile_loader")
 
-APP_USER_AGENT = "GeoPoint Mapper/0.12.0 (+https://github.com/gutentag6574/RME-Mapper)"
+APP_USER_AGENT = f"{APP_NAME}/{APP_VERSION} (+https://github.com/gutentag6574/RME-Mapper)"
 DEFAULT_MAX_CONCURRENCY = 4
 OSM_MAX_CONCURRENCY = 2  # Строгое соответствие OSM Tile Usage Policy (максимум 2 параллельных потока)
 REQUEST_TIMEOUT_MS = 10_000  # 10 секунд таймаут

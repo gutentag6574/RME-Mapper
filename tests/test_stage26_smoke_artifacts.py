@@ -18,15 +18,25 @@ import zipfile
 
 import pytest
 
+from rme_mapper.app_info import APP_VERSION
+
 ROOT_DIR = Path(__file__).resolve().parent.parent
 RELEASE_DIR = ROOT_DIR / "release"
 
 
 def _clean_env() -> dict[str, str]:
-    """Формирование изолированного окружения без переменных Python-разработки."""
+    """Формирование изолированного окружения без переменных Python-разработки и без .venv в PATH."""
     env = os.environ.copy()
-    for var in ["PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV"]:
+    for var in ["PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PROJ_DATA", "PROJ_LIB", "GDAL_DATA"]:
         env.pop(var, None)
+
+    # Исключаем пути виртуального окружения и репозитория из PATH
+    orig_path = env.get("PATH", "")
+    clean_parts = [
+        p for p in orig_path.split(os.pathsep)
+        if ".venv" not in p.lower() and "rme-mapper" not in p.lower()
+    ]
+    env["PATH"] = os.pathsep.join(clean_parts)
     return env
 
 
@@ -65,7 +75,7 @@ def test_01_standalone_exe_clean_machine_smoke() -> None:
 
 def test_02_portable_zip_unicode_and_spaces_path_smoke() -> None:
     """Проверка распаковки Portable ZIP в путь с пробелами и кириллицей и запуска."""
-    zip_path = RELEASE_DIR / "portable" / "GeoPointMapper-0.12.0-portable.zip"
+    zip_path = RELEASE_DIR / "portable" / f"GeoPointMapper-{APP_VERSION}-portable.zip"
     assert zip_path.exists(), f"Архив не найден: {zip_path}"
 
     test_extract_dir = ROOT_DIR / "scratch" / "Тест GeoPoint Mapper" / "Portable"
@@ -101,7 +111,7 @@ def test_02_portable_zip_unicode_and_spaces_path_smoke() -> None:
 
 def test_03_installer_install_smoke_and_uninstall() -> None:
     """Проверка установки через инсталлятор, запуска и деинсталляции."""
-    installer_path = RELEASE_DIR / "installer" / "GeoPointMapper-0.12.0-Setup-x64.exe"
+    installer_path = RELEASE_DIR / "installer" / f"GeoPointMapper-{APP_VERSION}-Setup-x64.exe"
     assert installer_path.exists(), f"Инсталлятор не найден: {installer_path}"
 
     install_target = ROOT_DIR / "scratch" / "Тест Установки" / "Installed App"
@@ -154,7 +164,7 @@ def test_04_release_manifest_and_sha256_checksums() -> None:
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["product"] == "GeoPoint Mapper"
-    assert manifest["version"] == "0.12.0"
+    assert manifest["version"] == APP_VERSION
     assert manifest["packaging_tool"].startswith("PyInstaller")
     assert manifest["installer_tool"].startswith("Inno Setup")
     assert len(manifest["artifacts"]) >= 3

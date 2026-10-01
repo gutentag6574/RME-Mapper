@@ -353,7 +353,7 @@ class ProjectController(QObject):
                 self._unsupported_map_data = project.map
                 self._map_controller.unload_map()
                 self.apply_project_data(project)
-                self._set_status(tr("status.online_maps_unsupported") or "Онлайн-карты недоступны на данной платформе. Проект открыт без подложки.", 5000)
+                self._set_status(tr("status.online_maps_unsupported"), 5000)
                 return True
 
             online_prof = MapProfile(
@@ -378,7 +378,7 @@ class ProjectController(QObject):
             self._unsupported_map_data = project.map
             self._map_controller.unload_map()
             self.apply_project_data(project)
-            self._set_status("GeoTIFF недоступен на данной платформе. Проект открыт без подложки.", 5000)
+            self._set_status(tr("status.geotiff_unsupported"), 5000)
             return True
 
         if project.map.source_type == "geopackage" and not RuntimeCapabilities.supports_geopackage():
@@ -389,7 +389,7 @@ class ProjectController(QObject):
             self._unsupported_map_data = project.map
             self._map_controller.unload_map()
             self.apply_project_data(project)
-            self._set_status("GeoPackage недоступен на данной платформе. Проект открыт без подложки.", 5000)
+            self._set_status(tr("status.geopackage_unsupported"), 5000)
             return True
 
         target_map_path: Path | None = None

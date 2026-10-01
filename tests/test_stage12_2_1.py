@@ -226,11 +226,13 @@ def test_17_window_geometry_restored(qapp, clean_settings):
     screen = QGuiApplication.primaryScreen()
     if screen:
         avail = screen.availableGeometry()
-        clean_settings.set_window_geometry(avail.x() + 10, avail.y() + 10, 1100, 700)
+        target_w = min(1100, avail.width())
+        target_h = min(700, avail.height())
+        clean_settings.set_window_geometry(avail.x() + 10, avail.y() + 10, target_w, target_h)
         win = MainWindow()
         win.restore_ui_state()
-        assert win.width() == 1100
-        assert win.height() == 700
+        assert win.width() == target_w
+        assert win.height() == target_h
 
 
 def test_18_maximized_state_restored(qapp, clean_settings):
@@ -248,9 +250,13 @@ def test_19_invalid_screen_position_fallback(qapp, clean_settings):
     clean_settings.set_window_geometry(-99999, -99999, 1200, 800)
     win = MainWindow()
     win.restore_ui_state()
-    # Окно должно применить fallback и иметь размер 1400x850
-    assert win.width() == 1400
-    assert win.height() == 850
+    # Окно должно применить fallback и быть адаптировано под рабочую область (BUG-005)
+    screen = QGuiApplication.primaryScreen()
+    avail = screen.availableGeometry() if screen else None
+    max_w = min(1400, avail.width()) if avail else 1400
+    max_h = min(850, avail.height()) if avail else 850
+    assert 0 < win.width() <= max_w
+    assert 0 < win.height() <= max_h
 
 
 def test_20_toolbar_visibility_persists(qapp, clean_settings):

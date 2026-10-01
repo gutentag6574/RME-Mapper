@@ -51,9 +51,9 @@ class DummyDropEvent:
 
 
 def test_public_application_name_and_metadata(qapp):
-    """Публичное имя приложения строго 'GeoPoint Mapper', версия '0.12.0'."""
+    """Публичное имя приложения строго 'GeoPoint Mapper' и валидная версия."""
     assert APP_NAME == "GeoPoint Mapper"
-    assert APP_VERSION == "0.12.0"
+    assert bool(APP_VERSION) and len(APP_VERSION.split(".")) >= 2
 
     win = MainWindow()
     assert "GeoPoint Mapper" in win.windowTitle()

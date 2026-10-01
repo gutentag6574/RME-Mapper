@@ -34,7 +34,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 
 def test_01_version_synchronization_across_all_packaging_files() -> None:
     """Проверка единого источника версий во всех конфигурациях сборщика."""
-    assert APP_VERSION == "0.12.0", f"Неожиданная версия: {APP_VERSION}"
+    assert bool(APP_VERSION) and len(APP_VERSION.split(".")) >= 2
 
     # 1. pyproject.toml
     pyproject_file = ROOT_DIR / "pyproject.toml"

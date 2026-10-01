@@ -28,6 +28,27 @@ def setup_logging() -> None:
     )
 
 
+def parse_cli_project_path(argv: list[str]) -> Path | None:
+    """Извлечение пути к файлу проекта из аргументов командной строки.
+
+    Игнорирует системные флаги, проверяет расширения (.gpmap, .rmeproject),
+    корректно обрабатывает кавычки, пробелы, кириллицу и Unicode.
+    """
+    logger = logging.getLogger("rme_mapper")
+    for arg in argv[1:]:
+        if arg.startswith("-"):
+            continue
+        cleaned = arg.strip().strip('"').strip("'")
+        if not cleaned:
+            continue
+        p = Path(cleaned)
+        if p.suffix.lower() in (".gpmap", ".rmeproject"):
+            return p.resolve() if p.exists() else p
+        else:
+            logger.warning("Передан неподдерживаемый аргумент файла проекта: %s", arg)
+    return None
+
+
 def main() -> int:
     """Основная функция запуска приложения."""
     setup_logging()
@@ -55,14 +76,13 @@ def main() -> int:
     except Exception as e:
         logger.debug("Не удалось загрузить иконку приложения: %s", e)
 
-    window = MainWindow()
-    if 'app_icon' in locals() and not app_icon.isNull():
-        window.setWindowIcon(app_icon)
-
     # Специальный режим быстрой автономной валидации запуска (Smoke Test)
     if "--smoke-test" in sys.argv:
         logger.info("Режим --smoke-test: валидация инициализации ГИС-подсистемы и UI...")
         try:
+            window = MainWindow()
+            if 'app_icon' in locals() and not app_icon.isNull():
+                window.setWindowIcon(app_icon)
             # 1. Валидация CoordinateService (WGS84, Web Mercator, UTM)
             from rme_mapper.services.coordinate_service import CoordinateService
             x, y = CoordinateService.transform_xy(37.6173, 55.7558, "EPSG:4326", "EPSG:3857")
@@ -107,6 +127,11 @@ def main() -> int:
             logger.error("[SMOKE-TEST] Ошибка при валидации: %s", e, exc_info=True)
             print(f"[SMOKE-TEST] FAILED: {e}", file=sys.stderr)
             return 1
+
+    project_path = parse_cli_project_path(sys.argv)
+    window = MainWindow(project_path=project_path)
+    if 'app_icon' in locals() and not app_icon.isNull():
+        window.setWindowIcon(app_icon)
 
     window.show()
 
