@@ -345,9 +345,9 @@ class OpenMapDialog(QDialog):
         )
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Выберите файл карты",
+            tr("dialog.map.select_file_title"),
             root_dir,
-            "Файлы карт и изображений (*.gpkg *.tif *.tiff *.png *.jpg *.jpeg);;Файлы GeoPackage (*.gpkg);;Файлы GeoTIFF (*.tif *.tiff);;Изображения (*.png *.jpg *.jpeg);;Все файлы (*.*)",
+            tr("dialog.map.filter_all_maps"),
         )
         if file_path:
             self._set_file_path(Path(file_path))

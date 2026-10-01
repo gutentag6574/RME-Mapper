@@ -157,3 +157,25 @@ def test_07_smoke_test_cli_execution() -> None:
     )
     assert res.returncode == 0, f"Smoke test упал:\n{res.stderr}\n{res.stdout}"
     assert "[SMOKE-TEST] SUCCESS" in res.stdout or "[SMOKE-TEST] SUCCESS" in res.stderr
+
+
+def test_08_canonical_version_single_source_of_truth() -> None:
+    """Проверка единого источника версий (app_info.py) и динамического именования артефактов."""
+    from build_release import get_canonical_version, sync_version_metadata
+
+    canon_version = get_canonical_version()
+    assert canon_version == APP_VERSION
+    assert canon_version == "1.0.0"
+
+    # Синхронизация отрабатывает без ошибок и гарантирует согласованность
+    sync_version_metadata(canon_version)
+
+    # Проверка, что имена артефактов строятся строго из канонической версии
+    expected_portable = f"GeoPointMapper-{canon_version}-portable.zip"
+    expected_installer = f"GeoPointMapper-{canon_version}-Setup-x64.exe"
+
+    portable_path = ROOT_DIR / "release" / "portable" / expected_portable
+    installer_path = ROOT_DIR / "release" / "installer" / expected_installer
+
+    assert portable_path.name == expected_portable
+    assert installer_path.name == expected_installer

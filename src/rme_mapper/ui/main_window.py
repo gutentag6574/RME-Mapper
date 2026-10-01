@@ -1450,7 +1450,7 @@ class MainWindow(QMainWindow):
         # Обновление заголовка карты и строки состояния
         if self.map_controller.active_profile:
             map_name = self.map_controller.active_profile.name
-            self.map_title_label.setText(f"{tr('menu.map')}: {map_name}")
+            self.map_title_label.setText(f"{tr('map.title_prefix')}: {map_name}")
             crs = self.map_controller.active_crs or "OGC:CRS84"
             if hasattr(self, "map_crs_label"):
                 self.map_crs_label.setText(crs)
@@ -1460,7 +1460,7 @@ class MainWindow(QMainWindow):
             self._update_map_dependent_actions(True)
         elif self.map_controller.map_path:
             map_name = self.map_controller.map_path.stem
-            self.map_title_label.setText(f"{tr('menu.map')}: {map_name}")
+            self.map_title_label.setText(f"{tr('map.title_prefix')}: {map_name}")
             crs = self.map_controller.active_crs or "OGC:CRS84"
             if hasattr(self, "map_crs_label"):
                 self.map_crs_label.setText(crs)

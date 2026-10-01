@@ -88,10 +88,11 @@ class PointsPanel(QWidget):
         self.search_input.setObjectName("searchPointInput")
         self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self._on_search_text_changed)
-        filter_layout.addWidget(self.search_input, stretch=2)
+        filter_layout.addWidget(self.search_input, stretch=1)
 
         self.category_combo = QComboBox(self)
         self.category_combo.setObjectName("categoryFilterCombo")
+        self.category_combo.setMinimumWidth(115)
         self.category_combo.currentIndexChanged.connect(self._on_category_filter_changed)
         filter_layout.addWidget(self.category_combo, stretch=1)
 
@@ -199,6 +200,8 @@ class PointsPanel(QWidget):
         self._reapply_all_filters()
 
     def _on_category_filter_changed(self, index: int) -> None:
+        if hasattr(self, "category_combo"):
+            self.category_combo.setToolTip(self.category_combo.currentText())
         self._reapply_all_filters()
 
     def _reapply_all_filters(self) -> None:
@@ -339,6 +342,7 @@ class PointsPanel(QWidget):
             self.category_combo.setCurrentIndex(0)
 
         self.category_combo.blockSignals(False)
+        self.category_combo.setToolTip(self.category_combo.currentText())
 
     def _update_counter(self) -> None:
         """Обновление счетчика точек (всего / отфильтровано)."""
@@ -370,6 +374,7 @@ class PointsPanel(QWidget):
             self.search_input.setPlaceholderText(tr("search.placeholder"))
         if hasattr(self, "category_combo") and self.category_combo.count() > 0:
             self.category_combo.setItemText(0, tr("category.all"))
+            self.category_combo.setToolTip(self.category_combo.currentText())
         self.points_table.setHorizontalHeaderLabels([
             tr("table.col_index"),
             tr("table.col_name"),

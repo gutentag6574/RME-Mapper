@@ -135,14 +135,14 @@ class OnlineBasemapDialog(QDialog):
         self._attr_edit.setPlaceholderText("© Provider Name")
         form_layout.addRow(tr("dialog.online_map.attribution"), self._attr_edit)
 
-        self._chk_mandatory_attr = QCheckBox("Обязательная атрибуция (нельзя отключить при экспорте)", self)
+        self._chk_mandatory_attr = QCheckBox(tr("dialog.online_map.mandatory_attr"), self)
         self._chk_mandatory_attr.setChecked(True)
         form_layout.addRow("", self._chk_mandatory_attr)
 
         main_layout.addWidget(form_group_box)
 
         # 3. Блок информации и очистки дискового кэша
-        cache_group = QGroupBox("Дисковый кэш тайлов", self)
+        cache_group = QGroupBox(tr("dialog.online_map.cache_group"), self)
         cache_layout = QHBoxLayout(cache_group)
 
         self._cache_size_label = QLabel(self)
@@ -174,7 +174,7 @@ class OnlineBasemapDialog(QDialog):
 
     def _update_cache_size_display(self) -> None:
         size_bytes = self._cache.get_total_size_bytes()
-        self._cache_size_label.setText(f"Размер кэша: {TileDiskCache.format_size(size_bytes)}")
+        self._cache_size_label.setText(tr("dialog.online_map.cache_size", size=TileDiskCache.format_size(size_bytes)))
 
     def _on_clear_cache_clicked(self) -> None:
         size_bytes = self._cache.get_total_size_bytes()
@@ -253,7 +253,7 @@ class OnlineBasemapDialog(QDialog):
                     self._key_tip_label.setText(tr("dialog.online_map.key_required"))
                 else:
                     self._key_edit.clear()
-                    self._key_tip_label.setText("Ключ не требуется")
+                    self._key_tip_label.setText(tr("dialog.online_map.key_not_required"))
 
         self._validate_dialog()
 
@@ -264,7 +264,7 @@ class OnlineBasemapDialog(QDialog):
         # Проверка на запрет секретных токенов Mapbox sk...
         if key.startswith("sk."):
             self._btn_ok.setEnabled(False)
-            self._key_tip_label.setText("<span style='color: #EF4444; font-weight: bold;'>Секретные токены (sk...) запрещены! Используйте публичный токен (pk...).</span>")
+            self._key_tip_label.setText(f"<span style='color: #EF4444; font-weight: bold;'>{tr('dialog.online_map.secret_token_forbidden')}</span>")
             return
 
         if mtype is None:
@@ -272,7 +272,7 @@ class OnlineBasemapDialog(QDialog):
             url = self._url_edit.text().strip()
             valid = OnlineTileProvider.validate_url_template(url)
             if url.lower().startswith("http://"):
-                self._http_warning_label.setText("Внимание: используется незащищенное HTTP-соединение. Рекомендуется HTTPS.")
+                self._http_warning_label.setText(tr("dialog.online_map.http_warning"))
                 self._http_warning_label.show()
             else:
                 self._http_warning_label.hide()
@@ -287,7 +287,7 @@ class OnlineBasemapDialog(QDialog):
                 self._key_tip_label.setText(tr("dialog.online_map.key_required"))
             else:
                 self._btn_ok.setEnabled(True)
-                self._key_tip_label.setText("Ключ не требуется")
+                self._key_tip_label.setText(tr("dialog.online_map.key_not_required"))
 
     def _load_saved_values(self, current_provider: OnlineTileProvider | None) -> None:
         if current_provider:
@@ -316,7 +316,7 @@ class OnlineBasemapDialog(QDialog):
             QMessageBox.critical(
                 self,
                 tr("dialog.online_map.title"),
-                "Секретные токены Mapbox (sk...) запрещены в целях безопасности. Используйте только публичный токен (pk...).",
+                tr("dialog.online_map.secret_token_forbidden"),
             )
             return
 
@@ -326,7 +326,7 @@ class OnlineBasemapDialog(QDialog):
             attr_req = self._chk_mandatory_attr.isChecked()
             provider = ProviderRegistry.create_custom_provider(
                 id=f"custom_{abs(hash(url)) % 1000000}",
-                name="Пользовательская карта",
+                name=tr("dialog.online_map.custom_map_default_name"),
                 url_template=url,
                 attribution=attr,
                 attribution_required=attr_req,

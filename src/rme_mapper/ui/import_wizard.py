@@ -1155,7 +1155,10 @@ class ImportWizard(QWizard):
         self.addPage(self.page_summary)
 
         # Кастомизация кнопок
-        self.setButtonText(QWizard.WizardButton.FinishButton, tr("dialog.import_btn_all"))
+        self.setButtonText(QWizard.WizardButton.BackButton, tr("wizard.btn_back"))
+        self.setButtonText(QWizard.WizardButton.NextButton, tr("wizard.btn_next"))
+        self.setButtonText(QWizard.WizardButton.CancelButton, tr("wizard.btn_cancel"))
+        self.setButtonText(QWizard.WizardButton.FinishButton, tr("wizard.btn_finish"))
 
         if file_path:
             self.page_source.set_file_path(file_path)

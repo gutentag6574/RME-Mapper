@@ -51,4 +51,5 @@ Desktop.ini
 scratch/
 tools/innosetup/
 release/
+audit/
 *.zip

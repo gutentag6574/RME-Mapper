@@ -399,7 +399,8 @@ class TileLoader(QObject):
             if retry_count < 1 and status_code not in (404, 401, 403, 429):
                 self._retries[key] = retry_count + 1
                 logger.debug("Повторная попытка загрузки тайла %s (попытка %d)", sanitize_url(key), retry_count + 1)
-                self._queue.append((provider_id, z, x, y, url_str, False))
+                self._conditional_requests.discard(key)
+                self._queue.append((provider_id, z, x, y, url_str))
             else:
                 self._retries.pop(key, None)
                 err_text = reply.errorString() or f"HTTP {status_code}"

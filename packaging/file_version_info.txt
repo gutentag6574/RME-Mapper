@@ -27,7 +27,7 @@ VSVersionInfo(
             StringStruct(u'LegalCopyright', u'© 2026 Кульдеев Вадим Алексеевич'),
             StringStruct(u'OriginalFilename', u'GeoPointMapper.exe'),
             StringStruct(u'ProductName', u'GeoPoint Mapper'),
-            StringStruct(u'ProductVersion', u'1.0.0.0')
+            StringStruct(u'ProductVersion', u'1.0.0')
           ]
         )
       ]

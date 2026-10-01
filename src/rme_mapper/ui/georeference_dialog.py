@@ -313,7 +313,7 @@ class GeoreferenceDialog(QDialog):
         self.btn_add_pt.toggled.connect(self._on_add_point_toggled)
         img_toolbar.addWidget(self.btn_add_pt)
 
-        self.btn_fit = QPushButton("Вписать", left_widget)
+        self.btn_fit = QPushButton(tr("dialog.georef.fit"), left_widget)
         self.btn_fit.clicked.connect(lambda: self.image_view.fit_to_view())
         img_toolbar.addWidget(self.btn_fit)
 
@@ -353,15 +353,15 @@ class GeoreferenceDialog(QDialog):
         self.crs_combo = QComboBox(crs_group)
         self.crs_combo.addItem("WGS 84 (EPSG:4326)", "EPSG:4326")
         self.crs_combo.addItem("Web Mercator (EPSG:3857)", "EPSG:3857")
-        self.crs_combo.addItem("Пулково 1942 / Гаусс-Крюгер зона 7 (EPSG:28407)", "EPSG:28407")
-        self.crs_combo.addItem("Пользовательский EPSG...", "custom")
+        self.crs_combo.addItem(tr("dialog.georef.pulkovo_crs"), "EPSG:28407")
+        self.crs_combo.addItem(tr("dialog.georef.custom_crs"), "custom")
         self.crs_combo.currentIndexChanged.connect(self._on_crs_combo_changed)
         crs_title_row.addWidget(self.crs_combo, stretch=1)
         crs_layout.addLayout(crs_title_row)
 
         crs_input_row = QHBoxLayout()
         self.crs_edit = QLineEdit(self._active_crs, crs_group)
-        self.crs_edit.setPlaceholderText("Например: EPSG:4326 или EPSG:32637")
+        self.crs_edit.setPlaceholderText(tr("dialog.georef.crs_placeholder"))
         self.crs_edit.textChanged.connect(self._on_crs_text_changed)
         self.lbl_crs_status = QLabel("✓", crs_group)
         self.lbl_crs_status.setStyleSheet("color: #16A34A; font-weight: bold;")
@@ -412,7 +412,7 @@ class GeoreferenceDialog(QDialog):
         status_layout = QVBoxLayout(status_box)
         status_layout.setSpacing(4)
 
-        self.lbl_pts_count = QLabel("Контрольных точек: 0 (минимум 3)", status_box)
+        self.lbl_pts_count = QLabel(tr("dialog.georef.pts_count", count=0, min=3), status_box)
         status_layout.addWidget(self.lbl_pts_count)
 
         self.lbl_rmse = QLabel(f"{tr('dialog.georef.rmse')} —", status_box)
@@ -506,14 +506,14 @@ class GeoreferenceDialog(QDialog):
     def _on_add_point_toggled(self, checked: bool) -> None:
         self.image_view.set_adding_point_mode(checked)
         if checked:
-            self.btn_add_pt.setText("Кликните по изображению...")
+            self.btn_add_pt.setText(tr("dialog.georef.click_on_image"))
         else:
             self.btn_add_pt.setText(tr("dialog.georef.add_point"))
 
     def _on_point_placed_on_image(self, pixel_x: float, pixel_y: float) -> None:
         """Пользователь кликнул по изображению для добавления новой точки."""
         if len(self._control_points) >= MAX_CONTROL_POINTS:
-            QMessageBox.warning(self, "Превышен лимит", f"Максимальное число контрольных точек: {MAX_CONTROL_POINTS}")
+            QMessageBox.warning(self, tr("common.limit_exceeded"), tr("dialog.georef.max_pts_limit", max=MAX_CONTROL_POINTS))
             self.btn_add_pt.setChecked(False)
             return
 
@@ -658,7 +658,7 @@ class GeoreferenceDialog(QDialog):
         enabled_pts = [p for p in self._control_points if p.enabled]
         n_en = len(enabled_pts)
 
-        self.lbl_pts_count.setText(f"Активных контрольных точек: {n_en} (минимум 3)")
+        self.lbl_pts_count.setText(tr("dialog.georef.active_pts_count", count=n_en, min=3))
 
         if n_en < 3:
             self.lbl_rmse.setText(f"{tr('dialog.georef.rmse')} —")
@@ -699,7 +699,7 @@ class GeoreferenceDialog(QDialog):
     def _on_preview_clicked(self) -> None:
         """Предпросмотр охвата и трансформации."""
         if not self._current_affine:
-            QMessageBox.warning(self, "Предпросмотр", "Для предпросмотра необходимо задать минимум 3 валидные точки.")
+            QMessageBox.warning(self, tr("dialog.georef.preview_title"), tr("dialog.georef.preview_min_points_error"))
             return
 
         a, b, c, d, e, f = self._current_affine
@@ -728,10 +728,10 @@ class GeoreferenceDialog(QDialog):
     def _on_export_world_file(self) -> None:
         """Экспорт файлов привязки World File (.pgw / .jgw / .tfw)."""
         if not self._current_affine:
-            QMessageBox.warning(self, "Экспорт", "Сначала укажите минимум 3 контрольные точки.")
+            QMessageBox.warning(self, tr("dialog.georef.export_title"), tr("dialog.georef.export_min_points_error"))
             return
 
-        out_dir = QFileDialog.getExistingDirectory(self, "Выберите папку для сохранения World File", str(self.image_path.parent))
+        out_dir = QFileDialog.getExistingDirectory(self, tr("dialog.georef.select_world_file_dir"), str(self.image_path.parent))
         if out_dir:
             try:
                 files = GeoreferenceService.export_world_file(
@@ -741,9 +741,9 @@ class GeoreferenceDialog(QDialog):
                     target_dir=out_dir,
                 )
                 file_names = "\n".join(str(f) for f in files)
-                QMessageBox.information(self, "Успешно", f"Файлы привязки успешно созданы:\n{file_names}")
+                QMessageBox.information(self, tr("common.success"), tr("dialog.georef.world_files_success", files=file_names))
             except Exception as e:
-                QMessageBox.critical(self, "Ошибка экспорта", f"Не удалось экспортировать файлы привязки:\n{e}")
+                QMessageBox.critical(self, tr("dialog.georef.export_error_title"), tr("dialog.georef.world_files_failed", error=str(e)))
 
     def _on_apply_clicked(self) -> None:
         """Подтверждение привязки."""

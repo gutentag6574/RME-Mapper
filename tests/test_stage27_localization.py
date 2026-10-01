@@ -102,3 +102,208 @@ def test_04_live_retranslation_cycle(qapp) -> None:
         assert win.lang_ru_action.isChecked()
     finally:
         win.close()
+
+
+def test_05_targeted_mainwindow_map_labels_ru_en(qapp) -> None:
+    """Проверка заголовков карты и меток в MainWindow на RU и EN."""
+    from rme_mapper.models.map_profile import MapProfile
+
+    win = MainWindow()
+    try:
+        dummy_profile = MapProfile(
+            id="test_profile",
+            name="TestCity",
+            source_type="geopackage",
+            source_path="dummy.gpkg",
+            crs="EPSG:4326",
+        )
+        win.map_controller._active_profile = dummy_profile
+
+        # 1. RU
+        win.switch_language("ru")
+        assert win.map_title_label.text().startswith("Карта: TestCity")
+
+        # 2. EN
+        win.switch_language("en")
+        assert win.map_title_label.text().startswith("Map: TestCity")
+        assert "Карта:" not in win.map_title_label.text()
+
+        # 3. Online basemap status label check
+        win.switch_language("ru")
+        status_ru = f"{tr('status.online_map_prefix')}: OSM | EPSG:3857"
+        assert status_ru.startswith("Онлайн-карта:")
+
+        win.switch_language("en")
+        status_en = f"{tr('status.online_map_prefix')}: OSM | EPSG:3857"
+        assert status_en.startswith("Online Map:")
+        assert "Онлайн-карта" not in status_en
+    finally:
+        set_language("ru")
+        win.close()
+
+
+def test_06_targeted_export_objects_dialog_ru_en(qapp) -> None:
+    """Проверка локализации ExportObjectsDialog на RU и EN (нет хардкод-строк)."""
+    from rme_mapper.ui.export_objects_dialog import ExportObjectsDialog
+
+    # 1. RU
+    set_language("ru")
+    dlg_ru = ExportObjectsDialog(points=[], selected_ids=[])
+    try:
+        assert dlg_ru.text_options_group.title() == "Параметры формата"
+        assert dlg_ru.headers_checkbox.text() == "Включать строку заголовков"
+        assert dlg_ru.btn_cancel.text() == "Отмена"
+        assert dlg_ru.btn_browse.text() == "Обзор..."
+        assert dlg_ru.path_edit.placeholderText() == "Выберите путь для сохранения..."
+    finally:
+        dlg_ru.close()
+
+    # 2. EN
+    set_language("en")
+    dlg_en = ExportObjectsDialog(points=[], selected_ids=[])
+    try:
+        assert dlg_en.text_options_group.title() == "Format Options"
+        assert dlg_en.headers_checkbox.text() == "Include header row"
+        assert dlg_en.btn_cancel.text() == "Cancel"
+        assert dlg_en.btn_browse.text() == "Browse..."
+        assert dlg_en.path_edit.placeholderText() == "Select destination path..."
+
+        # Проверка отсутствия сырых русских строк в EN
+        assert "Параметры формата" not in dlg_en.text_options_group.title()
+        assert "Включать строку" not in dlg_en.headers_checkbox.text()
+        assert "Отмена" not in dlg_en.btn_cancel.text()
+        assert "Обзор" not in dlg_en.btn_browse.text()
+    finally:
+        set_language("ru")
+        dlg_en.close()
+
+
+def test_07_targeted_point_dialog_ru_en(qapp) -> None:
+    """Проверка локализации PointDialog на RU и EN."""
+    from rme_mapper.ui.point_dialog import PointDialog
+
+    # 1. RU
+    set_language("ru")
+    dlg_ru = PointDialog(mode="CREATE")
+    try:
+        assert "Добавить" in dlg_ru.windowTitle()
+        assert dlg_ru.tab_widget.tabText(0) == "Основное"
+        assert dlg_ru.tab_widget.tabText(1) == "Координаты"
+        assert dlg_ru.tab_widget.tabText(2) == "Оформление"
+        assert dlg_ru.btn_cancel.text() == "Отмена"
+    finally:
+        dlg_ru.close()
+
+    # 2. EN
+    set_language("en")
+    dlg_en = PointDialog(mode="CREATE")
+    try:
+        assert "Add" in dlg_en.windowTitle()
+        assert dlg_en.tab_widget.tabText(0) == "General"
+        assert dlg_en.tab_widget.tabText(1) == "Coordinates"
+        assert dlg_en.tab_widget.tabText(2) == "Style"
+        assert dlg_en.btn_cancel.text() == "Cancel"
+
+        # Сырых русских строк нет
+        assert "Основное" not in dlg_en.tab_widget.tabText(0)
+        assert "Отмена" not in dlg_en.btn_cancel.text()
+    finally:
+        set_language("ru")
+        dlg_en.close()
+
+
+def test_08_targeted_open_map_dialog_ru_en(qapp) -> None:
+    """Проверка локализации OpenMapDialog на RU и EN."""
+    from rme_mapper.ui.open_map_dialog import OpenMapDialog
+
+    # 1. RU
+    set_language("ru")
+    dlg_ru = OpenMapDialog()
+    try:
+        assert "Открыть карту" in dlg_ru.windowTitle()
+        assert dlg_ru.btn_cancel.text() == "Отмена"
+        assert dlg_ru.btn_open.text() == "Открыть карту"
+        assert dlg_ru.mode_group.title() == "Источник карты"
+    finally:
+        dlg_ru.close()
+
+    # 2. EN
+    set_language("en")
+    dlg_en = OpenMapDialog()
+    try:
+        assert "Open Map" in dlg_en.windowTitle()
+        assert dlg_en.btn_cancel.text() == "Cancel"
+        assert dlg_en.btn_open.text() == "Open Map"
+        assert dlg_en.mode_group.title() == "Map Source"
+
+        # Сырых русских строк нет
+        assert "Открыть карту" not in dlg_en.windowTitle()
+        assert "Отмена" not in dlg_en.btn_cancel.text()
+        assert "Источник карты" not in dlg_en.mode_group.title()
+    finally:
+        set_language("ru")
+        dlg_en.close()
+
+
+def test_09_targeted_online_basemap_dialog_ru_en(qapp) -> None:
+    """Проверка локализации OnlineBasemapDialog на RU и EN."""
+    from rme_mapper.ui.online_basemap_dialog import OnlineBasemapDialog
+
+    # 1. RU
+    set_language("ru")
+    dlg_ru = OnlineBasemapDialog()
+    try:
+        assert "онлайн-подложки" in dlg_ru.windowTitle().lower()
+        assert "обязательная атрибуция" in dlg_ru._chk_mandatory_attr.text().lower()
+        assert dlg_ru._btn_ok.text() == "Подключить"
+    finally:
+        dlg_ru.close()
+
+    # 2. EN
+    set_language("en")
+    dlg_en = OnlineBasemapDialog()
+    try:
+        assert "online basemap" in dlg_en.windowTitle().lower()
+        assert "mandatory attribution" in dlg_en._chk_mandatory_attr.text().lower()
+        assert dlg_en._btn_ok.text() == "Connect"
+
+        # Сырых русских строк нет
+        assert "подложки" not in dlg_en.windowTitle().lower()
+        assert "атрибуция" not in dlg_en._chk_mandatory_attr.text().lower()
+    finally:
+        set_language("ru")
+        dlg_en.close()
+
+
+def test_10_targeted_import_wizard_buttons_ru_en(qapp) -> None:
+    """BUG-003 & Final fix pass: Проверка кнопок мастера импорта на RU и EN."""
+    from PySide6.QtWidgets import QWizard
+    from rme_mapper.ui.import_wizard import ImportWizard
+
+    # 1. RU кнопки
+    set_language("ru")
+    wiz_ru = ImportWizard()
+    try:
+        assert wiz_ru.buttonText(QWizard.WizardButton.BackButton) == "Назад"
+        assert wiz_ru.buttonText(QWizard.WizardButton.NextButton) == "Далее"
+        assert wiz_ru.buttonText(QWizard.WizardButton.CancelButton) == "Отмена"
+        assert wiz_ru.buttonText(QWizard.WizardButton.FinishButton) == "Импортировать"
+    finally:
+        wiz_ru.close()
+
+    # 2. EN кнопки
+    set_language("en")
+    wiz_en = ImportWizard()
+    try:
+        assert wiz_en.buttonText(QWizard.WizardButton.BackButton) == "Back"
+        assert wiz_en.buttonText(QWizard.WizardButton.NextButton) == "Next"
+        assert wiz_en.buttonText(QWizard.WizardButton.CancelButton) == "Cancel"
+        assert wiz_en.buttonText(QWizard.WizardButton.FinishButton) == "Import"
+
+        # Русских надписей на кнопках в EN быть не должно
+        assert wiz_en.buttonText(QWizard.WizardButton.BackButton) != "Назад"
+        assert wiz_en.buttonText(QWizard.WizardButton.NextButton) != "Далее"
+        assert wiz_en.buttonText(QWizard.WizardButton.CancelButton) != "Отмена"
+    finally:
+        set_language("ru")
+        wiz_en.close()

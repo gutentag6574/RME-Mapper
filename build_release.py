@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -52,6 +53,58 @@ def get_git_commit() -> str:
         return res.stdout.strip()
     except Exception:
         return "unknown"
+
+def get_canonical_version() -> str:
+    """Извлечение канонической версии приложения из src/rme_mapper/app_info.py."""
+    app_info_path = PROJECT_ROOT / "src" / "rme_mapper" / "app_info.py"
+    if not app_info_path.exists():
+        raise FileNotFoundError(f"Канонический файл версий не найден: {app_info_path}")
+    content = app_info_path.read_text(encoding="utf-8")
+    m = re.search(r'APP_VERSION\s*(?::\s*Final\[str\])?\s*=\s*["\']([^"\']+)["\']', content)
+    if not m:
+        raise ValueError(f"Не удалось извлечь APP_VERSION из {app_info_path}")
+    return m.group(1)
+
+
+def sync_version_metadata(app_version: str) -> None:
+    """Синхронизация версии из канонического источника во все зависимые конфигурации."""
+    log(f"Синхронизация метаданных для версии {app_version}...")
+
+    # 1. pyproject.toml
+    pyproject_path = PROJECT_ROOT / "pyproject.toml"
+    if pyproject_path.exists():
+        text = pyproject_path.read_text(encoding="utf-8")
+        updated = re.sub(r'version\s*=\s*"[^"]+"', f'version = "{app_version}"', text, count=1)
+        if updated != text:
+            pyproject_path.write_text(updated, encoding="utf-8")
+            log("  [+] pyproject.toml синхронизирован")
+
+    # 2. packaging/installer.iss
+    installer_path = PROJECT_ROOT / "packaging" / "installer.iss"
+    if installer_path.exists():
+        text = installer_path.read_text(encoding="utf-8")
+        updated = re.sub(r'#define\s+MyAppVersion\s+"[^"]+"', f'#define MyAppVersion "{app_version}"', text, count=1)
+        if updated != text:
+            installer_path.write_text(updated, encoding="utf-8")
+            log("  [+] packaging/installer.iss синхронизирован")
+
+    # 3. packaging/file_version_info.txt
+    verinfo_path = PROJECT_ROOT / "packaging" / "file_version_info.txt"
+    if verinfo_path.exists():
+        text = verinfo_path.read_text(encoding="utf-8")
+        nums = [int(p) for p in re.findall(r"\d+", app_version)]
+        while len(nums) < 4:
+            nums.append(0)
+        v_tuple = f"({nums[0]}, {nums[1]}, {nums[2]}, {nums[3]})"
+
+        updated = re.sub(r'filevers=\([^)]+\)', f'filevers={v_tuple}', text)
+        updated = re.sub(r'prodvers=\([^)]+\)', f'prodvers={v_tuple}', text)
+        updated = re.sub(r"StringStruct\(u'FileVersion',\s*u'[^']+'\)", f"StringStruct(u'FileVersion', u'{app_version}.0')", updated)
+        updated = re.sub(r"StringStruct\(u'ProductVersion',\s*u'[^']+'\)", f"StringStruct(u'ProductVersion', u'{app_version}')", updated)
+        if updated != text:
+            verinfo_path.write_text(updated, encoding="utf-8")
+            log("  [+] packaging/file_version_info.txt синхронизирован")
+
 
 def check_version_consistency(expected_version: str) -> bool:
     """Проверка единообразия версий во всех конфигурационных файлах."""
@@ -219,6 +272,13 @@ def main() -> int:
     start_time = datetime.datetime.now()
     app_version = get_canonical_version()
     log(f"=== ЗАПУСК СБОРКИ РЕЛИЗА GEOPOINT MAPPER v{app_version} ===")
+
+    # Синхронизация версий во всех конфигурациях сборки
+    sync_version_metadata(app_version)
+
+    if "--sync-only" in sys.argv:
+        log("Синхронизация версий успешно выполнена (--sync-only).")
+        return 0
 
     skip_pyinstaller = "--skip-pyinstaller" in sys.argv
 

@@ -308,7 +308,7 @@ class ExportController(QObject):
         options, target_path = dialog.get_export_options()
 
         try:
-            self._set_status("Экспорт объектов...", 0)
+            self._set_status(tr("status.exporting_objects"), 0)
             exported_count = ObjectExportService.export_points(
                 points=all_points,
                 options=options,

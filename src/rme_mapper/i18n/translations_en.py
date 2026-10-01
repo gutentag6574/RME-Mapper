@@ -653,6 +653,8 @@ TRANSLATIONS_EN: dict[str, str] = {
     "msg.geotiff_no_georef": "The file does not contain a valid georeference.",
     "msg.geotiff_backend_unavailable": "GeoTIFF support is unavailable in this build.",
     "dialog.map.filter_maps": "Map files (*.gpkg *.tif *.tiff);;GeoPackage files (*.gpkg);;GeoTIFF files (*.tif *.tiff);;All files (*.*)",
+    "dialog.map.select_file_title": "Select Map File",
+    "dialog.map.filter_all_maps": "Map and image files (*.gpkg *.tif *.tiff *.png *.jpg *.jpeg);;GeoPackage files (*.gpkg);;GeoTIFF files (*.tif *.tiff);;Image files (*.png *.jpg *.jpeg);;All files (*.*)",
     "layer.raster": "Raster",
     "dialog.map.raster_info": "Type: GeoTIFF | Size: {w} × {h} | Bands: {bands} | CRS: {crs}",
 
@@ -965,6 +967,68 @@ TRANSLATIONS_EN: dict[str, str] = {
     "export_objects.field_zone_border_width": "Zone Border Width",
     "export_objects.field_zone_border_style": "Zone Border Style",
     "export_objects.field_internal_id": "Internal ID (UUID)",
+
+    # Final fix pass: map title & status prefixes
+    "map.title_prefix": "Map",
+    "status.online_map_prefix": "Online Map",
+    "status.raster_prefix": "Raster",
+    "status.layers_prefix": "Layers",
+    "status.image_prefix": "Image",
+    "status.error_geotiff_load": "Error loading GeoTIFF",
+    "status.error_boundary_read": "Error reading map boundary",
+    "status.error_map_load": "Error loading map",
+    "status.error_image_load": "Error loading image",
+    "status.exporting_objects": "Exporting objects...",
+
+    # Final fix pass: Export Objects Dialog
+    "export_objects.format_options": "Format Options",
+    "export_objects.include_headers": "Include header row",
+    "export_objects.target_file": "Target File",
+    "export_objects.path_placeholder": "Select destination path...",
+    "export_objects.browse": "Browse...",
+    "export_objects.all_files_filter": "All files (*.*)",
+    "export_objects.specify_path_error": "Please specify a destination file path.",
+    "export_objects.overwrite_confirm_title": "Confirm Overwrite",
+
+    # Final fix pass: Import Wizard Buttons
+    "wizard.btn_back": "Back",
+    "wizard.btn_next": "Next",
+    "wizard.btn_cancel": "Cancel",
+    "wizard.btn_finish": "Import",
+
+    # Final fix pass: Online Basemap Dialog
+    "dialog.online_map.mandatory_attr": "Mandatory attribution (cannot be disabled on export)",
+    "dialog.online_map.cache_group": "Disk Tile Cache",
+    "dialog.online_map.cache_size": "Cache size: {size}",
+    "dialog.online_map.key_not_required": "API key not required",
+    "dialog.online_map.secret_token_forbidden": "Secret tokens (sk...) are forbidden! Use a public token (pk...).",
+    "dialog.online_map.http_warning": "Warning: unencrypted HTTP connection. HTTPS is recommended.",
+    "dialog.online_map.custom_map_default_name": "Custom Map",
+
+    # Final fix pass: Georeference Dialog
+    "dialog.georef.fit": "Fit to View",
+    "dialog.georef.pulkovo_crs": "Pulkovo 1942 / Gauss-Kruger zone 7 (EPSG:28407)",
+    "dialog.georef.custom_crs": "Custom EPSG...",
+    "dialog.georef.crs_placeholder": "Example: EPSG:4326 or EPSG:32637",
+    "dialog.georef.pts_count": "Control points: {count} (minimum {min})",
+    "dialog.georef.active_pts_count": "Active control points: {count} (minimum {min})",
+    "dialog.georef.click_on_image": "Click on image...",
+    "dialog.georef.max_pts_limit": "Maximum number of control points: {max}",
+    "dialog.georef.preview_title": "Preview",
+    "dialog.georef.preview_min_points_error": "At least 3 valid control points are required for preview.",
+    "dialog.georef.export_title": "Export",
+    "dialog.georef.export_min_points_error": "Please specify at least 3 control points first.",
+    "dialog.georef.select_world_file_dir": "Select directory to save World File",
+    "dialog.georef.export_error_title": "Export Error",
+    "dialog.georef.world_files_success": "World files created successfully:\n{files}",
+    "dialog.georef.world_files_failed": "Failed to export World files:\n{error}",
+
+    # Final fix pass: Common & Import
+    "dialog.import_all_rows_valid": "All validated rows are correct.",
+    "common.all_files_filter": "All files (*.*)",
+    "common.file": "File",
+    "common.success": "Success",
+    "common.limit_exceeded": "Limit Exceeded",
 }
 
 

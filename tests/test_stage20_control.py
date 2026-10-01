@@ -455,21 +455,81 @@ def test_c14_http_429_respects_retry_after(qapp, monkeypatch):
 
 def test_c15_timeout_and_server_error_retry_matrix(qapp, monkeypatch):
     """13 & 14. Матрица повторов: 500 и таймаут повторяются ровно 1 раз, 404 не повторяется."""
-    loader = TileLoader(max_concurrency=1)
+    # 1. Тест HTTP 500: первый сбой -> retry -> второй сбой -> tile_failed ровно 1 раз
+    loader_500 = TileLoader(max_concurrency=1)
     attempts_500 = 0
+    failures_500 = []
+    loader_500.tile_failed.connect(lambda *args: failures_500.append(args))
 
     def fake_get_500(req):
         nonlocal attempts_500
         attempts_500 += 1
         return MockNetworkReply(b"Server Error", status_code=500, error=QNetworkReply.NetworkError.InternalServerError)
 
-    monkeypatch.setattr(loader._nam, "get", fake_get_500)
-    loader.request_tile("prov_500", 1, 0, 0, "http://test/500")
+    monkeypatch.setattr(loader_500._nam, "get", fake_get_500)
+    loader_500.request_tile("prov_500", 1, 0, 0, "http://test/500")
 
-    rep1 = list(loader._in_flight.values())[0]
+    rep1 = list(loader_500._in_flight.values())[0]
     rep1.finished.emit()
-    # 1 повтор поставлен в очередь
-    assert attempts_500 >= 1
+    assert attempts_500 == 2
+    assert len(failures_500) == 0  # повтор отправлен, еще не завершился
+
+    rep2 = list(loader_500._in_flight.values())[0]
+    rep2.finished.emit()
+    assert attempts_500 == 2
+    assert len(failures_500) == 1
+    assert loader_500.queue_count == 0
+    assert loader_500.in_flight_count == 0
+    assert len(loader_500._retries) == 0
+
+    # 2. Тест Timeout: первый сбой (таймаут) -> retry -> успешный ответ 200
+    loader_to = TileLoader(max_concurrency=1)
+    attempts_to = 0
+    loaded_to = []
+    loader_to.tile_loaded.connect(lambda *args: loaded_to.append(args))
+
+    def fake_get_to(req):
+        nonlocal attempts_to
+        attempts_to += 1
+        if attempts_to == 1:
+            return MockNetworkReply(b"", status_code=0, error=QNetworkReply.NetworkError.TimeoutError, error_string="Timeout")
+        return MockNetworkReply(PNG_MAGIC + b"ok_tile", status_code=200)
+
+    monkeypatch.setattr(loader_to._nam, "get", fake_get_to)
+    loader_to.request_tile("prov_to", 1, 0, 0, "http://test/to")
+
+    rep_to1 = list(loader_to._in_flight.values())[0]
+    rep_to1.finished.emit()
+    assert attempts_to == 2
+    assert len(loaded_to) == 0
+
+    rep_to2 = list(loader_to._in_flight.values())[0]
+    rep_to2.finished.emit()
+    assert len(loaded_to) == 1
+    assert loader_to.queue_count == 0
+    assert loader_to.in_flight_count == 0
+    assert len(loader_to._retries) == 0
+
+    # 3. Тест HTTP 404: не повторяется
+    loader_404 = TileLoader(max_concurrency=1)
+    attempts_404 = 0
+    failures_404 = []
+    loader_404.tile_failed.connect(lambda *args: failures_404.append(args))
+
+    def fake_get_404(req):
+        nonlocal attempts_404
+        attempts_404 += 1
+        return MockNetworkReply(b"Not Found", status_code=404, error=QNetworkReply.NetworkError.ContentNotFoundError)
+
+    monkeypatch.setattr(loader_404._nam, "get", fake_get_404)
+    loader_404.request_tile("prov_404", 1, 0, 0, "http://test/404")
+
+    rep_404 = list(loader_404._in_flight.values())[0]
+    rep_404.finished.emit()
+    assert attempts_404 == 1
+    assert len(failures_404) == 1
+    assert loader_404.queue_count == 0
+    assert loader_404.in_flight_count == 0
 
 
 # =============================================================================

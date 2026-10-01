@@ -193,7 +193,7 @@ class ExportObjectsDialog(QDialog):
         main_layout.addWidget(coords_group)
 
         # 5. Опции текстовых форматов (Delimiter, BOM, Headers)
-        self.text_options_group = QGroupBox("Параметры формата")
+        self.text_options_group = QGroupBox(tr("export_objects.format_options"))
         text_opts_layout = QVBoxLayout(self.text_options_group)
 
         delim_layout = QHBoxLayout()
@@ -210,18 +210,18 @@ class ExportObjectsDialog(QDialog):
         self.bom_checkbox.setChecked(True)
         text_opts_layout.addWidget(self.bom_checkbox)
 
-        self.headers_checkbox = QCheckBox("Включать строку заголовков")
+        self.headers_checkbox = QCheckBox(tr("export_objects.include_headers"))
         self.headers_checkbox.setChecked(True)
         text_opts_layout.addWidget(self.headers_checkbox)
 
         main_layout.addWidget(self.text_options_group)
 
         # 6. Путь сохранения файла
-        path_group = QGroupBox("Целевой файл")
+        path_group = QGroupBox(tr("export_objects.target_file"))
         path_layout = QHBoxLayout(path_group)
         self.path_edit = QLineEdit()
-        self.path_edit.setPlaceholderText("Выберите путь для сохранения...")
-        self.btn_browse = QPushButton("Обзор...")
+        self.path_edit.setPlaceholderText(tr("export_objects.path_placeholder"))
+        self.btn_browse = QPushButton(tr("export_objects.browse"))
         self.btn_browse.clicked.connect(self._on_browse)
         path_layout.addWidget(self.path_edit)
         path_layout.addWidget(self.btn_browse)
@@ -316,15 +316,16 @@ class ExportObjectsDialog(QDialog):
             cb.setChecked(key in defaults)
 
     def _get_filter_for_format(self, fmt: ObjectExportFormat) -> str:
+        all_filter = tr("export_objects.all_files_filter")
         if fmt == ObjectExportFormat.CSV:
-            return f"{tr('export_objects.filter_csv')};;Все файлы (*.*)"
+            return f"{tr('export_objects.filter_csv')};;{all_filter}"
         elif fmt == ObjectExportFormat.XLSX:
-            return f"{tr('export_objects.filter_xlsx')};;Все файлы (*.*)"
+            return f"{tr('export_objects.filter_xlsx')};;{all_filter}"
         elif fmt == ObjectExportFormat.TXT:
-            return f"{tr('export_objects.filter_txt')};;Все файлы (*.*)"
+            return f"{tr('export_objects.filter_txt')};;{all_filter}"
         elif fmt == ObjectExportFormat.GEOJSON:
-            return f"{tr('export_objects.filter_geojson')};;Все файлы (*.*)"
-        return "Все файлы (*.*)"
+            return f"{tr('export_objects.filter_geojson')};;{all_filter}"
+        return all_filter
 
     def _on_browse(self) -> None:
         fmt = self._get_current_format()
@@ -415,7 +416,7 @@ class ExportObjectsDialog(QDialog):
     def _on_export_clicked(self) -> None:
         target_str = self.path_edit.text().strip()
         if not target_str:
-            QMessageBox.warning(self, "Внимание", "Пожалуйста, укажите путь к файлу для сохранения.")
+            QMessageBox.warning(self, tr("common.warning"), tr("export_objects.specify_path_error"))
             self._on_browse()
             return
 
@@ -454,7 +455,7 @@ class ExportObjectsDialog(QDialog):
         if target_path.exists():
             confirm = QMessageBox.question(
                 self,
-                "Подтверждение перезаписи",
+                tr("export_objects.overwrite_confirm_title"),
                 tr("export_objects.overwrite_confirm", name=target_path.name),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,

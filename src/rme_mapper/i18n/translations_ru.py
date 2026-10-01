@@ -653,6 +653,8 @@ TRANSLATIONS_RU: dict[str, str] = {
     "msg.geotiff_no_georef": "Файл не содержит корректной географической привязки.",
     "msg.geotiff_backend_unavailable": "Поддержка GeoTIFF недоступна в этой сборке.",
     "dialog.map.filter_maps": "Файлы карт (*.gpkg *.tif *.tiff);;Файлы GeoPackage (*.gpkg);;Файлы GeoTIFF (*.tif *.tiff);;Все файлы (*.*)",
+    "dialog.map.select_file_title": "Выберите файл карты",
+    "dialog.map.filter_all_maps": "Файлы карт и изображений (*.gpkg *.tif *.tiff *.png *.jpg *.jpeg);;Файлы GeoPackage (*.gpkg);;Файлы GeoTIFF (*.tif *.tiff);;Изображения (*.png *.jpg *.jpeg);;Все файлы (*.*)",
     "layer.raster": "Растр",
     "dialog.map.raster_info": "Тип: GeoTIFF | Размер: {w} × {h} | Каналы: {bands} | CRS: {crs}",
 
@@ -965,5 +967,67 @@ TRANSLATIONS_RU: dict[str, str] = {
     "export_objects.field_zone_border_width": "Толщина границы зоны",
     "export_objects.field_zone_border_style": "Стиль границы зоны",
     "export_objects.field_internal_id": "Внутренний ID (UUID)",
+
+    # Final fix pass: map title & status prefixes
+    "map.title_prefix": "Карта",
+    "status.online_map_prefix": "Онлайн-карта",
+    "status.raster_prefix": "Растр",
+    "status.layers_prefix": "Слоёв",
+    "status.image_prefix": "Изображение",
+    "status.error_geotiff_load": "Ошибка загрузки GeoTIFF",
+    "status.error_boundary_read": "Ошибка чтения границы карты",
+    "status.error_map_load": "Ошибка загрузки карты",
+    "status.error_image_load": "Ошибка загрузки изображения",
+    "status.exporting_objects": "Экспорт объектов...",
+
+    # Final fix pass: Export Objects Dialog
+    "export_objects.format_options": "Параметры формата",
+    "export_objects.include_headers": "Включать строку заголовков",
+    "export_objects.target_file": "Целевой файл",
+    "export_objects.path_placeholder": "Выберите путь для сохранения...",
+    "export_objects.browse": "Обзор...",
+    "export_objects.all_files_filter": "Все файлы (*.*)",
+    "export_objects.specify_path_error": "Пожалуйста, укажите путь к файлу для сохранения.",
+    "export_objects.overwrite_confirm_title": "Подтверждение перезаписи",
+
+    # Final fix pass: Import Wizard Buttons
+    "wizard.btn_back": "Назад",
+    "wizard.btn_next": "Далее",
+    "wizard.btn_cancel": "Отмена",
+    "wizard.btn_finish": "Импортировать",
+
+    # Final fix pass: Online Basemap Dialog
+    "dialog.online_map.mandatory_attr": "Обязательная атрибуция (нельзя отключить при экспорте)",
+    "dialog.online_map.cache_group": "Дисковый кэш тайлов",
+    "dialog.online_map.cache_size": "Размер кэша: {size}",
+    "dialog.online_map.key_not_required": "Ключ не требуется",
+    "dialog.online_map.secret_token_forbidden": "Секретные токены (sk...) запрещены! Используйте публичный токен (pk...).",
+    "dialog.online_map.http_warning": "Внимание: используется незащищенное HTTP-соединение. Рекомендуется HTTPS.",
+    "dialog.online_map.custom_map_default_name": "Пользовательская карта",
+
+    # Final fix pass: Georeference Dialog
+    "dialog.georef.fit": "Вписать",
+    "dialog.georef.pulkovo_crs": "Пулково 1942 / Гаусс-Крюгер зона 7 (EPSG:28407)",
+    "dialog.georef.custom_crs": "Пользовательский EPSG...",
+    "dialog.georef.crs_placeholder": "Например: EPSG:4326 или EPSG:32637",
+    "dialog.georef.pts_count": "Контрольных точек: {count} (минимум {min})",
+    "dialog.georef.active_pts_count": "Активных контрольных точек: {count} (минимум {min})",
+    "dialog.georef.click_on_image": "Кликните по изображению...",
+    "dialog.georef.max_pts_limit": "Максимальное число контрольных точек: {max}",
+    "dialog.georef.preview_title": "Предпросмотр",
+    "dialog.georef.preview_min_points_error": "Для предпросмотра необходимо задать минимум 3 валидные точки.",
+    "dialog.georef.export_title": "Экспорт",
+    "dialog.georef.export_min_points_error": "Сначала укажите минимум 3 контрольные точки.",
+    "dialog.georef.select_world_file_dir": "Выберите папку для сохранения World File",
+    "dialog.georef.export_error_title": "Ошибка экспорта",
+    "dialog.georef.world_files_success": "Файлы привязки успешно созданы:\n{files}",
+    "dialog.georef.world_files_failed": "Не удалось экспортировать файлы привязки:\n{error}",
+
+    # Final fix pass: Common & Import
+    "dialog.import_all_rows_valid": "Все проверенные строки корректны.",
+    "common.all_files_filter": "Все файлы (*.*)",
+    "common.file": "Файл",
+    "common.success": "Успешно",
+    "common.limit_exceeded": "Превышен лимит",
 }
 

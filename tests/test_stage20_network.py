@@ -193,9 +193,51 @@ def test_35_rate_limit_429_emits_failure(qapp, monkeypatch):
 
 
 def test_36_retry_temporary_server_error(qapp, monkeypatch):
-    """Тест 36: Временная ошибка сервера 500 вызывает 1 повторную попытку."""
+    """Тест 36: Временная ошибка сервера 500 -> retry -> успешный ответ 200."""
     loader = TileLoader(max_concurrency=4)
     attempts = 0
+    loaded = []
+    failed = []
+    loader.tile_loaded.connect(lambda *args: loaded.append(args))
+    loader.tile_failed.connect(lambda *args: failed.append(args))
+
+    def fake_get(req: QNetworkRequest):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return FakeNetworkReply(b"Internal Error", 500, QNetworkReply.NetworkError.InternalServerError)
+        return FakeNetworkReply(_make_dummy_png(), 200, QNetworkReply.NetworkError.NoError)
+
+    monkeypatch.setattr(loader._nam, "get", fake_get)
+
+    loader.request_tile("osm", 1, 0, 0, "http://osm/1/0/0")
+    # Запрос 1 завершился с ошибкой 500 -> ставит 1 повтор в очередь и запускает
+    first_reply = list(loader._in_flight.values())[0]
+    first_reply.finished.emit()
+
+    assert attempts == 2
+    assert len(loaded) == 0
+    assert len(failed) == 0
+
+    # Второй ответ (повтор) успешен (HTTP 200)
+    second_reply = list(loader._in_flight.values())[0]
+    second_reply.finished.emit()
+
+    assert len(loaded) == 1
+    assert len(failed) == 0
+    assert loader.queue_count == 0
+    assert loader.in_flight_count == 0
+    assert len(loader._retries) == 0
+
+
+def test_36b_retry_server_error_exhaustion(qapp, monkeypatch):
+    """Тест 36b: Временная ошибка сервера 500 -> повтор тоже 500 -> tile_failed ровно 1 раз."""
+    loader = TileLoader(max_concurrency=4)
+    attempts = 0
+    loaded = []
+    failed = []
+    loader.tile_loaded.connect(lambda *args: loaded.append(args))
+    loader.tile_failed.connect(lambda *args: failed.append(args))
 
     def fake_get(req: QNetworkRequest):
         nonlocal attempts
@@ -205,12 +247,100 @@ def test_36_retry_temporary_server_error(qapp, monkeypatch):
     monkeypatch.setattr(loader._nam, "get", fake_get)
 
     loader.request_tile("osm", 1, 0, 0, "http://osm/1/0/0")
-    # Запрос 1 завершился с ошибкой 500
     first_reply = list(loader._in_flight.values())[0]
     first_reply.finished.emit()
 
-    # Должен быть добавлен 1 повтор в очередь и выполнен
-    assert attempts >= 1
+    assert attempts == 2
+    assert len(loaded) == 0
+    assert len(failed) == 0
+
+    # Завершение второй попытки с ошибкой 500 (исчерпание retry)
+    second_reply = list(loader._in_flight.values())[0]
+    second_reply.finished.emit()
+
+    assert attempts == 2
+    assert len(loaded) == 0
+    assert len(failed) == 1
+    assert failed[0][4] == 500
+    assert loader.queue_count == 0
+    assert loader.in_flight_count == 0
+    assert len(loader._retries) == 0
+
+
+def test_36c_retry_timeout(qapp, monkeypatch):
+    """Тест 36c: Таймаут запроса -> контролируемый retry без повреждения очереди."""
+    loader = TileLoader(max_concurrency=4)
+    attempts = 0
+    loaded = []
+    loader.tile_loaded.connect(lambda *args: loaded.append(args))
+
+    def fake_get(req: QNetworkRequest):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return FakeNetworkReply(b"", 0, QNetworkReply.NetworkError.TimeoutError, "Timeout")
+        return FakeNetworkReply(_make_dummy_png(), 200, QNetworkReply.NetworkError.NoError)
+
+    monkeypatch.setattr(loader._nam, "get", fake_get)
+
+    loader.request_tile("osm", 1, 0, 0, "http://osm/1/0/0")
+    rep1 = list(loader._in_flight.values())[0]
+    rep1.finished.emit()
+
+    assert attempts == 2
+    rep2 = list(loader._in_flight.values())[0]
+    rep2.finished.emit()
+
+    assert len(loaded) == 1
+    assert loader.queue_count == 0
+    assert loader.in_flight_count == 0
+    assert len(loader._retries) == 0
+
+
+def test_36d_retry_connection_failure(qapp, monkeypatch):
+    """Тест 36d: Сбой соединения -> retry выполняется без ValueError / unpacking error."""
+    loader = TileLoader(max_concurrency=4)
+    attempts = 0
+    loaded = []
+    loader.tile_loaded.connect(lambda *args: loaded.append(args))
+
+    def fake_get(req: QNetworkRequest):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return FakeNetworkReply(b"", 0, QNetworkReply.NetworkError.ConnectionRefusedError, "Connection Refused")
+        return FakeNetworkReply(_make_dummy_png(), 200, QNetworkReply.NetworkError.NoError)
+
+    monkeypatch.setattr(loader._nam, "get", fake_get)
+
+    loader.request_tile("osm", 1, 0, 0, "http://osm/1/0/0")
+    rep1 = list(loader._in_flight.values())[0]
+    # Не должно быть ValueError при распаковке кортежа из очереди
+    rep1.finished.emit()
+
+    assert attempts == 2
+    rep2 = list(loader._in_flight.values())[0]
+    rep2.finished.emit()
+
+    assert len(loaded) == 1
+    assert loader.queue_count == 0
+    assert loader.in_flight_count == 0
+
+
+def test_36f_tile_failed_signal_slot_compatibility(qapp):
+    """Тест 36f: TileLoader.tile_failed (6 параметров) совместим со слотом OnlineTileManager._on_tile_failed."""
+    from PySide6.QtWidgets import QGraphicsScene
+    from rme_mapper.maps.online_tile_manager import OnlineTileManager
+
+    scene = QGraphicsScene()
+    manager = OnlineTileManager(scene=scene)
+    loader = manager._loader
+
+    # Прямой вызов через сигнал loader.tile_failed -> manager._on_tile_failed
+    # Если сигнатура слота не совпадает со схемой Signal(str, int, int, int, int, str),
+    # PySide вызовет TypeError при emit
+    loader.tile_failed.emit("osm", 5, 10, 20, 500, "Internal Server Error")
+    loader.tile_failed.emit("osm", 5, 10, 21, 0, "Network Timeout")
 
 
 def test_37_no_retry_on_404_not_found(qapp, monkeypatch):

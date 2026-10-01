@@ -333,10 +333,14 @@ class OnlineTileManager(QObject):
         z: int,
         x: int,
         y: int,
+        status_code: int,
         error_msg: str,
     ) -> None:
         """Обработка ошибки загрузки тайла."""
-        logger.debug("Тайл %s/%d/%d/%d не загружен: %s", provider_id, z, x, y, error_msg)
+        if status_code > 0:
+            logger.debug("Тайл %s/%d/%d/%d не загружен (код %d): %s", provider_id, z, x, y, status_code, error_msg)
+        else:
+            logger.debug("Тайл %s/%d/%d/%d не загружен: %s", provider_id, z, x, y, error_msg)
 
     def _on_auth_error(self, provider_id: str) -> None:
         """Обработка ошибки авторизации (401/403)."""

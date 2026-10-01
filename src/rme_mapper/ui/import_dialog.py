@@ -242,19 +242,19 @@ class ImportDialog(QDialog):
         combined_items: list[tuple[str, str, str]] = []  # (kind, prefix, text)
 
         for err in result.errors[:20]:
-            row_prefix = f"[{tr('table.col_index')} {err.row_number}]" if err.row_number > 0 else "[Файл]"
+            row_prefix = f"[{tr('table.col_index')} {err.row_number}]" if err.row_number > 0 else f"[{tr('common.file')}]"
             field_prefix = f" ({err.field})" if err.field else ""
             combined_items.append(("error", f"❌ {row_prefix}{field_prefix}:", err.localized_message()))
 
         rem = 20 - len(combined_items)
         if rem > 0:
             for warn in result.warnings[:rem]:
-                row_prefix = f"[{tr('table.col_index')} {warn.row_number}]" if warn.row_number > 0 else "[Файл]"
+                row_prefix = f"[{tr('table.col_index')} {warn.row_number}]" if warn.row_number > 0 else f"[{tr('common.file')}]"
                 field_prefix = f" ({warn.field})" if warn.field else ""
                 combined_items.append(("warning", f"⚠️ {row_prefix}{field_prefix}:", warn.localized_message()))
 
         if not combined_items:
-            it = QListWidgetItem("✅ Все проверенные строки корректны.")
+            it = QListWidgetItem(f"✅ {tr('dialog.import_all_rows_valid')}")
             it.setForeground(Qt.GlobalColor.darkGreen)
             self.errors_list.addItem(it)
         else:

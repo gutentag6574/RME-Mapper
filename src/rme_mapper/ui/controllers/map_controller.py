@@ -280,8 +280,8 @@ class MapController(QObject):
         self._map_canvas.set_online_basemap(provider, api_key=effective_key)
 
         # 6. Обновляем статус и заголовок
-        self._update_title(f"Карта: {provider.name}")
-        status_text = f"Онлайн-карта: {provider.name} | EPSG:3857"
+        self._update_title(f"{tr('map.title_prefix')}: {provider.name}")
+        status_text = f"{tr('status.online_map_prefix')}: {provider.name} | EPSG:3857"
         self._set_status(status_text)
         self._points_panel.set_buttons_enabled(add=True)
 
@@ -446,8 +446,8 @@ class MapController(QObject):
                     )
 
                 self._layers_panel.set_layers([raster_layer])
-                self._update_title(f"Карта: {map_title}")
-                status_text = f"Карта: {map_title} | {self._active_crs} | Растр: {info['width']}×{info['height']}"
+                self._update_title(f"{tr('map.title_prefix')}: {map_title}")
+                status_text = f"{tr('map.title_prefix')}: {map_title} | {self._active_crs} | {tr('status.raster_prefix')}: {info['width']}×{info['height']}"
                 self._set_status(status_text)
                 self._points_panel.set_buttons_enabled(add=True)
                 logger.info("Растровая карта успешно загружена. %s", status_text)
@@ -463,7 +463,7 @@ class MapController(QObject):
             except Exception as raster_err:
                 logger.exception("Ошибка при загрузке растровой карты %s: %s", path, raster_err)
                 self._map_canvas.set_error(f"Ошибка чтения GeoTIFF:\n{raster_err}")
-                self._set_status("Ошибка загрузки GeoTIFF")
+                self._set_status(tr("status.error_geotiff_load"))
                 return
 
         # -------------------------------------------------------------
@@ -515,7 +515,7 @@ class MapController(QObject):
                     logger.exception("Ошибка загрузки слоя '%s': %s", layer.display_name, layer_err)
                     if (profile and profile.boundary_required and layer.role == LayerRole.BOUNDARY):
                         self._map_canvas.set_error(f"Ошибка чтения границы карты:\n{layer_err}")
-                        self._set_status("Ошибка чтения границы карты")
+                        self._set_status(tr("status.error_boundary_read"))
                         return
 
             self._loaded_layers = successfully_loaded
@@ -525,8 +525,8 @@ class MapController(QObject):
             self._layers_panel.set_layers(successfully_loaded)
 
             # Обновляем заголовок и строку состояния
-            self._update_title(f"Карта: {map_title}")
-            status_text = f"Карта: {map_title} | {self._active_crs} | Слоёв: {len(successfully_loaded)}"
+            self._update_title(f"{tr('map.title_prefix')}: {map_title}")
+            status_text = f"{tr('map.title_prefix')}: {map_title} | {self._active_crs} | {tr('status.layers_prefix')}: {len(successfully_loaded)}"
             self._set_status(status_text)
             self._points_panel.set_buttons_enabled(add=True)
             logger.info("Карта успешно загружена. %s", status_text)
@@ -545,7 +545,7 @@ class MapController(QObject):
         except Exception as e:
             logger.exception("Критическая ошибка при загрузке карты из %s: %s", path, e)
             self._map_canvas.set_error(f"Ошибка при чтении карты:\n{e}")
-            self._set_status("Ошибка загрузки карты")
+            self._set_status(tr("status.error_map_load"))
 
     def set_layer_visibility(self, layer_id: str, visible: bool) -> None:
         """Переключение видимости слоя и обновление состояния."""
@@ -638,8 +638,8 @@ class MapController(QObject):
             self._map_path = path
 
             self._layers_panel.set_layers([raster_layer])
-            self._update_title(f"Карта: {display_name}")
-            status_text = f"Изображение: {display_name} | {self._active_crs} | {full_size[0]}×{full_size[1]}"
+            self._update_title(f"{tr('map.title_prefix')}: {display_name}")
+            status_text = f"{tr('status.image_prefix')}: {display_name} | {self._active_crs} | {full_size[0]}×{full_size[1]}"
             self._set_status(status_text)
             self._points_panel.set_buttons_enabled(add=True)
             logger.info("Геопривязанное изображение успешно загружено: %s", status_text)
@@ -654,7 +654,7 @@ class MapController(QObject):
         except Exception as e:
             logger.exception("Ошибка при загрузке геопривязанного изображения %s: %s", path, e)
             self._map_canvas.set_error(f"Ошибка чтения изображения:\n{e}")
-            self._set_status("Ошибка загрузки изображения")
+            self._set_status(tr("status.error_image_load"))
 
     def edit_georeferencing(self, on_applied: Any = None, undo_manager: Any = None) -> bool:
         """Открытие диалога повторного редактирования геопривязки текущей карты (Stage 21)."""

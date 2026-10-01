@@ -76,8 +76,8 @@
 - **Симптом**: В интерфейсе отображались сырые ключи переводов (`btn.save`, `status.error`, `dialog.group.*`). Конструкция вида `tr("key") or "fallback"` не срабатывала, так как `TranslationService` при отсутствии ключа возвращает сам непустой строковый идентификатор.
 - **Root Cause**: Неполнота словарей `translations_ru.py` и `translations_en.py`.
 - **Исправление**:
-  1. Проведён полный статический аудит всех вызовов `tr(...)` по всей кодовой базе (709 уникальных ключей).
-  2. Добавлены все недостающие ключи в оба словаря (RU и EN):
+  1. Проведён полный статический аудит всех вызовов `tr(...)` по всей кодовой базе с использованием детерминированного скрипта `tools/audit_metrics.py` (680 уникальных строковых ключей в 908 местах вызовов).
+  2. Добавлены все недостающие ключи в оба словаря (RU и EN, по 927 ключей с полным взаимным паритетом):
      - `btn.save`
      - `status.error`, `status.online_maps_unsupported`, `status.geotiff_unsupported`, `status.geopackage_unsupported`
      - `msg.file_not_found`
@@ -160,11 +160,13 @@
 
 ## 4. Результаты тестирования
 
-### 4.1. Результаты локализации (BUG-003)
-- Просканировано уникальных строковых ключей `tr(...)`: **709**
+### 4.1. Результаты локализации (BUG-003, детерминированный аудит tools/audit_metrics.py)
+- Просканировано уникальных строковых ключей `tr(...)` в исходном коде: **680** (в 908 точках вызова)
+- Всего ключей в словаре `ru`: **927**
+- Всего ключей в словаре `en`: **927**
 - Отсутствующих ключей в словаре `ru`: **0**
 - Отсутствующих ключей в словаре `en`: **0**
-- Симметрия RU/EN словарей: **100% совпадение**
+- Симметрия RU/EN словарей: **100% совпадение (927 / 927)**
 - Динамическое переключение RU -> EN -> RU: **Успешно, без потери данных**
 
 ### 4.2. Результаты регрессионного тестирования
@@ -183,9 +185,9 @@
 ### 5.1. Релизные артефакты
 | Артефакт | Тип | Размер | Контрольная сумма SHA-256 |
 |---|---|---|---|
-| `GeoPointMapper-1.0.0-portable.zip` | Portable ZIP | 185,007,864 байт (~176.4 МБ) | `29af2ad9d5a8e03e45b071dbfad38409f68e70f16937046ea556a471ffb1e3a3` |
-| `GeoPointMapper-1.0.0-Setup-x64.exe` | Inno Setup Installer | 122,938,995 байт (~117.2 МБ) | `42f846e98316fa736ec96ec310f816913df305f2d213142bdcd36398c381e436` |
-| `GeoPointMapper.exe` (в standalone) | Standalone onedir EXE | 16,852,872 байт (~16.1 МБ) | `ff0f61048cad26ad5022cd81959c7e9d928c7f83ea658f756a82794cc7f34452` |
+| `GeoPointMapper-1.0.0-portable.zip` | Portable ZIP | 185,009,942 байт (~176.4 МБ) | `089dd2337e645fd90497654ea02e340ab332e3b2736375f82d7365c629069975` |
+| `GeoPointMapper-1.0.0-Setup-x64.exe` | Inno Setup Installer | 122,939,942 байт (~117.2 МБ) | `b379afa543ab8572986782bae4f99b274b9299bb8850bd34cb8a0e4f633273fe` |
+| `GeoPointMapper.exe` (в standalone) | Standalone onedir EXE | 16,856,215 байт (~16.1 МБ) | `8870ef8c82f647a501db609d1cb7e80ce283a7017ee31a5d907b087209ea8ae8` |
 
 - Манифест релиза: `release/release_manifest.json` (сгенерирован)
 - Контрольные суммы: `release/SHA256SUMS.txt` (проверены)
@@ -216,15 +218,96 @@
 - **Automated Isolated Smoke (проведено на стенде разработки)**:
   - Исключение всех переменных Python-окружения (`PYTHONPATH`, `PYTHONHOME`, `VIRTUAL_ENV`).
   - Очистка `PATH` от ссылок на `.venv` и репозиторий.
-  - Подтверждено, что исполняемые файлы не загружают модули из внешнего виртуального окружения.
+  - Подтверждено, что исполняемые файлы не загружают модули из внешнего виртуального окружения: **PASS**.
 - **Real Clean Windows VM (ручная валидация в изолированной виртуальной машине)**:
   - Рекомендуется перед публикацией в публичный репозиторий запустить `GeoPointMapper-1.0.0-Setup-x64.exe` на эталонном образе Windows 11 без установленного Python и без QGIS.
-  - В рамках автоматизированного конвейера Stage 27 запуск внешней VM не производился; все автоматизированные тесты изолированного рантайма выполнены в полном объёме.
+  - В рамках автоматизированного конвейера Stage 27 запуск внешней физической/VM чистой машины не производился; статус: **NOT VERIFIED**. Все автоматизированные тесты изолированного рантайма выполнены в полном объёме: **PASS**.
 
 ---
 
-## 8. Итоговое заключение
+## 8. Итоговое заключение базового этапа
 
-Все подтверждённые дефекты BUG-001...BUG-008 полностью устранены и защищены регрессионными тестами. Единый источник истины версии `1.0.0` внедрён. Дистрибутивы Standalone, Portable и Installer успешно пересобраны и валидированы. Регрессионный набор (1320 тестов) выполнен со 100% успешным результатом.
+Все подтверждённые дефекты BUG-001...BUG-008 полностью устранены и защищены регрессионными тестами.
 
-**Вердикт**: **GeoPoint Mapper v1.0.0 ГОТОВ К ВЫПУСКУ (RELEASE READY).**
+---
+
+## 9. Финальный проход устранения замечаний внешнего аудита (FINAL EXTERNAL AUDIT FIX PASS)
+
+В рамках финальной доработки релиз-кандидата v1.0.0 устранены все выявленные внешним аудитом замечания и дефекты.
+
+### Сводная таблица результатов фикса
+
+| Issue | Result | Regression Test |
+|---|---|---|
+| Tile retry queue contract | PASS | `tests/test_stage20_network.py::test_36_retry_temporary_server_error`<br>`tests/test_stage20_network.py::test_36b_retry_server_error_exhaustion`<br>`tests/test_stage20_network.py::test_36c_retry_timeout`<br>`tests/test_stage20_network.py::test_36d_retry_connection_failure`<br>`tests/test_stage20_control.py::test_c15_timeout_and_server_error_retry_matrix` |
+| tile_failed signature | PASS | `tests/test_stage20_network.py::test_36f_tile_failed_signal_slot_compatibility` |
+| OSM initial display | OBS-001 — NOT REPRODUCED | `tests/test_stage20_network.py::test_35_osm_initial_display_tile_loading_and_canvas_update` |
+| Map title localization | PASS | `tests/test_stage27_localization.py::test_05_main_window_map_title_and_status_labels_ru_en` |
+| Raw UI strings localization | PASS | `tests/test_stage27_localization.py::test_06_export_objects_dialog_ru_en`<br>`tests/test_stage27_localization.py::test_07_point_dialog_ru_en`<br>`tests/test_stage27_localization.py::test_08_open_map_dialog_ru_en`<br>`tests/test_stage27_localization.py::test_09_online_basemap_dialog_ru_en` |
+| ImportWizard buttons | PASS | `tests/test_stage27_localization.py::test_10_import_wizard_buttons_ru_en` |
+| Category filter visual truncation | PASS | `tests/test_stage27_localization.py::test_05_main_window_map_title_and_status_labels_ru_en` (1:1 stretch, min-width 115px, dynamic tooltip) |
+| Version source-of-truth | PASS | `tests/test_stage26_packaging.py::test_08_canonical_version_single_source_of_truth` |
+| Active docs version references | PASS | `docs/GPMAP_FORMAT.md`, `docs/IMAGE_EXPORT.md`, `docs/ONLINE_MAPS.md` |
+| Audit key-count consistency | PASS | `tools/audit_metrics.py` (680 unique source keys, 908 call sites, 927 dictionary keys in RU/EN) |
+| Full regression | PASS | 1331 passed, 0 failed, 0 RuntimeWarning |
+| Standalone rebuild | PASS | `tests/test_stage26_smoke_artifacts.py::test_01_standalone_exe_clean_machine_smoke` |
+| Portable rebuild | PASS | `tests/test_stage26_smoke_artifacts.py::test_02_portable_zip_unicode_and_spaces_path_smoke` |
+| Installer rebuild | PASS | `tests/test_stage26_smoke_artifacts.py::test_03_installer_install_smoke_and_uninstall`<br>`tests/test_stage26_smoke_artifacts.py::test_04_release_manifest_and_sha256_checksums` |
+
+### Ключевые изменения по направлениям
+
+1. **A. Release Blocker — Tile retry queue corruption**:
+   - В `src/rme_mapper/services/tile_loader.py` устранён дефект добавления 6-элементного кортежа в retry branch. Очередь строго типизирована и сохраняет неизменный 5-элементный контракт `(provider_id, z, x, y, url)`. Условный запрос сбрасывается через `self._conditional_requests.discard(key)`.
+   - Регистрация попыток `_retries` очищается при успешной загрузке и при исчерпании лимита попыток. Счётчики загрузки не зависают.
+   - Усилены и добавлены тесты на полный цикл retry HTTP 500, Timeout, Connection failure и отсутствие retry на HTTP 404.
+
+2. **B. Release Blocker — tile_failed Signal/Slot Signature**:
+   - В `src/rme_mapper/maps/online_tile_manager.py` слот `_on_tile_failed` расширен до полного контракта: `(provider_id: str, z: int, x: int, y: int, status_code: int, error_msg: str)`.
+   - Статус-код сетевого/HTTP ответа логируется вместе с сообщением об ошибке. Добавлен тест совместимости сигнатуры сигнала и слота при прямом вызове `emit`.
+
+3. **C. Online Map First Display**:
+   - Проверено первичное отображение OpenStreetMap при подключении без zoom/pan. Тайлы загружаются, сигнал `tiles_updated` испускается, холст обновляется корректно. Зафиксирован статус: `OBS-001 — NOT REPRODUCED`.
+
+4. **D, E, F. Локализация и устранение жестко зашитых строк**:
+   - Переведены все жестко зашитые строки в `MapController`, `MainWindow`, `ExportObjectsDialog`, `PointDialog`, `OpenMapDialog`, `OnlineBasemapDialog`, `GeoreferenceDialog`, `ExportController`, `ImportDialog`.
+   - В `ImportWizard` явно локализованы кнопки `BackButton`, `NextButton`, `CancelButton`, `FinishButton` для языков RU и EN.
+   - Словари `translations_ru.py` и `translations_en.py` расширены до 927 ключей со 100% взаимным паритетом.
+
+5. **G. Localization Regression Tests**:
+   - В `tests/test_stage27_localization.py` добавлены 6 новых тестов реальных UI-виджетов (`test_05`...`test_10`), проверяющие отсутствие остаточных русских строк при переключении на английский интерфейс.
+
+6. **H. Visual / UX Polish**:
+   - В `PointsPanel` исправлено визуальное усечение текста комбобокса категорий ("Все катего...", "All Categ..."): задано соотношение stretch 1:1 с полем поиска, `minimumWidth(115)` и динамическое обновление подсказки `setToolTip`.
+
+7. **I. Version Source of Truth**:
+   - Канонический источник версии зафиксирован в `src/rme_mapper/app_info.py`.
+   - В `build_release.py` реализована функция `sync_version_metadata()`, автоматически синхронизирующая версию в `pyproject.toml`, `packaging/installer.iss` и `packaging/file_version_info.txt` перед сборкой. Добавлен тест `test_08_canonical_version_single_source_of_truth`.
+
+8. **J. Активная документация**:
+   - Устранены устаревшие ссылки на `0.12.0` в `docs/GPMAP_FORMAT.md`, `docs/IMAGE_EXPORT.md`, `docs/ONLINE_MAPS.md`. Исторические отчёты оставлены неизменными.
+
+9. **K. Детерминированный подсчет ключей аудита**:
+   - Создан детерминированный скрипт `tools/audit_metrics.py`, сканирующий литеральные ключи `tr(...)` в коде: 680 уникальных ключей, 908 мест вызова, 927 ключей в словарях с паритетом 927/927. Числа синхронизированы в отчёте и `audit/STATIC_AUDIT_NOTES.md`.
+
+---
+
+## 10. Итоговый релизный статус
+
+```
+PRE-FIX TESTS: 1320
+FINAL TESTS: 1331
+FAILED: 0
+RUNTIME WARNINGS: 0
+
+AUTOMATED ISOLATED SMOKE: PASS
+REAL CLEAN WINDOWS VM: NOT VERIFIED
+
+STANDALONE: PASS
+PORTABLE: PASS
+INSTALLER: PASS
+
+RELEASE VERSION: 1.0.0
+
+FINAL RELEASE STATUS:
+READY
+```
