@@ -262,9 +262,20 @@ class GeoreferenceDialog(QDialog):
         existing_points: list[dict[str, Any]] | list[ControlPoint] | None = None,
         existing_crs: str | None = None,
         parent: QWidget | None = None,
+        existing_affine: list[float] | tuple[float, ...] | None = None,
     ) -> None:
         super().__init__(parent)
-        self.image_path = Path(image_path).resolve()
+        self.image_path = GeoreferenceService.resolve_image_path(image_path)
+        binding = GeoreferenceService.read_world_file(image_path) if existing_points is None and existing_affine is None else None
+        if binding is None and existing_points is None and existing_affine is None and self.image_path.suffix.lower() in (".tif", ".tiff"):
+            from rme_mapper.backends import BackendFactory, get_raster_backend
+            if BackendFactory.supports_geotiff():
+                info = get_raster_backend().inspect_raster(self.image_path)
+                if info.get("is_valid_georef"):
+                    binding = {"affine": info["transform"], "crs": info["crs"]}
+        self._imported_affine = tuple(existing_affine) if existing_affine is not None else (binding["affine"] if binding else None)
+        if binding and existing_crs is None:
+            existing_crs = binding["crs"] or ""
         self.setWindowTitle(f"{tr('dialog.georef.title')} — {self.image_path.name}")
         self.resize(1100, 720)
         self.setMinimumSize(850, 560)
@@ -273,7 +284,7 @@ class GeoreferenceDialog(QDialog):
         self._image_info: dict[str, Any] = {}
         self._full_size: tuple[int, int] = (0, 0)
         self._control_points: list[ControlPoint] = []
-        self._active_crs: str = existing_crs or "EPSG:4326"
+        self._active_crs: str = existing_crs if existing_crs is not None else "EPSG:4326"
         self._current_affine: tuple[float, float, float, float, float, float] | None = None
         self._current_rmse: float = 0.0
 
@@ -353,8 +364,11 @@ class GeoreferenceDialog(QDialog):
         self.crs_combo = QComboBox(crs_group)
         self.crs_combo.addItem("WGS 84 (EPSG:4326)", "EPSG:4326")
         self.crs_combo.addItem("Web Mercator (EPSG:3857)", "EPSG:3857")
+        self.crs_combo.addItem("WGS 84 / UTM zone 39N (EPSG:32639)", "EPSG:32639")
         self.crs_combo.addItem(tr("dialog.georef.pulkovo_crs"), "EPSG:28407")
         self.crs_combo.addItem(tr("dialog.georef.custom_crs"), "custom")
+        crs_index = self.crs_combo.findData(self._active_crs)
+        self.crs_combo.setCurrentIndex(crs_index if crs_index >= 0 else self.crs_combo.findData("custom"))
         self.crs_combo.currentIndexChanged.connect(self._on_crs_combo_changed)
         crs_title_row.addWidget(self.crs_combo, stretch=1)
         crs_layout.addLayout(crs_title_row)
@@ -368,6 +382,9 @@ class GeoreferenceDialog(QDialog):
         crs_input_row.addWidget(self.crs_edit, stretch=1)
         crs_input_row.addWidget(self.lbl_crs_status)
         crs_layout.addLayout(crs_input_row)
+        self.crs_help = QLabel(tr("dialog.georef.crs_help"), crs_group)
+        self.crs_help.setWordWrap(True)
+        crs_layout.addWidget(self.crs_help)
 
         right_layout.addWidget(crs_group)
 
@@ -501,7 +518,7 @@ class GeoreferenceDialog(QDialog):
         except Exception:
             self.lbl_crs_status.setText("✗")
             self.lbl_crs_status.setStyleSheet("color: #DC2626; font-weight: bold;")
-            self.btn_apply.setEnabled(False)
+            self._recalculate()
 
     def _on_add_point_toggled(self, checked: bool) -> None:
         self.image_view.set_adding_point_mode(checked)
@@ -655,6 +672,22 @@ class GeoreferenceDialog(QDialog):
 
     def _recalculate(self) -> None:
         """Перерасчет аффинной трансформации, остаточных невязок и RMSE."""
+        try:
+            pyproj.CRS.from_user_input(self.crs_edit.text().strip())
+        except Exception:
+            self._current_affine = None
+            self.lbl_crs_status.setText("✗")
+            self.lbl_status_msg.setText(tr("dialog.georef.crs_required"))
+            self.btn_apply.setEnabled(False)
+            self.btn_export_wf.setEnabled(False)
+            return
+        self.btn_export_wf.setEnabled(True)
+        if self._imported_affine is not None and not self._control_points:
+            self._current_affine = self._imported_affine
+            self.lbl_status_msg.setText(tr("dialog.georef.imported_binding"))
+            self.lbl_rmse.setText(f"{tr('dialog.georef.rmse')} —")
+            self.btn_apply.setEnabled(True)
+            return
         enabled_pts = [p for p in self._control_points if p.enabled]
         n_en = len(enabled_pts)
 

@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 import pyproj
+from rme_mapper.i18n import tr
 
 from rme_mapper.backends import MapDataBackend, get_backend, BackendFactory, get_raster_backend
 from rme_mapper.maps.map_config import get_project_root
@@ -358,7 +359,12 @@ class OpenMapDialog(QDialog):
         from rme_mapper.ui.georeference_dialog import GeoreferenceDialog
         from rme_mapper.models.map_profile import MapProfile
 
-        dlg = GeoreferenceDialog(path, parent=self)
+        try:
+            dlg = GeoreferenceDialog(path, parent=self)
+        except Exception as exc:
+            QMessageBox.critical(self, tr("dialog.georef.title"), str(exc))
+            return
+        path = dlg.image_path
         if dlg.exec() == QDialog.DialogCode.Accepted:
             affine = dlg.get_affine_transform()
             cps = [p.to_dict() for p in dlg.get_control_points()]
@@ -397,6 +403,23 @@ class OpenMapDialog(QDialog):
         if not path.is_file():
             QMessageBox.warning(self, "Ошибка", f"Файл не существует:\n{path}")
             return
+
+        # Clear previous selection before inspecting another file.
+        self._selected_profile = None
+        self._inspected_layers = []
+        self._is_raster = False
+        self._raster_info = {}
+        self.layers_table.setRowCount(0)
+        from rme_mapper.services.georeference_service import GeoreferenceService, WORLD_FILE_EXTENSIONS
+        if path.suffix.lower() in WORLD_FILE_EXTENSIONS | {".png", ".jpg", ".jpeg", ".tif", ".tiff"}:
+            try:
+                binding = GeoreferenceService.read_world_file(path)
+            except Exception as exc:
+                QMessageBox.critical(self, tr("dialog.georef.title"), str(exc))
+                return
+            if binding:
+                self._launch_georeference_dialog(path)
+                return
 
         self._current_gpkg_path = path
         self.file_path_edit.setText(str(path))

@@ -669,6 +669,7 @@ class MapController(QObject):
             path,
             existing_points=self._active_profile.control_points,
             existing_crs=self._active_profile.crs,
+            existing_affine=self._active_profile.affine_transform,
         )
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return False

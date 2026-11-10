@@ -28,10 +28,67 @@ MAX_SAFE_PIXELS = 250_000_000
 Image.MAX_IMAGE_PIXELS = MAX_SAFE_PIXELS
 
 SUPPORTED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
+WORLD_FILE_EXTENSIONS = {".pgw", ".pngw", ".jgw", ".jpgw", ".jpegw", ".tfw", ".tifw", ".tiffw", ".wld"}
 
 
 class GeoreferenceService:
     """Сервис математических и графических операций для геопривязки растровых изображений."""
+
+    @staticmethod
+    def resolve_image_path(path: Path | str) -> Path:
+        """Resolve a world file to its companion image, including uppercase names."""
+        p = Path(path).resolve()
+        if p.suffix.lower() not in WORLD_FILE_EXTENSIONS:
+            return p
+        if not p.is_file():
+            raise FileNotFoundError(f"Файл привязки не найден: {p}")
+        families = {
+            ".pgw": {".png"}, ".pngw": {".png"},
+            ".jgw": {".jpg", ".jpeg"}, ".jpgw": {".jpg"}, ".jpegw": {".jpeg"},
+            ".tfw": {".tif", ".tiff"}, ".tifw": {".tif"}, ".tiffw": {".tiff"},
+        }
+        extensions = families.get(p.suffix.lower(), SUPPORTED_IMAGE_EXTENSIONS)
+        matches = [f for f in p.parent.iterdir() if f.is_file()
+                   and f.stem.casefold() == p.stem.casefold() and f.suffix.lower() in extensions]
+        if len(matches) != 1:
+            raise ValueError(f"Для {p.name} требуется одно изображение с тем же именем в той же папке.")
+        return matches[0]
+
+    @staticmethod
+    def read_world_file(path: Path | str) -> dict[str, Any] | None:
+        """Read A,D,B,E,C,F and convert pixel centers to our corner convention.
+
+        A world file does not specify a CRS; never guess one when .prj is absent.
+        """
+        source = Path(path).resolve()
+        image = GeoreferenceService.resolve_image_path(source)
+        if source.suffix.lower() in WORLD_FILE_EXTENSIONS:
+            world = source
+        else:
+            short_ext = {".png": ".pgw", ".jpg": ".jgw", ".jpeg": ".jgw",
+                         ".tif": ".tfw", ".tiff": ".tfw"}.get(image.suffix.lower())
+            siblings = {f.name.casefold(): f for f in image.parent.iterdir() if f.is_file()}
+            names = [image.stem + ext for ext in (short_ext, image.suffix.lower() + "w", ".wld") if ext]
+            world = next((siblings[n.casefold()] for n in names if n.casefold() in siblings), None)
+            if world is None:
+                return None
+        try:
+            values = [float(line.strip()) for line in world.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
+        except (ValueError, UnicodeError) as exc:
+            raise ValueError(f"Некорректный файл привязки {world.name}: требуется 6 чисел.") from exc
+        if len(values) != 6 or not all(math.isfinite(v) for v in values):
+            raise ValueError(f"Некорректный файл привязки {world.name}: требуется 6 конечных чисел.")
+        a, d, b, e, center_x, center_y = values
+        det = a * e - b * d
+        if not math.isfinite(det) or det == 0:
+            raise ValueError(f"Вырожденная трансформация в {world.name}.")
+        affine = (a, b, center_x - (a + b) / 2, d, e, center_y - (d + e) / 2)
+        crs = None
+        prj = next((f for f in image.parent.iterdir() if f.is_file()
+                    and f.name.casefold() == (image.stem + ".prj").casefold()), None)
+        if prj:
+            crs = pyproj.CRS.from_user_input(prj.read_text(encoding="utf-8-sig")).to_string()
+        return {"image_path": image, "world_file": world, "affine": affine, "crs": crs}
 
     @staticmethod
     def inspect_image(path: Path | str) -> dict[str, Any]:

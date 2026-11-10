@@ -10,6 +10,8 @@ from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtGui import QAction, QActionGroup, QFont, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
+    QDialog,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -1910,7 +1912,7 @@ class MainWindow(QMainWindow):
                 self,
                 tr("dialog.georef.title"),
                 last_dir,
-                "Изображения (*.png *.jpg *.jpeg *.tif *.tiff);;Все файлы (*.*)",
+                tr("dialog.georef.file_filter"),
             )
             if not selected:
                 return
@@ -1922,7 +1924,12 @@ class MainWindow(QMainWindow):
         from rme_mapper.ui.georeference_dialog import GeoreferenceDialog
         from rme_mapper.models.map_profile import MapProfile
 
-        dlg = GeoreferenceDialog(target_path, parent=self)
+        try:
+            dlg = GeoreferenceDialog(target_path, parent=self)
+        except Exception as exc:
+            QMessageBox.critical(self, tr("dialog.georef.title"), str(exc))
+            return
+        target_path = dlg.image_path
         if dlg.exec() == QDialog.DialogCode.Accepted:
             affine = dlg.get_affine_transform()
             cps = [p.to_dict() for p in dlg.get_control_points()]
