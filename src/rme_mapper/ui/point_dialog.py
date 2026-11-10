@@ -251,6 +251,22 @@ class PointDialog(QDialog):
         self.resize(520, 580)
 
         self._setup_ui(default_name)
+        if self._point is None:
+            import json
+            from rme_mapper.services.app_settings_service import AppSettingsService
+            settings=AppSettingsService()
+            defaults=settings.get_point_defaults()
+            if defaults:
+                self.symbol_combo.setCurrentIndex(max(0,self.symbol_combo.findData(defaults.get("symbol","circle"))))
+                self.size_spin.setValue(defaults.get("size",12))
+                color=QColor(defaults.get("color","#dc1e1e"))
+                for edit,value in ((self.r_edit,color.red()),(self.g_edit,color.green()),(self.b_edit,color.blue())):
+                    edit.setText(str(value))
+                self.zone_chk.setChecked(defaults.get("zone_enabled",False))
+                self.zone_unit_combo.setCurrentIndex(1)
+                self.zone_radius_edit.setText(str(defaults.get("radius_m",100)))
+            if settings._get_str("coordinates/format","DD")=="DMS":
+                self.rb_dms.setChecked(True)
         if self._point:
             self._populate_fields_from_point(self._point)
         elif initial_lat is not None and initial_lon is not None:

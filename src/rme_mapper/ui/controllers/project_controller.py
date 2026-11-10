@@ -121,7 +121,7 @@ class ProjectController(QObject):
         self._is_modified = modified
         if modified:
             self._project_loaded = True
-            if hasattr(self, "_recovery_timer"):
+            if hasattr(self, "_recovery_timer") and (not self._settings_service or self._settings_service._get_bool("recovery/enabled", True)):
                 self._recovery_timer.start()
         else:
             if hasattr(self, "_recovery_timer"):
@@ -341,6 +341,8 @@ class ProjectController(QObject):
             raise
 
     def _resolve_and_apply_project(self, project: ProjectData, path: Path | None) -> bool:
+        overlay_base = path.parent if path else get_project_root()
+        restored_overlays = [dict(item, path=str((overlay_base / item["path"]).resolve())) if not Path(item["path"]).is_absolute() else dict(item) for item in project.map.raster_overlays]
         """Разрешение связанных слоев карты и применение структуры проекта."""
         from rme_mapper.services.runtime_capabilities import RuntimeCapabilities
 
@@ -366,6 +368,8 @@ class ProjectController(QObject):
                 map_type=project.map.map_type,
             )
             self._unsupported_map_data = None
+            online_prof.raster_overlays = restored_overlays
+            online_prof.annotations = project.map.annotations
             self._map_controller.load_map(online_prof)
             self.apply_project_data(project)
             return True
@@ -448,6 +452,8 @@ class ProjectController(QObject):
                 self._unsupported_map_data = project.map
 
         if target_profile:
+            target_profile.raster_overlays = restored_overlays
+            target_profile.annotations=project.map.annotations
             self._unsupported_map_data = None
             self._map_controller.load_map(target_profile)
         elif target_map_path and target_map_path.exists():
@@ -466,6 +472,8 @@ class ProjectController(QObject):
                     affine_transform=project.map.affine_transform,
                     control_points=project.map.control_points,
                     transformation_type=project.map.transformation_type,
+                    raster_overlays=restored_overlays,
+                    annotations=project.map.annotations,
                 )
                 self._map_controller.load_map(runtime_prof)
             else:

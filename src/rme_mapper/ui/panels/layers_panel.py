@@ -31,6 +31,7 @@ class LayersPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self.title_label = QLabel()
         title_font = QFont()
@@ -44,6 +45,7 @@ class LayersPanel(QWidget):
         self.layers_layout = QVBoxLayout(self.layers_container)
         self.layers_layout.setContentsMargins(4, 2, 4, 4)
         self.layers_layout.setSpacing(4)
+        self.layers_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.layers_container)
 
         self.empty_label = QLabel(self)

@@ -214,15 +214,16 @@ def test_17_utf8_cyrillic_readable(sample_point, tmp_path):
     assert "\\u" not in content
 
 
-def test_18_relative_map_path_preserved(tmp_path):
-    """18. Относительный путь к карте сохраняется без жесткой привязки к диску."""
+def test_18_relative_map_path_preserved():
+    """18. Путь к встроенной карте остаётся относительным к каталогу приложения."""
+    map_path = Path(__file__).resolve().parents[1] / "maps/test_map/prepared/mari.gpkg"
     proj = ProjectService.build_project_data(
-        map_path="D:/SomeDrive/RME-Mapper/maps/test_map/prepared/mari.gpkg",
+        map_path=map_path,
         layers=[],
         points=[],
     )
     assert proj.map.relative_path == "maps/test_map/prepared/mari.gpkg"
-    assert not proj.map.relative_path.startswith("D:")
+    assert not Path(proj.map.relative_path).is_absolute()
 
 
 def test_19_layers_visibility_preserved():

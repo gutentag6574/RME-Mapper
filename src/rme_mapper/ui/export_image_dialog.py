@@ -71,6 +71,8 @@ class ExportImageDialog(QDialog):
         online_tile_manager: Any = None,
         attribution_text: str | None = None,
         raster_affine: tuple[float, float, float, float, float, float] | list[float] | None = None,
+        raster_overlays: list[dict[str, Any]] | None = None,
+        annotations: list[dict[str, Any]] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("exportImageDialog")
@@ -90,6 +92,8 @@ class ExportImageDialog(QDialog):
         self._online_tile_manager = online_tile_manager
         self._attribution_text = attribution_text
         self._raster_affine = raster_affine
+        self._raster_overlays = raster_overlays or []
+        self._annotations = annotations or []
 
         # Предрасчет охватов точек
         self._all_points_extent = self._calculate_points_extent(self._points)
@@ -694,6 +698,8 @@ class ExportImageDialog(QDialog):
                 online_tile_manager=self._online_tile_manager,
                 attribution_text=self._attribution_text,
                 raster_affine=self._raster_affine,
+                raster_overlays=self._raster_overlays,
+                annotations=self._annotations,
             )
 
             # Отображаем эскиз в модальном окне

@@ -55,8 +55,11 @@ def test_01_splitter_is_used(qapp, clean_settings):
     win = MainWindow()
     central = win.centralWidget()
     assert isinstance(central, QSplitter)
-    assert win.splitter is central
-    assert central.count() == 3
+    assert win.workspace_splitter is central
+    assert central.count() == 2
+    assert central.widget(0) is win.splitter
+    assert win.splitter.count() == 3
+    assert central.widget(1) is win.points_panel
 
 
 def test_02_left_panel_exists(qapp, clean_settings):
@@ -101,6 +104,7 @@ def test_06_splitter_state_restored(qapp, clean_settings):
     """6. splitter state восстанавливается из AppSettingsService."""
     clean_settings.set_splitter_sizes([250, 900, 250])
     win = MainWindow()
+    win.set_auto_properties(False)
     win.show()
     win.restore_ui_state()
 
@@ -133,6 +137,7 @@ def test_07_left_panel_hide_show(qapp, clean_settings):
 def test_08_right_panel_hide_show(qapp, clean_settings):
     """8. right panel скрывается и показывается с синхронизацией действия."""
     win = MainWindow()
+    win.set_auto_properties(False)
     win.show()
     assert not win.right_panel.isHidden()
     assert win.toggle_properties_action.isChecked()

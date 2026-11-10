@@ -50,7 +50,7 @@ def _compute_sha256(path: Path) -> str:
 
 def test_01_standalone_exe_clean_machine_smoke() -> None:
     """Проверка запуска Standalone EXE без зависимостей от Python."""
-    exe_path = RELEASE_DIR / "standalone" / "GeoPointMapper" / "GeoPointMapper.exe"
+    exe_path = RELEASE_DIR / "standalone" / f"GeoPointMapper-{APP_VERSION}" / "GeoPointMapper.exe"
     assert exe_path.exists(), f"Файл не найден: {exe_path}"
 
     marker = exe_path.parent / "smoke_success.txt"

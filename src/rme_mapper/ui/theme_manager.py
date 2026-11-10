@@ -39,9 +39,9 @@ class LightPalette:
     SPLITTER_HANDLE_HOVER = "#2563EB"
 
 
-def get_light_stylesheet() -> str:
+def get_light_stylesheet(palette=None) -> str:
     """Генерация согласованного QSS для светлой темы оформления."""
-    c = LightPalette
+    c = palette or LightPalette
     return f"""
     /* --- Основное окно и фоновые области --- */
     QMainWindow {{
@@ -359,17 +359,38 @@ class ThemeManager:
 
     def get_stylesheet(self, theme: str | None = None) -> str:
         t = (theme or self._current_theme).lower()
-        if t == self.THEME_LIGHT or t == self.THEME_SYSTEM:
-            return get_light_stylesheet()
-        # Для незавершенных тем отдаем аккуратную light тему
-        return get_light_stylesheet()
+        if t == self.THEME_SYSTEM:
+            from PySide6.QtGui import QGuiApplication
+            from PySide6.QtCore import Qt
+            t = self.THEME_DARK if QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark else self.THEME_LIGHT
+        palette = DarkPalette if t == self.THEME_DARK else LightPalette
+        return get_light_stylesheet(palette) + get_shared_widget_stylesheet(palette)
 
     def apply_theme(self, target: Any, theme: str = THEME_LIGHT) -> None:
         """Применить выбранную тему оформления к приложению или окну."""
         self._current_theme = theme
         qss = self.get_stylesheet(theme)
         if hasattr(target, "setStyleSheet"):
+            if target.styleSheet()==qss:
+                return
             target.setStyleSheet(qss)
+            from PySide6.QtWidgets import QApplication
+            from rme_mapper.ui.theme_style_filter import ThemeStyleFilter
+            app = QApplication.instance()
+            if app:
+                if not hasattr(self, "_style_filter"):
+                    self._style_filter = ThemeStyleFilter(app)
+                    app.installEventFilter(self._style_filter)
+                    import atexit
+                    def detach_filter(app=app, style_filter=self._style_filter):
+                        import shiboken6
+                        if shiboken6.isValid(app) and shiboken6.isValid(style_filter):
+                            app.removeEventFilter(style_filter)
+                    atexit.register(detach_filter)
+                    app.styleHints().colorSchemeChanged.connect(
+                        lambda *_: self.apply_theme(app, self.THEME_SYSTEM)
+                        if self.current_theme == self.THEME_SYSTEM else None)
+                self._style_filter.apply("#111827" in qss)
             logger.info("Тема оформления '%s' успешно применена", theme)
 
 
@@ -381,3 +402,40 @@ def get_theme_manager() -> ThemeManager:
     if _THEME_MANAGER_INSTANCE is None:
         _THEME_MANAGER_INSTANCE = ThemeManager()
     return _THEME_MANAGER_INSTANCE
+
+
+class DarkPalette(LightPalette):
+    BG_APP = "#111827"
+    BG_PANEL = "#1F2937"
+    BG_HOVER = "#293548"
+    BG_ACTIVE = "#334155"
+    BORDER = "#475569"
+    TEXT_PRIMARY = "#F1F5F9"
+    TEXT_SECONDARY = "#CBD5E1"
+    TEXT_MUTED = "#94A3B8"
+    TEXT_DISABLED = "#94A3B8"
+    ACCENT = "#93C5FD"
+    ACCENT_LIGHT = "#1E3A5F"
+    SELECTION_BG = "#1E40AF"
+    SELECTION_TEXT = "#FFFFFF"
+    DANGER_LIGHT = "#450A0A"
+    DANGER = "#FCA5A5"
+    SPLITTER_HANDLE = "#475569"
+
+
+def get_shared_widget_stylesheet(c):
+    return f"""
+    QWidget {{ color: {c.TEXT_PRIMARY}; }}
+    QDialog, QWizard, QTabWidget::pane {{ background: {c.BG_APP}; }}
+    QTabWidget::pane {{ border: 1px solid {c.BORDER}; border-radius: 6px; }}
+    QTabBar::tab {{ background: {c.BG_PANEL}; padding: 8px 14px; border-bottom: 2px solid transparent; }}
+    QTabBar::tab:selected {{ background: {c.BG_HOVER}; border-bottom-color: {c.ACCENT}; }}
+    QPlainTextEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QTreeWidget, QListWidget {{
+        background: {c.BG_PANEL}; color: {c.TEXT_PRIMARY}; border: 1px solid {c.BORDER}; border-radius: 4px;
+    }}
+    QGroupBox {{ border: 1px solid {c.BORDER}; border-radius: 6px; margin-top: 10px; padding: 12px; }}
+    QGroupBox::title {{ subcontrol-origin: margin; left: 10px; }}
+    QToolTip {{ background: {c.BG_PANEL}; color: {c.TEXT_PRIMARY}; border: 1px solid {c.BORDER}; }}
+    QScrollArea {{ background: {c.BG_APP}; }}
+    QComboBox QAbstractItemView {{ background: {c.BG_PANEL}; color: {c.TEXT_PRIMARY}; selection-background-color: {c.SELECTION_BG}; }}
+    """

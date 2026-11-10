@@ -724,7 +724,11 @@ class PointController(QObject):
 
     def copy_coordinates_dd(self, point: MapPoint) -> str:
         """Форматирование координат точки в формате DD."""
-        text = f"{point.latitude:.6f}, {point.longitude:.6f}"
+        from rme_mapper.services.app_settings_service import AppSettingsService
+        settings=AppSettingsService()
+        precision=settings.get_integer("coordinates/precision",6,0,10)
+        separator=settings._get_str("coordinates/separator",", ")
+        text = f"{point.latitude:.{precision}f}{separator}{point.longitude:.{precision}f}"
         QApplication.clipboard().setText(text)
         self._set_status(tr("status.coords_copied"), 2000)
         return text
@@ -751,7 +755,7 @@ class PointController(QObject):
         active_crs = self._get_active_crs()
         mx, my = CoordinateService.transform_xy(
             point.longitude, point.latitude,
-            source_crs=point.source_crs,
+            source_crs="EPSG:4326",
             target_crs=active_crs,
         )
         text = f"{mx:.2f}, {my:.2f}"
@@ -842,7 +846,7 @@ class PointController(QObject):
         active_crs = self._get_active_crs()
         mx, my = CoordinateService.transform_xy(
             point.longitude, point.latitude,
-            source_crs=point.source_crs,
+            source_crs="EPSG:4326",
             target_crs=active_crs,
         )
         zone_poly = None
@@ -947,7 +951,7 @@ class PointController(QObject):
             description=f"{tr('action.move_to_group')}: {grp_name} ({len(valid_points)})",
         )
         self._undo_manager.push(cmd, execute=True)
-        self._set_status(tr("status.points_moved_to_group", count=len(valid_points)), 3000)
+        self._set_status(tr("status.points_moved_to_group", group=grp_name, count=len(valid_points)), 3000)
 
     def bulk_change_category_workflow(self, point_ids: list[str] | None = None) -> None:
         """Диалог массовой смены категории для выбранных точек."""
@@ -1094,10 +1098,22 @@ class PointController(QObject):
         act_copy_map_xy.setEnabled(has_map)
 
         menu.addSeparator()
+        web_menu=menu.addMenu(tr("audit.open_location"))
+        act_osm=web_menu.addAction("OpenStreetMap")
+        act_google=web_menu.addAction("Google Maps")
+        act_yandex=web_menu.addAction("Яндекс Карты")
+        menu.addSeparator()
         act_delete = menu.addAction(tr("action.delete_point"))
 
         action = menu.exec(table.viewport().mapToGlobal(pos))
         if point:
+            if action in (act_osm,act_google,act_yandex):
+                from PySide6.QtCore import QUrl
+                from PySide6.QtGui import QDesktopServices
+                lat,lon=point.latitude,point.longitude
+                url=(f"https://www.openstreetmap.org/?mlat={lat}&mlon={lon}#map=16/{lat}/{lon}" if action==act_osm else f"https://www.google.com/maps?q={lat},{lon}" if action==act_google else f"https://yandex.ru/maps/?ll={lon},{lat}&z=16&pt={lon},{lat}")
+                QDesktopServices.openUrl(QUrl(url))
+                return
             if action == act_copy_dd:
                 self.copy_coordinates_dd(point)
                 return

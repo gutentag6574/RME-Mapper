@@ -87,15 +87,18 @@ class PointsPanel(QWidget):
         self.search_input = QLineEdit(self)
         self.search_input.setObjectName("searchPointInput")
         self.search_input.setClearButtonEnabled(True)
+        self.search_input.setMaximumWidth(480)
         self.search_input.textChanged.connect(self._on_search_text_changed)
         filter_layout.addWidget(self.search_input, stretch=1)
 
         self.category_combo = QComboBox(self)
         self.category_combo.setObjectName("categoryFilterCombo")
         self.category_combo.setMinimumWidth(115)
+        self.category_combo.setMaximumWidth(220)
         self.category_combo.currentIndexChanged.connect(self._on_category_filter_changed)
         filter_layout.addWidget(self.category_combo, stretch=1)
 
+        filter_layout.addStretch()
         layout.addLayout(filter_layout)
 
         # 3. Кнопки добавления, редактирования и удаления точки (единая высота и стиль)
@@ -125,6 +128,9 @@ class PointsPanel(QWidget):
         self.btn_delete.clicked.connect(self.delete_clicked.emit)
         btn_row_layout.addWidget(self.btn_delete)
 
+        for button in (self.btn_add, self.btn_edit, self.btn_delete):
+            button.setMaximumWidth(180)
+        btn_row_layout.addStretch()
         layout.addLayout(btn_row_layout)
 
         # 4. Таблица точек

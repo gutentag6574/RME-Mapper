@@ -71,6 +71,30 @@ class AppSettingsService:
     KEY_OBJECT_EXPORT_BOM = "object_export/bom"
     MAX_RECENT_ITEMS = 10
 
+    def get_integer(self,key: str,default: int,minimum: int,maximum: int) -> int:
+        """Read a bounded numeric preference, tolerating stale or malformed settings."""
+        try:
+            return min(maximum,max(minimum,int(self._get_str(key,str(default)))))
+        except (ValueError,TypeError):
+            return default
+
+    def get_point_defaults(self) -> dict[str,Any]:
+        import json,math,re
+        try:
+            data=json.loads(self._get_str("points/defaults","{}"))
+            if not isinstance(data,dict) or not data:
+                return {}
+            size=float(data.get("size",12))
+            radius=float(data.get("radius_m",100))
+            if not math.isfinite(size) or not math.isfinite(radius):
+                return {}
+            color=str(data.get("color","#dc1e1e"))
+            return dict(symbol=data.get("symbol") if data.get("symbol") in ("circle","square","triangle") else "circle",
+                size=min(64,max(2,size)),radius_m=min(10000000,max(0,radius)),zone_enabled=data.get("zone_enabled") is True,
+                color=color if re.fullmatch(r"#[0-9a-fA-F]{6}",color) else "#dc1e1e")
+        except (ValueError,TypeError):
+            return {}
+
     def __init__(self, settings: Any = _AUTO) -> None:
         if settings is _AUTO:
             if QSettings is not None:
@@ -463,7 +487,12 @@ class AppSettingsService:
 
     def set_splitter_sizes(self, sizes: list[int]) -> None:
         """Сохранить размеры панелей сплиттера."""
-        str_list = [str(int(s)) for s in sizes]
+        # Qt reports zero for hidden panels. Preserve their last usable width so
+        # reopening a panel and restarting the application retain the layout.
+        previous = self.get_splitter_sizes() or [310, 780, 310]
+        if len(sizes) != 3:
+            return
+        str_list = [str(int(s) if int(s) > 0 else previous[i]) for i, s in enumerate(sizes)]
         self._set_string_list(self.KEY_SPLITTER_SIZES, str_list)
 
     def get_left_panel_visible(self) -> bool:
@@ -696,7 +725,7 @@ class AppSettingsService:
         raw = self._get_str(self.KEY_CUSTOM_XYZ_PROVIDERS, "[]")
         try:
             data = json.loads(raw)
-            return data if isinstance(data, list) else []
+            return [item for item in data if isinstance(item,dict) and item.get("id")] if isinstance(data, list) else []
         except Exception:
             return []
 

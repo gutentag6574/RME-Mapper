@@ -49,7 +49,9 @@ class OnlineBasemapDialog(QDialog):
         self.setWindowTitle(tr("dialog.online_map.title"))
         self.resize(480, 420)
 
-        self._settings = settings_service
+        from rme_mapper.services.app_settings_service import AppSettingsService
+        self._settings = settings_service or AppSettingsService()
+        self._custom_providers = {}
         self._cache = TileDiskCache()
         self._selected_provider: OnlineTileProvider | None = current_provider
 
@@ -92,6 +94,12 @@ class OnlineBasemapDialog(QDialog):
         self._provider_combo = QComboBox(self)
         self._provider_combo.currentIndexChanged.connect(self._on_provider_combo_changed)
         form_layout.addRow(tr("dialog.online_map.provider"), self._provider_combo)
+        self._custom_name = QLineEdit(self)
+        self._custom_name.setPlaceholderText(tr("audit.provider_name"))
+        form_layout.addRow(tr("audit.provider_name"), self._custom_name)
+        self._delete_custom = QPushButton(tr("audit.delete_provider"))
+        self._delete_custom.clicked.connect(self._remove_custom_provider)
+        form_layout.addRow(self._delete_custom)
 
         # Поле URL-шаблона для Custom XYZ
         self._url_edit = QLineEdit(self)
@@ -99,6 +107,12 @@ class OnlineBasemapDialog(QDialog):
         self._url_edit.textChanged.connect(self._validate_dialog)
         form_layout.addRow(tr("dialog.online_map.url_template"), self._url_edit)
 
+        self._wms_layers=QLineEdit(self)
+        self._wms_layers.setPlaceholderText("workspace:layer")
+        form_layout.addRow(tr("audit.wms_layers"),self._wms_layers)
+        self._wms_button=QPushButton(tr("audit.wms_create"))
+        self._wms_button.clicked.connect(self._create_wms)
+        form_layout.addRow(self._wms_button)
         self._http_warning_label = QLabel(self)
         self._http_warning_label.setStyleSheet("color: #D97706; font-size: 11px;")
         self._http_warning_label.setWordWrap(True)
@@ -213,7 +227,15 @@ class OnlineBasemapDialog(QDialog):
 
         if is_custom:
             self._provider_combo.addItem(tr("dialog.online_map.custom_xyz"), "custom")
-            self._provider_combo.setEnabled(False)
+            self._custom_providers = {}
+            for data in self._settings.get_custom_providers():
+                try:
+                    provider = OnlineTileProvider.from_dict(data)
+                    self._custom_providers[provider.id] = provider
+                    self._provider_combo.addItem(provider.name, provider.id)
+                except (ValueError, KeyError, TypeError):
+                    continue
+            self._provider_combo.setEnabled(True)
             self._url_edit.setEnabled(True)
             self._attr_edit.setEnabled(True)
         else:
@@ -224,6 +246,10 @@ class OnlineBasemapDialog(QDialog):
             for p in providers:
                 self._provider_combo.addItem(p.name, p.id)
 
+        self._wms_layers.setVisible(is_custom)
+        self._wms_button.setVisible(is_custom)
+        self._custom_name.setVisible(is_custom)
+        self._delete_custom.setVisible(is_custom)
         self._provider_combo.blockSignals(False)
         self._on_provider_combo_changed(self._provider_combo.currentIndex())
 
@@ -231,6 +257,13 @@ class OnlineBasemapDialog(QDialog):
         mtype = self._get_current_map_type()
         if mtype is None:
             # Custom
+            saved = self._custom_providers.get(str(self._provider_combo.currentData()))
+            self._delete_custom.setEnabled(saved is not None)
+            self._custom_name.setText(saved.name if saved else "")
+            self._url_edit.setText(saved.url_template if saved else "")
+            self._attr_edit.setText(saved.attribution if saved else "")
+            self._chk_mandatory_attr.setChecked(saved.attribution_required if saved else True)
+            self._key_edit.setText(self._settings.get_provider_api_key(saved.id) if saved else "")
             self._url_edit.setEnabled(True)
             self._attr_edit.setEnabled(True)
             self._key_edit.setEnabled(True)
@@ -290,6 +323,17 @@ class OnlineBasemapDialog(QDialog):
                 self._key_tip_label.setText(tr("dialog.online_map.key_not_required"))
 
     def _load_saved_values(self, current_provider: OnlineTileProvider | None) -> None:
+        if current_provider is None:
+            pid = self._settings.get_last_online_provider()
+            current_provider = ProviderRegistry.get_provider(pid)
+            if current_provider is None:
+                for data in self._settings.get_custom_providers():
+                    if data.get("id") == pid:
+                        try:
+                            current_provider = OnlineTileProvider.from_dict(data)
+                        except (ValueError,TypeError,KeyError):
+                            pass
+                        break
         if current_provider:
             if current_provider.map_type == MapType.STANDARD:
                 self._rb_standard.setChecked(True)
@@ -324,14 +368,20 @@ class OnlineBasemapDialog(QDialog):
             url = self._url_edit.text().strip()
             attr = self._attr_edit.text().strip() or "Custom XYZ"
             attr_req = self._chk_mandatory_attr.isChecked()
+            import hashlib
+            if not OnlineTileProvider.validate_url_template(url):
+                return
+            saved_id = self._provider_combo.currentData()
             provider = ProviderRegistry.create_custom_provider(
-                id=f"custom_{abs(hash(url)) % 1000000}",
-                name=tr("dialog.online_map.custom_map_default_name"),
+                id=str(saved_id) if saved_id in self._custom_providers else "custom_" + hashlib.sha256(url.encode()).hexdigest()[:12],
+                name=self._custom_name.text().strip() or tr("dialog.online_map.custom_map_default_name"),
                 url_template=url,
                 attribution=attr,
                 attribution_required=attr_req,
                 api_key_param_name="access_token" if "access_token" in url else "key",
             )
+            self._settings.save_custom_provider(provider.to_dict())
+            self._settings.set_provider_api_key(provider.id, key or "")
             self._selected_provider = provider
             self._api_key = key
         else:
@@ -345,7 +395,22 @@ class OnlineBasemapDialog(QDialog):
             self._selected_provider = provider
             self._api_key = key
 
+        self._settings.set_last_online_provider(self._selected_provider.id)
         self.accept()
+
+    def _create_wms(self):
+        from rme_mapper.services.wms_service import build_wms_template
+        try:
+            self._url_edit.setText(build_wms_template(self._url_edit.text(),self._wms_layers.text()))
+        except ValueError as error:
+            QMessageBox.warning(self,tr("dialog.online_map.title"),str(error))
+
+    def _remove_custom_provider(self):
+        pid = str(self._provider_combo.currentData())
+        if pid in self._custom_providers:
+            self._settings.delete_custom_provider(pid)
+            self._settings.set_provider_api_key(pid, "")
+            self._refresh_provider_list()
 
     def get_selected_provider(self) -> OnlineTileProvider | None:
         """Получение выбранного провайдера."""

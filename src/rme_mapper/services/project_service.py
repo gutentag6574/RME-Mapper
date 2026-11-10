@@ -55,6 +55,9 @@ class ProjectService:
     @staticmethod
     def get_recovery_snapshot_path() -> Path:
         """Путь к файлу аварийного восстановления."""
+        settings_dir = os.environ.get("RME_MAPPER_SETTINGS_DIR")
+        if settings_dir:
+            return Path(settings_dir) / "recovery_snapshot.json"
         base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
         if base:
             return Path(base) / "GeoPointMapper" / "recovery_snapshot.json"
@@ -449,20 +452,12 @@ class ProjectService:
 
         rel_path = ""
         if map_path and source_type != "online_xyz":
-            path_obj = Path(map_path)
-            posix_str = path_obj.as_posix()
-            if "maps/" in posix_str:
-                rel_path = "maps/" + posix_str.split("maps/", 1)[1]
-            else:
-                try:
-                    root = get_project_root().resolve()
-                    resolved = path_obj.resolve()
-                    try:
-                        rel_path = resolved.relative_to(root).as_posix()
-                    except ValueError:
-                        rel_path = resolved.as_posix()
-                except Exception:
-                    rel_path = str(map_path)
+            root = get_project_root().resolve()
+            resolved = Path(map_path).resolve()
+            try:
+                rel_path = resolved.relative_to(root).as_posix()
+            except ValueError:
+                rel_path = resolved.as_posix()
 
         profile_layers_meta: list[dict[str, Any]] = []
         if map_profile and getattr(map_profile, "layers", None):
@@ -492,6 +487,8 @@ class ProjectService:
                     cp.to_dict() if hasattr(cp, "to_dict") else dict(cp) for cp in control_points
                 ] if control_points is not None else None,
                 transformation_type=transformation_type,
+                raster_overlays=[dict(item) for item in getattr(map_profile, "raster_overlays", [])] if map_profile else [],
+                annotations=[dict(item) for item in getattr(map_profile,"annotations",[])] if map_profile else [],
             )
 
         layers_state = {layer.id: layer.visible for layer in (layers or [])}

@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSplitter,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -49,6 +50,7 @@ from PySide6.QtWidgets import (
 import pyproj
 
 from rme_mapper.i18n import tr
+from rme_mapper.ui.crs_picker import CrsPicker
 from rme_mapper.models.georeference import ControlPoint, MAX_CONTROL_POINTS
 from rme_mapper.services.georeference_service import GeoreferenceService
 
@@ -284,7 +286,7 @@ class GeoreferenceDialog(QDialog):
         self._image_info: dict[str, Any] = {}
         self._full_size: tuple[int, int] = (0, 0)
         self._control_points: list[ControlPoint] = []
-        self._active_crs: str = existing_crs if existing_crs is not None else "EPSG:4326"
+        self._active_crs: str = existing_crs if existing_crs is not None else ""
         self._current_affine: tuple[float, float, float, float, float, float] | None = None
         self._current_rmse: float = 0.0
 
@@ -301,6 +303,7 @@ class GeoreferenceDialog(QDialog):
         self._update_crs_ui()
         self._populate_table()
         self._recalculate()
+        self._update_step_ui()
 
     def _setup_ui(self) -> None:
         main_layout = QVBoxLayout(self)
@@ -374,19 +377,34 @@ class GeoreferenceDialog(QDialog):
         crs_layout.addLayout(crs_title_row)
 
         crs_input_row = QHBoxLayout()
-        self.crs_edit = QLineEdit(self._active_crs, crs_group)
+        self.crs_picker = CrsPicker(self._active_crs, crs_group)
+        self.crs_edit = self.crs_picker.edit
         self.crs_edit.setPlaceholderText(tr("dialog.georef.crs_placeholder"))
         self.crs_edit.textChanged.connect(self._on_crs_text_changed)
         self.lbl_crs_status = QLabel("✓", crs_group)
         self.lbl_crs_status.setStyleSheet("color: #16A34A; font-weight: bold;")
-        crs_input_row.addWidget(self.crs_edit, stretch=1)
+        crs_input_row.addWidget(self.crs_picker, stretch=1)
         crs_input_row.addWidget(self.lbl_crs_status)
         crs_layout.addLayout(crs_input_row)
         self.crs_help = QLabel(tr("dialog.georef.crs_help"), crs_group)
         self.crs_help.setWordWrap(True)
         crs_layout.addWidget(self.crs_help)
 
-        right_layout.addWidget(crs_group)
+        self.georef_steps = QStackedWidget(right_widget)
+        self.crs_page = QWidget()
+        crs_page_layout = QVBoxLayout(self.crs_page)
+        crs_page_layout.addWidget(crs_group)
+        self.binding_summary = QLabel(tr("ux.ready_binding") if self._imported_affine else tr("ux.manual_binding"))
+        self.binding_summary.setWordWrap(True)
+        crs_page_layout.addWidget(self.binding_summary)
+        crs_page_layout.addStretch()
+        self.georef_steps.addWidget(self.crs_page)
+        self.points_page = QWidget()
+        point_page_layout = QVBoxLayout(self.points_page)
+        self.step_title = QLabel(tr("ux.georef_step_crs"))
+        self.step_title.setStyleSheet("font-weight: 600; font-size: 14px;")
+        right_layout.addWidget(self.step_title)
+        right_layout.addWidget(self.georef_steps, 1)
 
         # 2. Таблица контрольных точек
         tbl_header_layout = QHBoxLayout()
@@ -398,7 +416,7 @@ class GeoreferenceDialog(QDialog):
         self.btn_delete_pt = QPushButton(tr("dialog.georef.delete_point"), right_widget)
         self.btn_delete_pt.clicked.connect(self._on_delete_selected_point)
         tbl_header_layout.addWidget(self.btn_delete_pt)
-        right_layout.addLayout(tbl_header_layout)
+        point_page_layout.addLayout(tbl_header_layout)
 
         self.points_table = QTableWidget(0, 7, right_widget)
         self.points_table.setHorizontalHeaderLabels([
@@ -421,7 +439,7 @@ class GeoreferenceDialog(QDialog):
         self.points_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.points_table.cellChanged.connect(self._on_table_cell_changed)
         self.points_table.itemSelectionChanged.connect(self._on_table_selection_changed)
-        right_layout.addWidget(self.points_table, stretch=1)
+        point_page_layout.addWidget(self.points_table, stretch=1)
 
         # 3. Индикатор ошибки (RMSE) и статус
         status_box = QFrame(right_widget)
@@ -441,7 +459,15 @@ class GeoreferenceDialog(QDialog):
         self.lbl_status_msg.setStyleSheet("color: #DC2626; font-weight: 500;")
         status_layout.addWidget(self.lbl_status_msg)
 
-        right_layout.addWidget(status_box)
+        point_page_layout.addWidget(status_box)
+        self.georef_steps.addWidget(self.points_page)
+        self.review_page = QWidget()
+        review_layout = QVBoxLayout(self.review_page)
+        self.review_text = QLabel()
+        self.review_text.setWordWrap(True)
+        review_layout.addWidget(self.review_text)
+        review_layout.addStretch()
+        self.georef_steps.addWidget(self.review_page)
 
         splitter.addWidget(right_widget)
         splitter.setStretchFactor(0, 3)
@@ -455,6 +481,12 @@ class GeoreferenceDialog(QDialog):
         bottom_bar.addWidget(self.btn_export_wf)
 
         bottom_bar.addStretch()
+        self.btn_back = QPushButton(tr("ux.back"))
+        self.btn_back.clicked.connect(self._previous_step)
+        bottom_bar.addWidget(self.btn_back)
+        self.btn_next = QPushButton(tr("ux.next"))
+        self.btn_next.clicked.connect(self._next_step)
+        bottom_bar.addWidget(self.btn_next)
 
         self.btn_preview = QPushButton(tr("dialog.georef.preview"), self)
         self.btn_preview.clicked.connect(self._on_preview_clicked)
@@ -471,6 +503,42 @@ class GeoreferenceDialog(QDialog):
         bottom_bar.addWidget(self.btn_apply)
 
         main_layout.addLayout(bottom_bar)
+
+    def _next_step(self):
+        index = self.georef_steps.currentIndex()
+        if index == 0:
+            try:
+                pyproj.CRS.from_user_input(self.crs_edit.text().strip())
+            except Exception:
+                self.crs_edit.setFocus()
+                return
+            self.georef_steps.setCurrentIndex(2 if self._imported_affine and not self._control_points else 1)
+        elif index == 1:
+            self._recalculate()
+            if self._current_affine is None:
+                return
+            self.georef_steps.setCurrentIndex(2)
+        self.btn_add_pt.setChecked(False)
+        self._update_step_ui()
+
+    def _previous_step(self):
+        index = self.georef_steps.currentIndex()
+        self.georef_steps.setCurrentIndex(0 if index == 1 or (self._imported_affine and not self._control_points) else 1)
+        self._update_step_ui()
+
+    def _update_step_ui(self):
+        index = self.georef_steps.currentIndex()
+        self.step_title.setText(tr(("ux.georef_step_crs", "ux.georef_step_points", "ux.georef_step_review")[index]))
+        self.btn_back.setVisible(index > 0)
+        self.btn_next.setVisible(index < 2)
+        self.btn_apply.setVisible(index == 2)
+        self.btn_export_wf.setVisible(index == 2)
+        self.btn_add_pt.setEnabled(index == 1)
+        if index == 2 and self._current_affine:
+            extent = self.get_extent()
+            self.review_text.setText(tr("ux.georef_review", name=self.image_path.name,
+                crs=self._active_crs, width=self._full_size[0], height=self._full_size[1],
+                rmse="—" if not self._control_points else f"{self._current_rmse:.3f} m", **extent))
 
     def _load_image(self) -> None:
         """Инспекция и загрузка изображения в компонент предварительного просмотра."""
@@ -664,14 +732,36 @@ class GeoreferenceDialog(QDialog):
                 pt.target_x = val
             elif col == 4:
                 pt.target_y = val
+            if not math.isfinite(val):
+                raise ValueError()
+            item.setBackground(QBrush())
+            item.setToolTip("")
         except ValueError:
-            pass
+            item.setBackground(QColor("#FEE2E2"))
+            item.setToolTip(tr("ux.invalid_number"))
+            self.btn_apply.setEnabled(False)
+            self._current_affine = None
+            return
 
         self.image_view.sync_markers(self._control_points)
         self._recalculate()
 
     def _recalculate(self) -> None:
         """Перерасчет аффинной трансформации, остаточных невязок и RMSE."""
+        for row in range(self.points_table.rowCount()):
+            for column in range(1, 5):
+                item = self.points_table.item(row, column)
+                if item is None:
+                    continue
+                try:
+                    if not math.isfinite(float(item.text().strip().replace(",", "."))):
+                        raise ValueError()
+                except ValueError:
+                    self._current_affine = None
+                    self.btn_apply.setEnabled(False)
+                    self.btn_export_wf.setEnabled(False)
+                    self.lbl_status_msg.setText(tr("ux.invalid_number"))
+                    return
         try:
             pyproj.CRS.from_user_input(self.crs_edit.text().strip())
         except Exception:

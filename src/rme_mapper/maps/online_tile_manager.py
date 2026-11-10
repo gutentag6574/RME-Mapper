@@ -48,7 +48,8 @@ class OnlineTileManager(QObject):
     ) -> None:
         super().__init__(parent)
         self._scene = scene
-        self._cache = tile_cache or TileDiskCache()
+        from rme_mapper.services.app_settings_service import AppSettingsService
+        self._cache = tile_cache or TileDiskCache(max_size_bytes=AppSettingsService().get_online_cache_max_mb()*1024*1024)
         self._loader = tile_loader or TileLoader(parent=self, tile_cache=self._cache)
         if tile_loader is not None and getattr(tile_loader, "_cache", None) is None:
             tile_loader.set_tile_cache(self._cache)
@@ -377,41 +378,22 @@ class OnlineTileManager(QObject):
     def render_tiles_to_painter(
         self,
         painter: QPainter,
-        scene_rect: QRectF,
-        meters_per_pixel: float,
+        scene_rect: QRectF | None = None,
+        meters_per_pixel: float | None = None,
+        *, target_extent=None, width=None, height=None, active_crs="EPSG:3857",
     ) -> None:
-        """Отрисовка доступных кэшированных тайлов в указанный QPainter при экспорте."""
-        if not self.is_active or self._provider is None:
+        """Render cached tiles in scene coordinates using the shared tile renderer."""
+        from rme_mapper.services.tile_render_service import render_cached_tiles
+        if not self.is_active or self.provider is None:
             return
-
-        zoom = meters_per_pixel_to_zoom(
-            meters_per_pixel,
-            min_zoom=self._provider.min_zoom,
-            max_zoom=self._provider.max_zoom,
-        )
-
-        min_x = scene_rect.left()
-        max_x = scene_rect.right()
-        min_y = -scene_rect.bottom()
-        max_y = -scene_rect.top()
-
-        tile_bounds = extent_to_tile_range(min_x, min_y, max_x, max_y, zoom)
-        if tile_bounds is None:
+        if target_extent is not None:
+            render_cached_tiles(painter,self,target_extent,width,height,active_crs)
             return
-
-        min_tile_x, min_tile_y, max_tile_x, max_tile_y = tile_bounds
-
-        for tx in range(min_tile_x, max_tile_x + 1):
-            for ty in range(min_tile_y, max_tile_y + 1):
-                rect = tile_to_scene_rect(tx, ty, zoom)
-                # Берем из памяти или диска
-                pix = self._get_mem_cache(self._provider.id, zoom, tx, ty)
-                if pix is None:
-                    data = self._cache.get_tile(self._provider.id, zoom, tx, ty)
-                    if data:
-                        pix = QPixmap()
-                        if pix.loadFromData(data):
-                            self._put_mem_cache(self._provider.id, zoom, tx, ty, pix)
-
-                if pix is not None and not pix.isNull():
-                    painter.drawPixmap(rect.toRect(), pix)
+        painter.save()
+        painter.translate(scene_rect.left(), scene_rect.top())
+        painter.scale(meters_per_pixel, meters_per_pixel)
+        render_cached_tiles(painter,self,
+            (scene_rect.left(),-scene_rect.bottom(),scene_rect.right(),-scene_rect.top()),
+            max(1,round(scene_rect.width()/meters_per_pixel)),
+            max(1,round(scene_rect.height()/meters_per_pixel)))
+        painter.restore()

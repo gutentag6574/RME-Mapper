@@ -87,7 +87,10 @@ class GeoreferenceService:
         prj = next((f for f in image.parent.iterdir() if f.is_file()
                     and f.name.casefold() == (image.stem + ".prj").casefold()), None)
         if prj:
-            crs = pyproj.CRS.from_user_input(prj.read_text(encoding="utf-8-sig")).to_string()
+            try:
+                crs = pyproj.CRS.from_user_input(prj.read_text(encoding="utf-8-sig")).to_string()
+            except (OSError, UnicodeError, pyproj.exceptions.CRSError) as error:
+                logger.warning("Не удалось прочитать CRS из %s: %s", prj.name, error)
         return {"image_path": image, "world_file": world, "affine": affine, "crs": crs}
 
     @staticmethod
@@ -198,8 +201,6 @@ class GeoreferenceService:
         crs_str: str = "EPSG:4326",
         crs: str | None = None,
     ) -> tuple[tuple[float, float, float, float, float, float], list[ControlPoint], float]:
-        if crs is not None:
-            crs_str = crs
         """Расчет 2D аффинной трансформации по контрольным точкам.
 
         Математическая модель:
@@ -214,6 +215,8 @@ class GeoreferenceService:
             tuple[affine_coeffs, updated_control_points, rmse_meters]
             где affine_coeffs = (a, b, c, d, e, f)
         """
+        if crs is not None:
+            crs_str = crs
         from rme_mapper.models.georeference import MAX_CONTROL_POINTS
         if len(control_points) > MAX_CONTROL_POINTS:
             raise ValueError(f"Превышен лимит контрольных точек: максимум {MAX_CONTROL_POINTS}")
@@ -355,8 +358,6 @@ class GeoreferenceService:
         target_dir: Path | str | None = None,
         crs: str | None = None,
     ) -> list[Path]:
-        if crs is not None:
-            crs_str = crs
         """Экспорт коэффициентов аффинной трансформации в файл привязки World File и файл проекции .prj.
 
         Формат World File (6 строк):
@@ -374,6 +375,8 @@ class GeoreferenceService:
         .tif  -> .tfw
         .tiff -> .tfw
         """
+        if crs is not None:
+            crs_str = crs
         p = Path(image_path).resolve()
         out_dir = Path(target_dir).resolve() if target_dir is not None else p.parent
         out_dir.mkdir(parents=True, exist_ok=True)

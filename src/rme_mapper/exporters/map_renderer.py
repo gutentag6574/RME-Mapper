@@ -153,6 +153,8 @@ class MapRenderer:
         online_tile_manager: Any = None,
         attribution_text: str | None = None,
         raster_affine: tuple[float, float, float, float, float, float] | list[float] | None = None,
+        raster_overlays: list[dict[str, Any]] | None = None,
+        annotations: list[dict[str, Any]] | None = None,
     ) -> QImage:
         """Полный рендер карты в QImage заданного разрешения."""
         errors = options.validate()
@@ -200,6 +202,7 @@ class MapRenderer:
                 cls._render_online_tiles(
                     painter=painter,
                     online_tile_manager=online_tile_manager,
+                    active_crs=active_crs,
                     target_extent=adj_extent,
                     width=width,
                     height=height,
@@ -231,6 +234,38 @@ class MapRenderer:
                     max_y=max_y,
                     scale=scale,
                 )
+
+            # Same order and opacity as the interactive additional raster layers.
+            for overlay in reversed(raster_overlays or []):
+                if not overlay.get("visible", True):
+                    continue
+                painter.save()
+                try:
+                    painter.setOpacity(float(overlay.get("opacity", 1)))
+                    import pyproj
+                    if overlay.get("crs") and not pyproj.CRS(overlay["crs"]).equals(pyproj.CRS(active_crs),ignore_axis_order=True):
+                        from rme_mapper.services.georeference_service import GeoreferenceService
+                        from rme_mapper.services.raster_warp_service import warp_image
+                        source,size=GeoreferenceService.load_full_image(overlay["path"])
+                        warped,_=warp_image(source,size,overlay["affine"],overlay["crs"],active_crs,adj_extent,(width,height))
+                        painter.drawImage(0,0,warped)
+                    else:
+                        cls._render_raster_layer(painter=painter, raster_source=overlay["path"],
+                            target_extent=adj_extent, width=width, height=height, min_x=min_x,
+                            max_y=max_y, scale=scale, raster_affine=overlay["affine"])
+                finally:
+                    painter.restore()
+
+            if annotations:
+                from rme_mapper.services.annotation_service import annotation_path
+                mapping=QTransform(scale,0,0,scale,-min_x*scale,max_y*scale)
+                for record in annotations:
+                    if not record.get("visible",True):
+                        continue
+                    path=mapping.map(annotation_path(record,active_crs))
+                    painter.setPen(QPen(QColor("#2563eb"),2))
+                    painter.setBrush(QBrush(QColor(37,99,235,30)) if record["kind"]=="polygon" else QBrush(Qt.BrushStyle.NoBrush))
+                    painter.drawPath(path)
 
             # Коэффициент масштабирования экранных элементов
             scale_factor = options.scale_factor()
@@ -383,63 +418,16 @@ class MapRenderer:
 
     @classmethod
     def _render_online_tiles(
-        cls,
-        painter: QPainter,
-        online_tile_manager: Any,
-        target_extent: tuple[float, float, float, float],
-        width: int,
-        height: int,
-        min_x: float,
-        max_y: float,
-        scale: float,
+        cls, painter, online_tile_manager, target_extent, width, height,
+        min_x, max_y, scale, active_crs="EPSG:3857",
     ) -> None:
-        """Отрисовка доступных тайлов онлайн-подложки на экспортируемое изображение."""
-        provider = getattr(online_tile_manager, "provider", None)
-        if not provider:
-            return
-
-        from rme_mapper.services.tile_math import (
-            extent_to_tile_range,
-            meters_per_pixel_to_zoom,
-            tile_to_mercator_bounds,
-        )
-
-        min_ex, min_ey, max_ex, max_ey = target_extent
-        extent_w = max_ex - min_ex
-        m_per_px = extent_w / max(1, width)
-
-        zoom = meters_per_pixel_to_zoom(
-            m_per_px,
-            min_zoom=provider.min_zoom,
-            max_zoom=provider.max_zoom,
-        )
-
-        tile_bounds = extent_to_tile_range(min_ex, min_ey, max_ex, max_ey, zoom)
-        if tile_bounds is None:
-            return
-
-        t_min_x, t_min_y, t_max_x, t_max_y = tile_bounds
-        cache = getattr(online_tile_manager, "_cache", None)
-
-        for tx in range(t_min_x, t_max_x + 1):
-            for ty in range(t_min_y, t_max_y + 1):
-                pixmap = online_tile_manager._get_mem_cache(provider.id, zoom, tx, ty)
-                if pixmap is None and cache is not None:
-                    data = cache.get_tile(provider.id, zoom, tx, ty)
-                    if data:
-                        from PySide6.QtGui import QPixmap
-                        pix = QPixmap()
-                        if pix.loadFromData(data):
-                            online_tile_manager._put_mem_cache(provider.id, zoom, tx, ty, pix)
-                            pixmap = pix
-
-                if pixmap is not None and not pixmap.isNull():
-                    t_min_xm, t_min_ym, t_max_xm, t_max_ym = tile_to_mercator_bounds(tx, ty, zoom)
-                    px = (t_min_xm - min_x) * scale
-                    py = (max_y - t_max_ym) * scale
-                    pw = (t_max_xm - t_min_xm) * scale
-                    ph = (t_max_ym - t_min_ym) * scale
-                    painter.drawPixmap(QRectF(px, py, pw, ph).toRect(), pixmap)
+        """Render cached tiles through the same implementation used by the map manager."""
+        from rme_mapper.services.tile_render_service import render_cached_tiles
+        from rme_mapper.maps.online_tile_manager import OnlineTileManager
+        if isinstance(online_tile_manager,OnlineTileManager):
+            online_tile_manager.render_tiles_to_painter(painter,target_extent=target_extent,width=width,height=height,active_crs=active_crs)
+        else:
+            render_cached_tiles(painter, online_tile_manager, target_extent, width, height, active_crs)
 
     @classmethod
     def _render_raster_layer(

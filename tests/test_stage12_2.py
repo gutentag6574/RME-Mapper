@@ -204,7 +204,7 @@ def test_08_drop_unsupported_file_warning(qapp, tmp_path, monkeypatch):
     warning_called = []
     monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: warning_called.append(True))
 
-    bad_file = tmp_path / "image.png"
+    bad_file = tmp_path / "document.pdf"
     bad_file.touch()
 
     ev = _make_drop_event([str(bad_file)])

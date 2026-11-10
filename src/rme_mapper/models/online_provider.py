@@ -58,7 +58,7 @@ class OnlineTileProvider:
         has_z = "{z}" in clean
         has_x = "{x}" in clean
         has_y = "{y}" in clean
-        return has_z and has_x and has_y
+        return (has_z and has_x and has_y) or ("{bbox}" in clean and clean.startswith(("https://","http://")))
 
     def get_effective_api_key(self, user_key: str | None = None) -> str | None:
         """Получение ключа: сначала пользовательский, затем из переменной окружения."""
@@ -90,6 +90,9 @@ class OnlineTileProvider:
             raise ValueError("Mapbox secret tokens (sk...) are strictly forbidden in client applications.")
 
         url = self.url_template.replace("{z}", str(z)).replace("{x}", str(x)).replace("{y}", str(y))
+        if "{bbox}" in url:
+            from rme_mapper.services.tile_math import tile_to_mercator_bounds
+            url=url.replace("{bbox}",",".join(f"{v:.10f}" for v in tile_to_mercator_bounds(x,y,z)))
         if "{s}" in url:
             url = url.replace("{s}", subdomain)
         if "{api_key}" in url:
@@ -118,6 +121,7 @@ class OnlineTileProvider:
             "logo_required": self.logo_required,
             "additional_attribution": self.additional_attribution,
             "requires_api_key": self.requires_api_key,
+            "api_key_param_name": self.api_key_param_name,
             "api_key_env_name": self.api_key_env_name,
             "api_key_param_name": self.api_key_param_name,
             "subdomains": list(self.subdomains),
@@ -148,6 +152,7 @@ class OnlineTileProvider:
             additional_attribution=str(data.get("additional_attribution", "")),
             requires_api_key=bool(data.get("requires_api_key", False)),
             api_key_env_name=data.get("api_key_env_name"),
+            api_key_param_name=data.get("api_key_param_name"),
             subdomains=list(data.get("subdomains", [])),
             is_custom=bool(data.get("is_custom", False)),
         )

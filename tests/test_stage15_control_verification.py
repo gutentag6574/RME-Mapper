@@ -34,9 +34,9 @@ def test_ctrl_01_menu_location_and_no_duplicate_qaction(qapp):
     assert win.export_menu is not None
     assert win.export_map_image_action in win.export_menu.actions()
 
-    # Проверяем, что в file_menu и toolbar этого action нет
+    # В меню и панели используется один QAction экспорта.
     assert win.export_map_image_action not in win.file_menu.actions()
-    assert win.export_map_image_action not in win.main_toolbar.actions()
+    assert win.export_map_image_action in win.main_toolbar.actions()
 
     # Проверяем отсутствие дубликатов: ровно один такой QAction в окне
     export_image_actions = [

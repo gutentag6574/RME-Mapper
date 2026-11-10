@@ -136,6 +136,22 @@ class MapController(QObject):
     def open_map_workflow(self, map_target: MapProfile | Path | str | None = None) -> bool:
         """Открытие карты через OpenMapDialog или напрямую по объекту/пути."""
         if map_target is not None:
+            if isinstance(map_target, MapProfile):
+                self.load_map(map_target)
+                return True
+            from rme_mapper.services.georeference_service import WORLD_FILE_EXTENSIONS
+            path = Path(map_target)
+            if path.suffix.lower() in WORLD_FILE_EXTENSIONS | {".png", ".jpg", ".jpeg", ".tif", ".tiff"}:
+                dialog = OpenMapDialog(parent=self._parent, catalog_service=self._map_catalog_service, backend=self._backend)
+                dialog.load_file(path)
+                profile = dialog.get_map_profile()
+                if profile is None and dialog._is_raster:
+                    profile = dialog.build_profile()
+                if profile is None:
+                    return False
+                self.load_map(profile)
+                self._on_modified()
+                return True
             self.load_map(map_target)
             return True
 
@@ -687,7 +703,7 @@ class MapController(QObject):
             self._active_profile.affine_transform = list(aff)
             self._active_profile.control_points = cps
             self._active_profile.crs = crs
-            self._active_profile.extent = new_extent
+            self._active_profile.extent = None  # Recompute from the affine being applied, including Undo.
             self.load_georeferenced_image(self._active_profile, Path(path))
             if on_applied:
                 on_applied()

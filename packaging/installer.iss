@@ -3,7 +3,7 @@
 
 #define MyAppName "GeoPoint Mapper"
 #ifndef MyAppVersion
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.1.0"
 #endif
 #define MyAppPublisher "Кульдеев Вадим Алексеевич"
 #define MyAppURL "https://github.com/gutentag6574/RME-Mapper"

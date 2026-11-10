@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QStatusBar,
     QStyle,
     QToolBar,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -123,7 +124,10 @@ def sanitize_window_geometry(
     return QRect(x, y, w, h)
 
 
-class MainWindow(QMainWindow):
+from rme_mapper.ui.workspace_layout import WorkspaceLayoutMixin
+
+
+class MainWindow(WorkspaceLayoutMixin, QMainWindow):
     """Главное окно приложения GeoPoint Mapper."""
 
     DEFAULT_WIDTH = 1400
@@ -273,7 +277,14 @@ class MainWindow(QMainWindow):
 
         # Тема оформления
         self._theme_manager = get_theme_manager()
-        self._theme_manager.apply_theme(self)
+        self.setup_workspace_actions()
+        from rme_mapper.ui.raster_overlays import RasterOverlays
+        self.raster_overlays_panel = RasterOverlays(self)
+        self.navigation_tabs.addTab(self.raster_overlays_panel, tr("ux.rasters"))
+        self.navigation_tabs.setCurrentIndex(min(2, max(0, self._read_navigation_tab())))
+
+        self.setup_audit_features()
+        self.navigation_tabs.setCurrentIndex(min(self.navigation_tabs.count()-1,max(0,self._saved_navigation_index)))
 
         # Восстановление сохраненного состояния интерфейса
         self.restore_ui_state()
@@ -670,6 +681,7 @@ class MainWindow(QMainWindow):
             self.fit_map_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_TitleBarMaxButton))
             self.measure_distance_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_FileDialogInfoView))
             self.measure_area_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView))
+            self.export_map_image_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton))
 
         # Добавление существующих действий в тулбар (без создания дубликатов)
         self.main_toolbar.addAction(self.open_map_action)
@@ -681,6 +693,14 @@ class MainWindow(QMainWindow):
         self.main_toolbar.addSeparator()
         self.main_toolbar.addAction(self.add_pt_action)
         self.main_toolbar.addAction(self.fit_map_action)
+        self.main_toolbar.addSeparator()
+        self.main_toolbar.addAction(self.measure_distance_action)
+        self.main_toolbar.addAction(self.measure_area_action)
+        self.main_toolbar.addAction(self.export_map_image_action)
+        for action in (self.undo_action, self.redo_action, self.fit_map_action, self.measure_distance_action, self.measure_area_action):
+            button = self.main_toolbar.widgetForAction(action)
+            if button:
+                button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
 
     def _create_central_layout(self) -> None:
         """Создание трехпанельной компоновки: Слои/Точки | Карта | Свойства на базе QSplitter."""
@@ -696,25 +716,13 @@ class MainWindow(QMainWindow):
         left_layout.setContentsMargins(8, 8, 8, 8)
         left_layout.setSpacing(10)
 
-        self.layers_panel = LayersPanel(self.left_panel)
-        left_layout.addWidget(self.layers_panel)
-
-        separator1 = QFrame()
-        separator1.setFrameShape(QFrame.Shape.HLine)
-        separator1.setFrameShadow(QFrame.Shadow.Sunken)
-        left_layout.addWidget(separator1)
-
-        self.groups_panel = GroupsPanel(self.left_panel)
-        self.groups_panel.setMaximumHeight(132)
-        left_layout.addWidget(self.groups_panel)
-
-        separator2 = QFrame()
-        separator2.setFrameShape(QFrame.Shape.HLine)
-        separator2.setFrameShadow(QFrame.Shadow.Sunken)
-        left_layout.addWidget(separator2)
-
+        self.navigation_tabs = QTabWidget(self.left_panel)
+        self.layers_panel = LayersPanel(self.navigation_tabs)
+        self.groups_panel = GroupsPanel(self.navigation_tabs)
+        self.navigation_tabs.addTab(self.layers_panel, tr("ux.layers"))
+        self.navigation_tabs.addTab(self.groups_panel, tr("ux.groups"))
+        left_layout.addWidget(self.navigation_tabs, stretch=1)
         self.points_panel = PointsPanel(self.left_panel)
-        left_layout.addWidget(self.points_panel, stretch=1)
         self.splitter.addWidget(self.left_panel)
 
         # Центральная область: Карта (MapCanvas)
@@ -765,7 +773,14 @@ class MainWindow(QMainWindow):
         self.splitter.setStretchFactor(0, 0)
         self.splitter.setStretchFactor(1, 1)
         self.splitter.setStretchFactor(2, 0)
-        self.setCentralWidget(self.splitter)
+        self.workspace_splitter = QSplitter(Qt.Orientation.Vertical, self)
+        self.workspace_splitter.setObjectName("workspaceSplitter")
+        self.workspace_splitter.setChildrenCollapsible(False)
+        self.workspace_splitter.addWidget(self.splitter)
+        self.workspace_splitter.addWidget(self.points_panel)
+        self.workspace_splitter.setStretchFactor(0, 1)
+        self.workspace_splitter.setStretchFactor(1, 0)
+        self.setCentralWidget(self.workspace_splitter)
 
         # Ссылки обратной совместимости с существующими тестами
         self._setup_compat_references()
@@ -848,6 +863,9 @@ class MainWindow(QMainWindow):
     def _on_map_loaded(self, crs: str) -> None:
         """Слушатель успешной загрузки карты контроллером."""
         self.map_canvas.set_active_crs(crs)
+        self.restore_annotations()
+        if hasattr(self, "raster_overlays_panel"):
+            self.raster_overlays_panel.restore()
         self.point_controller.reproject_all_points(crs)
         if hasattr(self, "map_crs_label"):
             self.map_crs_label.setText(crs)
@@ -894,6 +912,8 @@ class MainWindow(QMainWindow):
 
     def _update_map_dependent_actions(self, enabled: bool) -> None:
         """Включение/выключение действий, зависящих от наличия активной карты."""
+        if hasattr(self,"measure_bar"):
+            self.measure_bar.setVisible(enabled)
         if hasattr(self, "add_pt_action"):
             self.add_pt_action.setEnabled(enabled)
         if hasattr(self, "add_pt_map_action"):
@@ -943,6 +963,7 @@ class MainWindow(QMainWindow):
         """Обновление доступности действий меню Правка и Координаты при изменении выделения."""
         selected_ids = self.points_panel.selected_point_ids() if hasattr(self, "points_panel") else []
         has_sel = len(selected_ids) > 0
+        self.sync_properties_visibility()
         has_multi = len(selected_ids) > 1
         has_map = self.map_controller.active_profile is not None or self.map_controller.map_path is not None
 
@@ -1179,6 +1200,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "toggle_properties_action"):
             self.toggle_properties_action.setChecked(visible)
         self._settings_service.set_right_panel_visible(visible)
+        self.sync_properties_visibility()
 
     def set_toolbar_visible(self, visible: bool) -> None:
         """Переключение видимости панели инструментов."""
@@ -1283,7 +1305,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "left_panel"):
             self._settings_service.set_left_panel_visible(self.left_panel.isVisible())
         if hasattr(self, "right_panel"):
-            self._settings_service.set_right_panel_visible(self.right_panel.isVisible())
+            self._settings_service.set_right_panel_visible(self.toggle_properties_action.isChecked())
         if hasattr(self, "main_toolbar"):
             self._settings_service.set_toolbar_visible(self.main_toolbar.isVisible())
         if self.statusBar():
@@ -1438,6 +1460,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "toggle_grid_action"):
             self.toggle_grid_action.setText(tr("menu.coordinate_grid"))
 
+        self.retranslate_workspace()
         self.layers_panel.retranslate_ui()
         if hasattr(self, "groups_panel"):
             self.groups_panel.retranslate_ui()
@@ -1567,6 +1590,9 @@ class MainWindow(QMainWindow):
         self.status_coords_label.setVisible(False)
 
     def _on_map_unloaded(self) -> None:
+        self.restore_annotations()
+        if hasattr(self, "raster_overlays_panel"):
+            self.raster_overlays_panel.clear()
         """Сброс и скрытие виджета координат и счетчиков при выгрузке карты."""
         self.status_coords_label.setText("")
         self.status_coords_label.setVisible(False)
@@ -1639,7 +1665,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, tr("dialog.error_title"), tr("msg.file_no_longer_exists"))
             self._settings_service.remove_recent_map(path_str)
             return
-        self.load_map(p)
+        self.open_map(p)
 
     def _clear_recent_maps(self) -> None:
         self._settings_service.clear_recent_maps()
@@ -1649,7 +1675,7 @@ class MainWindow(QMainWindow):
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
             has_supported = any(
-                url.toLocalFile().lower().endswith((".gpkg", ".tif", ".tiff", ".gpmap", ".rmeproject", ".xlsx", ".csv", ".txt"))
+                url.toLocalFile().lower().endswith((".gpkg", ".tif", ".tiff", ".png", ".jpg", ".jpeg", ".pgw", ".pngw", ".jgw", ".jpgw", ".jpegw", ".tfw", ".tifw", ".tiffw", ".wld", ".gpmap", ".rmeproject", ".gpx", ".kml", ".kmz", ".xlsx", ".csv", ".txt"))
                 for url in urls
             )
             if has_supported:
@@ -1688,12 +1714,15 @@ class MainWindow(QMainWindow):
         first_path = local_paths[0]
         ext = first_path.suffix.lower()
 
-        if ext in (".gpkg", ".tif", ".tiff"):
+        if ext in (".gpkg", ".tif", ".tiff", ".png", ".jpg", ".jpeg", ".pgw", ".pngw", ".jgw", ".jpgw", ".jpegw", ".tfw", ".tifw", ".tiffw", ".wld"):
             event.acceptProposedAction()
-            self.map_controller.load_map(first_path)
+            self.open_map(first_path)
         elif ext in (".gpmap", ".rmeproject"):
             event.acceptProposedAction()
             self.project_controller.open_project_workflow(first_path)
+        elif ext in (".gpx", ".kml", ".kmz"):
+            event.acceptProposedAction()
+            self.import_field_file(first_path)
         elif ext in (".xlsx", ".csv", ".txt"):
             event.acceptProposedAction()
             self.import_controller.open_import_wizard(first_path)
@@ -1741,9 +1770,6 @@ class MainWindow(QMainWindow):
 
     def _clear_layer_checkboxes(self) -> None:
         self.layers_panel.clear_layers()
-
-    def _add_layer_checkbox(self, layer: MapLayer) -> None:
-        pass
 
     def show_add_point_dialog(self) -> None:
         self.point_controller.add_point_workflow()

@@ -5,8 +5,8 @@
 #
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 0, 0, 0),
-    prodvers=(1, 0, 1, 0),
+    filevers=(1, 1, 0, 0),
+    prodvers=(1, 1, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -22,12 +22,12 @@ VSVersionInfo(
           [
             StringStruct(u'CompanyName', u'Кульдеев Вадим Алексеевич'),
             StringStruct(u'FileDescription', u'GeoPoint Mapper — настольное ГИС-приложение'),
-            StringStruct(u'FileVersion', u'1.0.1.0'),
+            StringStruct(u'FileVersion', u'1.1.0.0'),
             StringStruct(u'InternalName', u'GeoPointMapper'),
             StringStruct(u'LegalCopyright', u'© 2026 Кульдеев Вадим Алексеевич'),
             StringStruct(u'OriginalFilename', u'GeoPointMapper.exe'),
             StringStruct(u'ProductName', u'GeoPoint Mapper'),
-            StringStruct(u'ProductVersion', u'1.0.1')
+            StringStruct(u'ProductVersion', u'1.1.0')
           ]
         )
       ]

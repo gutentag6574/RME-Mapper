@@ -89,8 +89,9 @@ def test_main_window_panels_and_placeholders(qapp):
     # Левая панель: Точки
     assert hasattr(window, "left_panel")
     assert hasattr(window, "points_placeholder")
-    left_labels = [lbl.text() for lbl in window.left_panel.findChildren(QLabel)]
-    assert "Точки" in left_labels
+    point_labels = [lbl.text() for lbl in window.points_panel.findChildren(QLabel)]
+    assert "Точки" in point_labels
+    assert window.points_panel.parent() is window.workspace_splitter
 
     # Центральная панель: Карта Республики Марий Эл
     assert hasattr(window, "center_panel")

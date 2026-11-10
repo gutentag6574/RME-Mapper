@@ -223,6 +223,8 @@ class ExportController(QObject):
             online_tile_manager=online_tile_manager,
             attribution_text=attribution_text,
             raster_affine=raster_affine,
+            raster_overlays=getattr(profile, "raster_overlays", []),
+            annotations=getattr(profile,"annotations",[]),
         )
 
         if not dialog.exec():
@@ -261,6 +263,8 @@ class ExportController(QObject):
                 online_tile_manager=online_tile_manager,
                 attribution_text=attribution_text,
                 raster_affine=raster_affine,
+            raster_overlays=getattr(profile, "raster_overlays", []),
+            annotations=getattr(profile,"annotations",[]),
             )
 
             success_msg = tr("export.status_success", path=str(out_path))

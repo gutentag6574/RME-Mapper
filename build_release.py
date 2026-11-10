@@ -98,7 +98,7 @@ def sync_version_metadata(app_version: str) -> None:
         v_tuple = f"({nums[0]}, {nums[1]}, {nums[2]}, {nums[3]})"
 
         updated = re.sub(r'filevers=\([^)]+\)', f'filevers={v_tuple}', text)
-        updated = re.sub(r'prodvers=\([^)]+\)', f'prodvers={v_tuple}', text)
+        updated = re.sub(r'prodvers=\([^)]+\)', f'prodvers={v_tuple}', updated)
         updated = re.sub(r"StringStruct\(u'FileVersion',\s*u'[^']+'\)", f"StringStruct(u'FileVersion', u'{app_version}.0')", updated)
         updated = re.sub(r"StringStruct\(u'ProductVersion',\s*u'[^']+'\)", f"StringStruct(u'ProductVersion', u'{app_version}')", updated)
         if updated != text:
@@ -138,6 +138,13 @@ def check_version_consistency(expected_version: str) -> bool:
     verinfo_path = PROJECT_ROOT / "packaging" / "file_version_info.txt"
     if verinfo_path.exists():
         content = verinfo_path.read_text(encoding="utf-8")
+        numbers=[int(n) for n in expected_version.split(".")]
+        numbers=(numbers+[0]*4)[:4]
+        for field in ("filevers","prodvers"):
+            match=re.search(rf"{field}=\(([^)]+)\)",content)
+            if not match or [int(n.strip()) for n in match.group(1).split(",")]!=numbers:
+                error(f"Несоответствие {field} в {verinfo_path}")
+                return False
         if f"ProductVersion', u'{expected_version}" not in content:
             error(f"Несоответствие версии в {verinfo_path}")
             return False
@@ -147,10 +154,12 @@ def check_version_consistency(expected_version: str) -> bool:
 
 def clean_build_artifacts() -> None:
     """Очистка старых каталогов сборки."""
-    log("Очистка старых артефактов (build/, dist/, release/)...")
-    for d in ["build", "dist", "release"]:
+    log("Очистка временных артефактов (build/, dist/); прежние релизы сохраняются...")
+    for d in ["build", "dist"]:
         p = PROJECT_ROOT / d
         if p.exists():
+            if p.resolve().parent != PROJECT_ROOT.resolve():
+                raise RuntimeError(f"Каталог сборки находится вне проекта: {p}")
             shutil.rmtree(p, ignore_errors=True)
 
 def build_standalone(spec_file: Path) -> Path:
@@ -302,10 +311,15 @@ def main() -> int:
         dist_dir = build_standalone(spec_path)
 
     # 4. Копирование в release/standalone
-    release_standalone = PROJECT_ROOT / "release" / "standalone" / "GeoPointMapper"
-    if not release_standalone.exists():
-        log(f"Копирование Standalone версии в {release_standalone}...")
-        shutil.copytree(dist_dir, release_standalone)
+    release_standalone = PROJECT_ROOT / "release" / "standalone" / f"GeoPointMapper-{app_version}"
+    staging = release_standalone.with_name(release_standalone.name + ".next")
+    if staging.exists():
+        staging = staging.with_name(staging.name + datetime.datetime.now().strftime("-%H%M%S"))
+    shutil.copytree(dist_dir, staging)
+    if release_standalone.exists():
+        backup = release_standalone.with_name(release_standalone.name + datetime.datetime.now().strftime(".previous-%Y%m%d-%H%M%S"))
+        release_standalone.rename(backup)
+    staging.rename(release_standalone)
 
     # 5. Валидация
     validate_standalone(release_standalone)
@@ -341,7 +355,7 @@ def main() -> int:
         {
             "name": "GeoPointMapper.exe",
             "type": "standalone_exe",
-            "path": "standalone/GeoPointMapper/GeoPointMapper.exe",
+            "path": f"standalone/GeoPointMapper-{app_version}/GeoPointMapper.exe",
             "size_bytes": (release_standalone / "GeoPointMapper.exe").stat().st_size,
             "sha256": compute_sha256(release_standalone / "GeoPointMapper.exe"),
         },
@@ -352,6 +366,7 @@ def main() -> int:
         "version": app_version,
         "build_date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "git_commit": get_git_commit(),
+        "working_tree_dirty": bool(subprocess.run(["git","status","--porcelain"],cwd=PROJECT_ROOT,capture_output=True,text=True).stdout.strip()),
         "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
         "architecture": "x64 (AMD64)",
         "qt_binding": "PySide6",

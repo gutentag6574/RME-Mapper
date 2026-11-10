@@ -51,6 +51,8 @@ class ProjectMapData:
     affine_transform: list[float] | None = None
     control_points: list[dict[str, Any]] | None = None
     transformation_type: str = "affine"
+    raster_overlays: list[dict[str, Any]] = field(default_factory=list)
+    annotations: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Преобразование в словарь для JSON-сериализации.
@@ -83,6 +85,10 @@ class ProjectMapData:
             res["control_points"] = [dict(cp) for cp in self.control_points]
         if self.transformation_type:
             res["transformation_type"] = self.transformation_type
+        if self.annotations:
+            res["annotations"]=[dict(item) for item in self.annotations]
+        if self.raster_overlays:
+            res["raster_overlays"] = [dict(item) for item in self.raster_overlays]
         return res
 
     @classmethod
@@ -105,6 +111,8 @@ class ProjectMapData:
 
         return cls(
             map_id=str(data.get("map_id") or ""),
+            raster_overlays=[dict(item) for item in data.get("raster_overlays", []) if isinstance(item, dict)],
+            annotations=[dict(item) for item in data.get("annotations",[]) if isinstance(item,dict)],
             relative_path=str(data.get("relative_path") or data.get("path") or ""),
             name=str(data.get("name") or ""),
             source_type=str(data.get("source_type") or "geopackage"),

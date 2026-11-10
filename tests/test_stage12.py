@@ -602,14 +602,14 @@ def test_42_open_map_dialog_widgets_ru_en(qapp):
     set_language("ru")
     dlg_ru = OpenMapDialog()
     assert dlg_ru.mode_group.title() == "Источник карты"
-    assert dlg_ru.rb_file.text() == "Файл GeoPackage (*.gpkg)"
+    assert dlg_ru.rb_file.text() == "Файл карты / изображение / файл привязки"
     assert dlg_ru.rb_catalog.text() == "Каталог профилей"
     assert dlg_ru.btn_open.text() == "Открыть карту"
 
     set_language("en")
     dlg_en = OpenMapDialog()
     assert dlg_en.mode_group.title() == "Map Source"
-    assert dlg_en.rb_file.text() == "GeoPackage File (*.gpkg)"
+    assert dlg_en.rb_file.text() == "Map / image / world file"
     assert dlg_en.rb_catalog.text() == "Profile Catalog"
     assert dlg_en.btn_open.text() == "Open Map"
 

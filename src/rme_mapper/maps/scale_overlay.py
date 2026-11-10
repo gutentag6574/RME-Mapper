@@ -3,6 +3,7 @@ from __future__ import annotations
 
 
 import logging
+import math
 from typing import Any
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
@@ -60,7 +61,15 @@ class ScaleOverlayWidget(QWidget):
 
     def update_scale(self, label_text: str, bar_width_px: float, distance_m: float = 0.0) -> None:
         """Обновление параметров масштаба и перерисовка."""
+        if not all(math.isfinite(v) for v in (bar_width_px,distance_m)) or bar_width_px<=0:
+            self._label_text=""
+            self._update_visibility()
+            return
         self._label_text = label_text
+        dpi=max(1.0,self.logicalDpiX())
+        denominator=(distance_m/max(bar_width_px,1))*dpi/0.0254
+        rounded=round(denominator,-max(0,int(math.log10(max(denominator,1)))-2))
+        self._ratio_text="≈1:"+f"{max(1,round(rounded)):,}".replace(","," ")
         self._bar_width_px = max(50.0, min(bar_width_px, 250.0))
         self._distance_m = distance_m
         self._update_geometry()
@@ -80,7 +89,7 @@ class ScaleOverlayWidget(QWidget):
         gap = 3.0
 
         card_w = max(self._bar_width_px, text_w) + pad_x * 2.0
-        card_h = text_h + bar_h + gap + pad_y * 2.0
+        card_h = 2*text_h + bar_h + gap + pad_y * 2.0
 
         self.resize(int(card_w), int(card_h))
 
@@ -119,7 +128,8 @@ class ScaleOverlayWidget(QWidget):
         bar_w = self._bar_width_px
         bar_h = 4.0
         bar_x = (w - bar_w) / 2.0
-        bar_y = 5.0 + text_h + 3.0
+        painter.drawText(QRectF(0,5+text_h,w,text_h),Qt.AlignmentFlag.AlignCenter,getattr(self,"_ratio_text",""))
+        bar_y = 5.0 + 2*text_h + 3.0
         half_w = bar_w / 2.0
 
         # Левый сегмент (черный)

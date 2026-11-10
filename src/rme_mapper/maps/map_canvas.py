@@ -102,6 +102,7 @@ class MapCanvas(QGraphicsView):
     move_point_mode_cancelled = Signal()
     measurement_updated = Signal(str)
     measurement_finished = Signal(str)
+    measurement_geometry_finished = Signal(object)
     measurement_cancelled = Signal()
     online_tiles_progress = Signal(int)
     online_tiles_auth_error = Signal(str)
@@ -633,6 +634,10 @@ class MapCanvas(QGraphicsView):
 
         self._measure_temp_pos = None
         pts = list(self._measure_points)
+        import pyproj
+        transform=pyproj.Transformer.from_crs(self.active_crs,"EPSG:4326",always_xy=True)
+        geometry=dict(kind="polygon" if self._interaction_mode=="measure_area" else "line",
+            coordinates=[list(transform.transform(x,-y,errcheck=True)) for x,y in pts],name=tr("audit.measurement"))
 
         for item in self._measure_active_items:
             if item.scene() == self._scene:
@@ -706,6 +711,8 @@ class MapCanvas(QGraphicsView):
         self._measure_temp_pos = None
 
         self.set_interaction_mode("navigation")
+        geometry["name"]=final_text
+        self.measurement_geometry_finished.emit(geometry)
         self.measurement_finished.emit(final_text)
 
     def cancel_measurement(self) -> None:
@@ -2330,6 +2337,9 @@ class MapCanvas(QGraphicsView):
         if hasattr(self, "_scale_overlay"):
             self._scale_overlay.move(12, 12)
         self._update_attribution_position()
+        if hasattr(self,"_measurement_toolbar"):
+            self._measurement_toolbar.adjustSize()
+            self._measurement_toolbar.move(max(12,self.viewport().width()-self._measurement_toolbar.width()-12),56)
         self.update_scale_indicator()
         if self._show_coordinate_grid:
             if self._grid_item_group is None:

@@ -220,4 +220,6 @@ def test_25_main_window_drag_and_drop_geotiff(qapp, sample_geotiff: Path):
     assert win.map_canvas._raster_item is not None
 
     win.map_controller.unload_map()
+    # The unified open workflow now marks the newly chosen map as a project change.
+    win.project_controller.set_modified(False)
     win.close()

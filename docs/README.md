@@ -4,6 +4,10 @@
 
 ## Основные документы
 
+- [RELEASE_NOTES_1_1_0.md](RELEASE_NOTES_1_1_0.md) — новая сборка, PGW и WGS 84 / UTM zone 39N.
+- [AUDIT_RESOLUTION.md](AUDIT_RESOLUTION.md) — проверка замечаний аудита и реализация плана 1.1.0.
+- [UX_IMPLEMENTATION.md](UX_IMPLEMENTATION.md) — текущий интерфейс и сценарии работы.
+- [reports/](reports/) — архив исторических отчётов и прежнего smoke-маркера.
 - [RELEASE_1.0.1.md](RELEASE_1.0.1.md) — изменения и запуск исправленной сборки 1.0.1.
 - [UX_RECOMMENDATIONS.md](UX_RECOMMENDATIONS.md) — предложения по дизайну и удобству следующих версий.
 - [CURRENT_PLAN.md](CURRENT_PLAN.md) — **Единый источник истины**: текущий статус (Этапы 1–22), план будущих этапов (23–27) и архитектурные правила.

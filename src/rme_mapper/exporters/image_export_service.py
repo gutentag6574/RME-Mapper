@@ -35,6 +35,8 @@ class ImageExportService:
         online_tile_manager: Any = None,
         attribution_text: str | None = None,
         raster_affine: tuple[float, float, float, float, float, float] | list[float] | None = None,
+        raster_overlays: list[dict[str, Any]] | None = None,
+        annotations: list[dict[str, Any]] | None = None,
     ) -> Path:
         """Рендеринг и сохранение изображения в файл с гарантией атомарности.
 
@@ -78,6 +80,8 @@ class ImageExportService:
             online_tile_manager=online_tile_manager,
             attribution_text=attribution_text,
             raster_affine=raster_affine,
+            raster_overlays=raster_overlays,
+            annotations=annotations,
         )
 
         if image.isNull():

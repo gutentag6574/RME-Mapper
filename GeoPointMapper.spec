@@ -132,7 +132,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(SPECPATH / "packaging" / "ux_preview_runtime.py")] if os.environ.get("GPM_UX_PREVIEW_BUILD") == "1" else [],
     excludes=[
         "PyQt5",
         "PyQt6",

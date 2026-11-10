@@ -40,6 +40,9 @@ class MapProfile:
     control_points: list[dict[str, Any]] | None = None
     transformation_type: str = "affine"
 
+    raster_overlays: list[dict[str, Any]] = field(default_factory=list)
+    annotations: list[dict[str, Any]] = field(default_factory=list)
+
     metadata_version: int = 1
 
     def get_absolute_source_path(self, root_dir: Path | None = None) -> Path:
@@ -103,6 +106,8 @@ class MapProfile:
                 "required": self.boundary_required,
             },
             "layers": [dict(layer) for layer in self.layers],
+            "raster_overlays": [dict(item) for item in self.raster_overlays],
+            "annotations": [dict(item) for item in self.annotations],
         }
         if self.extent is not None:
             data["extent"] = dict(self.extent)
@@ -232,5 +237,7 @@ class MapProfile:
             affine_transform=affine_transform,
             control_points=control_points,
             transformation_type=transformation_type,
+            raster_overlays=[dict(item) for item in data.get("raster_overlays", []) if isinstance(item, dict)],
+            annotations=[dict(item) for item in data.get("annotations",[]) if isinstance(item,dict)],
             metadata_version=version,
         )

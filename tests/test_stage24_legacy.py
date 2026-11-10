@@ -319,8 +319,10 @@ def test_10_cyrillic_paths_and_unicode_names(tmp_path: Path):
     assert loaded.groups[0].name == "Особо охраняемые зоны"
 
 
-def test_11_legacy_recovery_paths_fallback():
+def test_11_legacy_recovery_paths_fallback(monkeypatch):
     """Проверка вычисления пути аварийного восстановления на Windows XP (отсутствие LOCALAPPDATA, наличие APPDATA)."""
+    # Exercise the platform fallback separately from the explicit profile override.
+    monkeypatch.delenv("RME_MAPPER_SETTINGS_DIR", raising=False)
     # 1. При отсутствии LOCALAPPDATA, но наличии APPDATA (стандартное поведение Windows XP)
     with patch.dict(os.environ, {"LOCALAPPDATA": "", "APPDATA": "C:\\Documents and Settings\\User\\Application Data"}):
         p = ProjectService.get_recovery_snapshot_path()
