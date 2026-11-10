@@ -153,6 +153,12 @@ a = Analysis(
     optimize=0,
 )
 
+# Qt uses the Windows system ICU API (unversioned exports). A third-party
+# icuuc.dll found on the build machine's PATH (e.g. Poppler) can shadow it
+# and cause "DLL load failed while importing QtWidgets" on startup.
+if sys.platform == "win32":
+    a.binaries = [entry for entry in a.binaries if Path(entry[0]).name.lower() != "icuuc.dll"]
+
 pyz = PYZ(a.pure)
 
 exe = EXE(

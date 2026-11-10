@@ -6,7 +6,7 @@ from typing import Final
 
 # Основные сведения о приложении
 APP_NAME: Final[str] = "GeoPoint Mapper"
-APP_VERSION: Final[str] = "1.0.0"
+APP_VERSION: Final[str] = "1.0.1"
 
 APP_DESCRIPTION_RU: Final[str] = (
     "Универсальное настольное приложение для работы "

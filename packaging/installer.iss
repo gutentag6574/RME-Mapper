@@ -3,7 +3,7 @@
 
 #define MyAppName "GeoPoint Mapper"
 #ifndef MyAppVersion
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.1"
 #endif
 #define MyAppPublisher "Кульдеев Вадим Алексеевич"
 #define MyAppURL "https://github.com/gutentag6574/RME-Mapper"
@@ -44,6 +44,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "..\dist\GeoPointMapper\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[InstallDelete]
+; Remove the incompatible runtime left by an earlier installation.
+Type: files; Name: "{app}\_internal\icuuc.dll"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

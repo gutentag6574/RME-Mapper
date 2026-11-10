@@ -20,6 +20,10 @@ def validate_release_dir(bundle_dir: Path) -> list[str]:
     if not exe_path.exists():
         errors.append(f"Отсутствует основной исполняемый файл: {exe_path}")
 
+    # Unversioned Windows ICU must come from the OS, not an unrelated build tool.
+    if list(bundle_dir.rglob("icuuc.dll")):
+        errors.append("Сторонняя icuuc.dll перекрывает системную ICU Windows и может блокировать загрузку QtWidgets")
+
     # 2. Qt Platform Plugin (qwindows.dll)
     qt_platform_found = any(
         (bundle_dir / p).exists()

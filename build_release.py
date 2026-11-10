@@ -191,7 +191,7 @@ def run_smoke_test(exe_path: Path) -> None:
     log(f"Запуск Smoke Test автономного EXE: {exe_path}...")
     # Очищаем Python-переменные окружения, моделируя запуск на чистой машине без Python
     clean_env = os.environ.copy()
-    for var in ["PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV"]:
+    for var in ["PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PROJ_DATA", "PROJ_LIB", "GDAL_DATA"]:
         clean_env.pop(var, None)
 
     marker_file = exe_path.parent / "smoke_success.txt"
@@ -205,6 +205,7 @@ def run_smoke_test(exe_path: Path) -> None:
         env=clean_env,
         capture_output=True,
         text=True,
+        errors="replace",
         timeout=30,
     )
     if res.returncode != 0:
@@ -355,7 +356,7 @@ def main() -> int:
         "architecture": "x64 (AMD64)",
         "qt_binding": "PySide6",
         "packaging_tool": "PyInstaller 6.22.3",
-        "installer_tool": "Inno Setup 7.1.0",
+        "installer_tool": "Inno Setup 7.1.1",
         "build_type": "release",
         "artifacts": artifacts,
     }

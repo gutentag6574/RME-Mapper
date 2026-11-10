@@ -55,9 +55,10 @@ def _setup_gis_environment() -> None:
                     pass
                 break
 
-    # На Windows для корректной обработки путей с кириллицей и пробелами в C-библиотеке GDAL
+    # Python GIS bindings pass UTF-8 paths to GDAL, including its bundled data.
+    # NO makes GDAL interpret these as ANSI and breaks installs in Cyrillic paths.
     if sys.platform == "win32" and "GDAL_FILENAME_IS_UTF8" not in os.environ:
-        os.environ["GDAL_FILENAME_IS_UTF8"] = "NO"
+        os.environ["GDAL_FILENAME_IS_UTF8"] = "YES"
 
     # Пути к GDAL: в frozen-режиме строго bundled, в dev-режиме с системными fallback
     gdal_candidates = [

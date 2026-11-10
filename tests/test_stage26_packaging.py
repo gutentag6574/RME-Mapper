@@ -153,6 +153,7 @@ def test_07_smoke_test_cli_execution() -> None:
         cwd=ROOT_DIR,
         capture_output=True,
         text=True,
+        errors="replace",
         timeout=20,
     )
     assert res.returncode == 0, f"Smoke test упал:\n{res.stderr}\n{res.stdout}"
@@ -165,7 +166,7 @@ def test_08_canonical_version_single_source_of_truth() -> None:
 
     canon_version = get_canonical_version()
     assert canon_version == APP_VERSION
-    assert canon_version == "1.0.0"
+    assert re.fullmatch(r"\d+\.\d+\.\d+", canon_version)
 
     # Синхронизация отрабатывает без ошибок и гарантирует согласованность
     sync_version_metadata(canon_version)

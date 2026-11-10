@@ -27,7 +27,7 @@ RELEASE_DIR = ROOT_DIR / "release"
 def _clean_env() -> dict[str, str]:
     """Формирование изолированного окружения без переменных Python-разработки и без .venv в PATH."""
     env = os.environ.copy()
-    for var in ["PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PROJ_DATA", "PROJ_LIB", "GDAL_DATA"]:
+    for var in ["PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PROJ_DATA", "PROJ_LIB", "GDAL_DATA", "GDAL_FILENAME_IS_UTF8"]:
         env.pop(var, None)
 
     # Исключаем пути виртуального окружения и репозитория из PATH
@@ -64,6 +64,7 @@ def test_01_standalone_exe_clean_machine_smoke() -> None:
         env=_clean_env(),
         capture_output=True,
         text=True,
+        errors="replace",
         timeout=30,
     )
 
@@ -101,6 +102,7 @@ def test_02_portable_zip_unicode_and_spaces_path_smoke() -> None:
         env=_clean_env(),
         capture_output=True,
         text=True,
+        errors="replace",
         timeout=30,
     )
 
