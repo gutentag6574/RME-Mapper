@@ -3,6 +3,7 @@ from __future__ import annotations
 
 
 from collections.abc import Callable
+import copy
 import logging
 from pathlib import Path
 from typing import Any
@@ -368,8 +369,8 @@ class ProjectController(QObject):
                 map_type=project.map.map_type,
             )
             self._unsupported_map_data = None
-            online_prof.raster_overlays = restored_overlays
-            online_prof.annotations = project.map.annotations
+            online_prof.raster_overlays = copy.deepcopy(restored_overlays)
+            online_prof.annotations = copy.deepcopy(project.map.annotations)
             self._map_controller.load_map(online_prof)
             self.apply_project_data(project)
             return True
@@ -400,7 +401,8 @@ class ProjectController(QObject):
         target_profile: MapProfile | None = None
 
         if project.map.map_id:
-            target_profile = self._map_catalog_service.get_profile(project.map.map_id)
+            catalog_profile = self._map_catalog_service.get_profile(project.map.map_id)
+            target_profile = copy.deepcopy(catalog_profile) if catalog_profile is not None else None
             if target_profile:
                 target_map_path = target_profile.get_absolute_source_path()
 
@@ -452,8 +454,8 @@ class ProjectController(QObject):
                 self._unsupported_map_data = project.map
 
         if target_profile:
-            target_profile.raster_overlays = restored_overlays
-            target_profile.annotations=project.map.annotations
+            target_profile.raster_overlays = copy.deepcopy(restored_overlays)
+            target_profile.annotations = copy.deepcopy(project.map.annotations)
             self._unsupported_map_data = None
             self._map_controller.load_map(target_profile)
         elif target_map_path and target_map_path.exists():
@@ -472,8 +474,8 @@ class ProjectController(QObject):
                     affine_transform=project.map.affine_transform,
                     control_points=project.map.control_points,
                     transformation_type=project.map.transformation_type,
-                    raster_overlays=restored_overlays,
-                    annotations=project.map.annotations,
+                    raster_overlays=copy.deepcopy(restored_overlays),
+                    annotations=copy.deepcopy(project.map.annotations),
                 )
                 self._map_controller.load_map(runtime_prof)
             else:

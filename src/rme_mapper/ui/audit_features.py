@@ -120,15 +120,25 @@ class AuditFeaturesMixin:
         from copy import deepcopy
         from rme_mapper.services.undo_manager import UndoCommand
         profile=self.map_controller.active_profile
+        if profile is None:
+            return
         before=deepcopy(profile.annotations)
         after=deepcopy(records)
+        target_profile_id=getattr(profile,"id",None)
         window=self
         class ChangeAnnotationsCommand(UndoCommand):
+            def _is_target_active(command):
+                current=window.map_controller.active_profile
+                return current is profile and getattr(current,"id",None)==target_profile_id
             def execute(command):
+                if not command._is_target_active():
+                    return
                 profile.annotations=deepcopy(after)
                 window.restore_annotations()
                 window.project_controller.set_modified(True)
             def undo(command):
+                if not command._is_target_active():
+                    return
                 profile.annotations=deepcopy(before)
                 window.restore_annotations()
                 window.project_controller.set_modified(True)
@@ -157,19 +167,29 @@ class AuditFeaturesMixin:
         if profile is None:
             return
         records=[dict(deepcopy(item),id=uuid4().hex) for item in annotations]
+        target_profile_id=getattr(profile,"id",None)
         window=self
         class FieldImportCommand(UndoCommand):
+            def _is_target_active(command):
+                current=window.map_controller.active_profile
+                return current is profile and getattr(current,"id",None)==target_profile_id
             def execute(command):
-                window.point_controller._cmd_add_points(deepcopy(points))
-                profile.annotations.extend(deepcopy(records))
-                window.restore_annotations()
-                window.project_controller.set_modified(True)
+                if points:
+                    window.point_controller._cmd_add_points(deepcopy(points))
+                    window.project_controller.set_modified(True)
+                if command._is_target_active():
+                    profile.annotations.extend(deepcopy(records))
+                    window.restore_annotations()
+                    window.project_controller.set_modified(True)
             def undo(command):
-                window.point_controller._cmd_remove_points([p.id for p in points])
-                identifiers={record["id"] for record in records}
-                profile.annotations=[record for record in profile.annotations if record.get("id") not in identifiers]
-                window.restore_annotations()
-                window.project_controller.set_modified(True)
+                if points:
+                    window.point_controller._cmd_remove_points([p.id for p in points])
+                    window.project_controller.set_modified(True)
+                if command._is_target_active():
+                    identifiers={record["id"] for record in records}
+                    profile.annotations=[record for record in profile.annotations if record.get("id") not in identifiers]
+                    window.restore_annotations()
+                    window.project_controller.set_modified(True)
         self.point_controller.undo_manager.push(FieldImportCommand(tr("audit.import_field")),execute=True)
 
     def open_preferences(self):

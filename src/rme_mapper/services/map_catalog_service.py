@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 
+import copy
 import json
 import logging
 from pathlib import Path
@@ -64,7 +65,7 @@ class MapCatalogService:
 
         self._discovered = True
         logger.info("Обнаружено профилей карт: %d (%s)", len(self._profiles), list(self._profiles.keys()))
-        return list(self._profiles.values())
+        return [copy.deepcopy(p) for p in self._profiles.values()]
 
     def _load_profile_from_file(self, file_path: Path, base_dir: Path) -> MapProfile | None:
         """Чтение и валидация файла metadata.json."""
@@ -92,13 +93,13 @@ class MapCatalogService:
             self.discover_profiles()
 
         if profile_id in self._profiles:
-            return self._profiles[profile_id]
+            return copy.deepcopy(self._profiles[profile_id])
 
         # Проверка известных алиасов для обратной совместимости
         alias_target = LEGACY_ALIASES.get(profile_id)
         if alias_target and alias_target in self._profiles:
             logger.info("Профиль '%s' сопоставлен с '%s' через legacy-алиас", profile_id, alias_target)
-            return self._profiles[alias_target]
+            return copy.deepcopy(self._profiles[alias_target])
 
         return None
 
@@ -116,7 +117,7 @@ class MapCatalogService:
             for profile in self._profiles.values():
                 src_resolved = profile.get_absolute_source_path(root_dir=get_project_root()).resolve()
                 if src_resolved == target_resolved:
-                    return profile
+                    return copy.deepcopy(profile)
         except Exception:
             pass
 
@@ -124,7 +125,7 @@ class MapCatalogService:
         for profile in self._profiles.values():
             prof_src_posix = Path(profile.source_path).as_posix().lower()
             if prof_src_posix and (target_posix.endswith(prof_src_posix) or prof_src_posix.endswith(target_posix)):
-                return profile
+                return copy.deepcopy(profile)
 
         # 3. Специальный fallback для эталонного файла mari.gpkg
         if "mari.gpkg" in target_posix:
@@ -138,11 +139,11 @@ class MapCatalogService:
             self.discover_profiles()
 
         if DEFAULT_PROFILE_ID in self._profiles:
-            return self._profiles[DEFAULT_PROFILE_ID]
+            return copy.deepcopy(self._profiles[DEFAULT_PROFILE_ID])
 
         if self._profiles:
             first_profile = next(iter(self._profiles.values()))
-            return first_profile
+            return copy.deepcopy(first_profile)
 
         # Fallback: создание синтетического профиля для mari.gpkg, если каталог пуст
         root = get_project_root()

@@ -279,3 +279,78 @@ def test_crit03_clear_online_basemap_and_unload_reset_crs(qapp):
         win.project_controller.set_modified(False)
         win.close()
 
+
+def test_crit04_catalog_profile_not_mutated_and_annotation_undo_isolated(qapp, tmp_path):
+    """CRIT-04: Каталожный MapProfile не мутируется при открытии проекта, а Undo аннотаций изолирован."""
+    tif_a = tmp_path / "map_a.tif"
+    tif_b = tmp_path / "map_b.tif"
+    _write_test_geotiff(tif_a, xmin=47.80, ymax=56.70, crs="EPSG:4326")
+    _write_test_geotiff(tif_b, xmin=48.10, ymax=56.80, crs="EPSG:4326")
+
+    overlay_tif = tmp_path / "overlay.tif"
+    _write_test_geotiff(overlay_tif, xmin=47.80, ymax=56.70, crs="EPSG:4326")
+
+    win = MainWindow()
+    try:
+        catalog = win._map_catalog_service
+        original = catalog.get_profile("mari_el")
+        assert original is not None
+        orig_annotations = list(original.annotations)
+        orig_overlays = list(original.raster_overlays)
+
+        proj = ProjectData(
+            format=PRIMARY_PROJECT_FORMAT,
+            version=1,
+            map=ProjectMapData(
+                map_id="mari_el",
+                name="Республика Марий Эл",
+                source_type="geopackage",
+                annotations=[
+                    {
+                        "id": "ann-1",
+                        "kind": "line",
+                        "name": "Project Track",
+                        "coordinates": [[47.81, 56.69], [47.82, 56.68]],
+                        "visible": True,
+                    }
+                ],
+                raster_overlays=[{"id": "ov-1", "name": "Ov", "path": str(overlay_tif), "opacity": 0.5, "visible": True}],
+            ),
+            layers={},
+            points=[],
+        )
+        assert win.project_controller._resolve_and_apply_project(proj, tmp_path / "p.rmeproject") is True
+
+        # Каталог не должен содержать аннотации/оверлеи из проекта
+        fresh_from_catalog = catalog.get_profile("mari_el")
+        assert fresh_from_catalog is not None
+        assert fresh_from_catalog.annotations == orig_annotations
+        assert fresh_from_catalog.raster_overlays == orig_overlays
+
+        # Проверка без активной карты: change_annotations не должен падать
+        win.map_controller.unload_map()
+        assert win.map_controller.active_profile is None
+        win.change_annotations([{"kind": "line", "name": "NoMap", "coordinates": [[47.0, 56.0], [47.1, 56.1]]}])
+
+        # Загружаем карту A, добавляем аннотацию и переключаемся на карту B
+        win.map_controller.load_map(tif_a)
+        profile_a = win.map_controller.active_profile
+        assert profile_a is not None
+        win.change_annotations([{"kind": "line", "name": "Track A", "coordinates": [[47.805, 56.695], [47.81, 56.69]]}])
+        assert len(profile_a.annotations) == 1
+
+        win.map_controller.load_map(tif_b)
+        profile_b = win.map_controller.active_profile
+        assert profile_b is not None
+        assert profile_b is not profile_a
+        assert profile_b.annotations == []
+
+        # Undo после смены карты не должен менять profile_a или ломать profile_b
+        win.undo()
+        assert len(profile_a.annotations) == 1
+        assert profile_b.annotations == []
+    finally:
+        win.project_controller.set_modified(False)
+        win.map_controller.unload_map()
+        win.close()
+
