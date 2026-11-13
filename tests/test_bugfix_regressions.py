@@ -8,6 +8,7 @@ import numpy as np
 from PySide6.QtWidgets import QMessageBox
 import rasterio
 
+from rme_mapper.models.map_point import MapPoint
 from rme_mapper.models.project_data import (
     PRIMARY_PROJECT_FORMAT,
     ProjectData,
@@ -105,5 +106,60 @@ def test_crit01_declined_recovery_still_unloads_map_on_startup(qapp, tmp_path, m
         assert not win.project_controller.is_project_active
         assert not snap_path.exists()
     finally:
+        win.close()
+
+
+def test_crit02_undo_delete_first_and_middle_point_preserves_rows_and_order(qapp):
+    """CRIT-02: Undo удаления первой или средней строки не затирает строки и сохраняет порядок."""
+    win = MainWindow()
+    try:
+        p1 = MapPoint(id="pt-1", name="Первая", latitude=56.0, longitude=47.0)
+        p2 = MapPoint(id="pt-2", name="Вторая", latitude=56.1, longitude=47.1)
+        p3 = MapPoint(id="pt-3", name="Третья", latitude=56.2, longitude=47.2)
+        win.point_controller._cmd_add_points([p1, p2, p3])
+
+        assert win.points_table.rowCount() == 3
+        assert win.point_controller._table_point_ids == ["pt-1", "pt-2", "pt-3"]
+
+        # Удаляем первую строку (index 0) и отменяем (Undo)
+        win.points_panel.select_point_ids(["pt-1"])
+        win.point_controller.delete_point_workflow(confirm=False)
+        assert win.points_table.rowCount() == 2
+        assert win.point_controller._table_point_ids == ["pt-2", "pt-3"]
+
+        win.undo()
+        assert win.points_table.rowCount() == 3
+        assert win.point_controller._table_point_ids == ["pt-1", "pt-2", "pt-3"]
+        assert [win.points_table.item(r, 1).text() for r in range(3)] == ["Первая", "Вторая", "Третья"]
+        assert [win.points_table.item(r, 0).text() for r in range(3)] == ["1", "2", "3"]
+        assert [p.id for p in win._point_service.get_points()] == ["pt-1", "pt-2", "pt-3"]
+
+        # Удаляем среднюю строку (index 1) и отменяем (Undo)
+        win.points_panel.select_point_ids(["pt-2"])
+        win.point_controller.delete_point_workflow(confirm=False)
+        assert win.points_table.rowCount() == 2
+
+        win.undo()
+        assert win.points_table.rowCount() == 3
+        assert win.point_controller._table_point_ids == ["pt-1", "pt-2", "pt-3"]
+        assert [win.points_table.item(r, 1).text() for r in range(3)] == ["Первая", "Вторая", "Третья"]
+        assert [p.id for p in win._point_service.get_points()] == ["pt-1", "pt-2", "pt-3"]
+
+        # Массовое удаление несмежных строк (0 и 2) и Undo + перерисовка батчем
+        win.points_panel.select_point_ids(["pt-1", "pt-3"])
+        win.point_controller.delete_point_workflow(confirm=False)
+        assert win.points_table.rowCount() == 1
+        assert win.point_controller._table_point_ids == ["pt-2"]
+
+        win.undo()
+        assert win.points_table.rowCount() == 3
+        assert win.point_controller._table_point_ids == ["pt-1", "pt-2", "pt-3"]
+        assert [p.id for p in win._point_service.get_points()] == ["pt-1", "pt-2", "pt-3"]
+
+        win.point_controller.populate_points_table_batch(win._point_service.get_points())
+        assert win.point_controller._table_point_ids == ["pt-1", "pt-2", "pt-3"]
+        assert [win.points_table.item(r, 1).text() for r in range(3)] == ["Первая", "Вторая", "Третья"]
+    finally:
+        win.project_controller.set_modified(False)
         win.close()
 

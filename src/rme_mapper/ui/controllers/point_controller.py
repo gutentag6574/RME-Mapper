@@ -174,7 +174,7 @@ class PointController(QObject):
 
     def _cmd_add_point(self, point: MapPoint, row_index: int | None = None) -> None:
         """Низкоуровневая вставка точки в модель, таблицу и на холст."""
-        self._point_service._points[point.id] = point
+        self._point_service.insert_point(point, index=row_index)
         self.add_point_to_table(point, row_index=row_index)
         self._render_point_on_canvas(point)
         if self._group_controller:
@@ -801,9 +801,10 @@ class PointController(QObject):
             )
             self._table_point_ids.append(point.id)
         else:
-            num_str = point.object_number if point.object_number else str(row_index + 1)
-            self._points_panel.insert_row(
-                row=row_index,
+            target_row = max(0, row_index)
+            num_str = point.object_number if point.object_number else str(target_row + 1)
+            inserted_row = self._points_panel.insert_row(
+                row=target_row,
                 num=num_str,
                 name=point.name,
                 lat=f"{point.latitude:.6f}",
@@ -817,7 +818,7 @@ class PointController(QObject):
                 visible=point.visible,
                 group_id=point.group_id,
             )
-            self._table_point_ids.insert(row_index, point.id)
+            self._table_point_ids.insert(inserted_row, point.id)
 
     def update_point_in_table(self, row: int, point: MapPoint) -> None:
         """Обновление значений в строке таблицы."""

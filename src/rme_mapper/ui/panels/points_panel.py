@@ -495,8 +495,7 @@ class PointsPanel(QWidget):
     ) -> int:
         """Вставка строки по заданному индексу (для восстановления в Undo)."""
         target_row = max(0, min(row, self.points_table.rowCount()))
-        if target_row >= self.points_table.rowCount():
-            self.points_table.insertRow(target_row)
+        self.points_table.insertRow(target_row)
 
         num_item = QTableWidgetItem(num)
         num_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)

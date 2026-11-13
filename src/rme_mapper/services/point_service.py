@@ -254,6 +254,17 @@ class PointService:
         self._points[point.id] = point
         return point
 
+    def insert_point(self, point: MapPoint, index: int | None = None) -> MapPoint:
+        """Вставка готового экземпляра MapPoint в хранилище с сохранением заданного индекса."""
+        items = [(pid, pt) for pid, pt in self._points.items() if pid != point.id]
+        if index is None or index >= len(items):
+            items.append((point.id, point))
+        else:
+            target_idx = max(0, index)
+            items.insert(target_idx, (point.id, point))
+        self._points = dict(items)
+        return point
+
     def get_points(self) -> list[MapPoint]:
         """Получение списка всех зарегистрированных точек."""
         return list(self._points.values())
