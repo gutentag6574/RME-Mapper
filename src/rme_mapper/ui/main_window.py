@@ -302,7 +302,11 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
             self.load_map(map_profile)
         elif map_path is not None:
             self.load_map(map_path)
-        else:
+        elif (
+            self.map_controller.active_profile is None
+            and self.map_controller.map_path is None
+            and not self.project_controller.is_project_active
+        ):
             self._unload_map()
 
     def _setup_ui(self) -> None:
