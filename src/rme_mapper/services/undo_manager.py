@@ -454,6 +454,8 @@ class UndoManager:
         """
         if execute:
             command.execute()
+        if len(self._undo_stack) < self._clean_index:
+            self._clean_index = -1
         self._undo_stack.append(command)
         self._redo_stack.clear()
         logger.info("Добавлена команда в Undo: '%s' (стек: %d)", command.description, len(self._undo_stack))

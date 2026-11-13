@@ -354,3 +354,30 @@ def test_crit04_catalog_profile_not_mutated_and_annotation_undo_isolated(qapp, t
         win.map_controller.unload_map()
         win.close()
 
+
+def test_high01_undo_manager_is_clean_false_after_branching():
+    """HIGH-01: Undo + новое действие (ветвление стека) должно сбрасывать clean_index."""
+    from rme_mapper.services.undo_manager import UndoCommand, UndoManager
+
+    class DummyCmd(UndoCommand):
+        def execute(self) -> None:
+            pass
+
+        def undo(self) -> None:
+            pass
+
+    mgr = UndoManager()
+    mgr.push(DummyCmd("c1"), execute=True)
+    mgr.push(DummyCmd("c2"), execute=True)
+    mgr.mark_clean()
+    assert mgr.is_clean is True
+
+    assert mgr.undo() is True
+    assert mgr.is_clean is False
+
+    # Ветвление стека: отрезаем c2 и добавляем c3 — длина снова 2, но состояние НЕ чистое!
+    mgr.push(DummyCmd("c3"), execute=True)
+    assert mgr.is_clean is False
+    mgr.undo()
+    assert mgr.is_clean is False
+
