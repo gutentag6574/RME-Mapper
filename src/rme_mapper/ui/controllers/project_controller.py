@@ -103,7 +103,7 @@ class ProjectController(QObject):
     @property
     def is_project_active(self) -> bool:
         """Активен ли проект."""
-        return self._project_loaded
+        return self._project_loaded or self._is_modified or self._current_project_path is not None
 
     def new_project(self) -> bool:
         """Алиас для new_project_workflow."""

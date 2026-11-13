@@ -255,8 +255,11 @@ def test_crit03_switching_maps_and_error_cleanup(qapp, tmp_path):
         win.close()
 
 
-def test_crit03_clear_online_basemap_and_unload_reset_crs(qapp):
+def test_crit03_clear_online_basemap_and_unload_reset_crs(qapp, monkeypatch):
     """CRIT-03: Отключение онлайн-подложки и выгрузка карты сбрасывают _active_crs и ScaleOverlay."""
+    from rme_mapper.maps.online_tile_manager import OnlineTileManager
+
+    monkeypatch.setattr(OnlineTileManager, "update_viewport", lambda *args, **kwargs: None)
     win = MainWindow()
     try:
         from rme_mapper.models.online_provider import ProviderRegistry
@@ -314,7 +317,17 @@ def test_crit04_catalog_profile_not_mutated_and_annotation_undo_isolated(qapp, t
                         "visible": True,
                     }
                 ],
-                raster_overlays=[{"id": "ov-1", "name": "Ov", "path": str(overlay_tif), "opacity": 0.5, "visible": True}],
+                raster_overlays=[
+                    {
+                        "id": "ov-1",
+                        "name": "Ov",
+                        "path": str(overlay_tif),
+                        "crs": "EPSG:4326",
+                        "affine": [0.001, 0.0, 47.80, 0.0, -0.001, 56.70],
+                        "opacity": 0.5,
+                        "visible": True,
+                    }
+                ],
             ),
             layers={},
             points=[],
@@ -380,4 +393,29 @@ def test_high01_undo_manager_is_clean_false_after_branching():
     assert mgr.is_clean is False
     mgr.undo()
     assert mgr.is_clean is False
+
+
+def test_high02_unsaved_project_is_active_and_marks_modified_on_online_map(qapp, monkeypatch):
+    """HIGH-02: Несохранённый активный проект учитывается в is_project_active и при смене онлайн-карты."""
+    from rme_mapper.maps.online_tile_manager import OnlineTileManager
+
+    monkeypatch.setattr(OnlineTileManager, "update_viewport", lambda *args, **kwargs: None)
+    win = MainWindow()
+    try:
+        assert win.project_controller.is_project_active is False
+        win.point_controller._cmd_add_point(MapPoint(id="pt-h2", name="Точка", latitude=56.6, longitude=47.8))
+        win.project_controller.set_modified(False)
+        win.project_controller.project_loaded = True
+        assert win.project_controller.current_project_path is None
+        assert win.project_controller.is_project_active is True
+
+        from rme_mapper.models.online_provider import ProviderRegistry
+
+        provider = ProviderRegistry.get_provider("osm_standard")
+        assert win.map_controller.load_online_map(provider=provider) is True
+        assert win.project_controller.is_modified is True
+    finally:
+        win.project_controller.set_modified(False)
+        win.map_controller.unload_map()
+        win.close()
 

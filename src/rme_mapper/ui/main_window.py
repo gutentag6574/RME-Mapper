@@ -200,7 +200,7 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
             map_catalog_service=self._map_catalog_service,
             on_map_loaded=self._on_map_loaded,
             on_modified=lambda: self.project_controller.set_modified(True),
-            is_project_active=lambda: bool(self.project_controller.current_project_path),
+            is_project_active=lambda: self.project_controller.is_project_active,
             set_status_message=self._show_status_message,
             set_map_title=self._on_map_title_changed,
             settings_service=self._settings_service,
