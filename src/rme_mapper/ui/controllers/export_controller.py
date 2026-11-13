@@ -119,7 +119,7 @@ class ExportController(QObject):
             combined = QRectF()
             for item in self._map_canvas._layer_items.values():
                 if isinstance(item, QGraphicsPathItem) and item.isVisible():
-                    combined = combined.united(item.boundingRect())
+                    combined = combined.united(item.sceneBoundingRect())
             if combined.isValid() and not combined.isEmpty():
                 return (combined.left(), -combined.bottom(), combined.right(), -combined.top())
 

@@ -196,20 +196,47 @@ class MapController(QObject):
             self._on_modified()
         return True
 
+    def _close_raster_backend(self) -> None:
+        """Закрытие открытого локального растрового бэкенда для текущей карты."""
+        if not self._map_path:
+            return
+        try:
+            if BackendFactory.supports_geotiff():
+                rb = get_raster_backend()
+                rb.close(self._map_path)
+        except Exception as e:
+            logger.debug("Ошибка при закрытии растрового бэкенда: %s", e)
+
+    def _clear_previous_map_layers(self) -> None:
+        """Полная очистка слоёв, растра, онлайн-подложки и границ перед сменой карты."""
+        self._close_raster_backend()
+        self._loaded_layers.clear()
+        self._boundary_geometry = None
+        self._layers_panel.clear_layers()
+        self._map_canvas.clear_map_layers()
+
+    def _handle_map_load_error(self, err_msg: str, status_msg: str) -> None:
+        """Перевод контроллера и холста в консистентное состояние ошибки."""
+        self._close_raster_backend()
+        self._active_profile = None
+        self._map_path = None
+        self._boundary_geometry = None
+        self._loaded_layers.clear()
+        self._active_crs = "OGC:CRS84"
+        self._layers_panel.clear_layers()
+        self._map_canvas.set_error(err_msg)
+        self._set_status(status_msg)
+        self._points_panel.set_buttons_enabled(add=False, edit=False, delete=False)
+
     def unload_map(self) -> None:
         """Перевод приложения в состояние без активной карты."""
-        if self._map_path:
-            try:
-                if BackendFactory.supports_geotiff():
-                    rb = get_raster_backend()
-                    rb.close(self._map_path)
-            except Exception as e:
-                logger.debug("Ошибка при закрытии растрового бэкенда: %s", e)
+        self._close_raster_backend()
 
         self._active_profile = None
         self._map_path = None
         self._boundary_geometry = None
         self._loaded_layers.clear()
+        self._active_crs = "OGC:CRS84"
         self._layers_panel.clear_layers()
         self._map_canvas.clear_map()
 
@@ -253,31 +280,8 @@ class MapController(QObject):
         if not effective_key:
             effective_key = provider.get_effective_api_key()
 
-        # 3. Закрываем локальный растровый бэкенд, если был открыт
-        if self._map_path:
-            try:
-                if BackendFactory.supports_geotiff():
-                    rb = get_raster_backend()
-                    rb.close(self._map_path)
-            except Exception as e:
-                logger.debug("Ошибка при закрытии растрового бэкенда: %s", e)
-
-        # 4. Сбрасываем векторные и растровые слои предыдущей карты
-        for item in list(self._map_canvas._layer_items.values()):
-            if item.scene() == self._map_canvas._scene:
-                self._map_canvas._scene.removeItem(item)
-        self._map_canvas._layer_items.clear()
-        if self._map_canvas._raster_item is not None:
-            if self._map_canvas._raster_item.scene() == self._map_canvas._scene:
-                self._map_canvas._scene.removeItem(self._map_canvas._raster_item)
-            self._map_canvas._raster_item = None
-        if self._map_canvas._raster_window_item is not None:
-            if self._map_canvas._raster_window_item.scene() == self._map_canvas._scene:
-                self._map_canvas._scene.removeItem(self._map_canvas._raster_window_item)
-            self._map_canvas._raster_window_item = None
-        self._map_canvas._boundary_bounds = None
-        self._loaded_layers.clear()
-        self._layers_panel.clear_layers()
+        # 3. Закрываем локальный растровый бэкенд и очищаем слои предыдущей карты
+        self._clear_previous_map_layers()
 
         # 5. Устанавливаем онлайн-подложку на холст
         self._active_crs = "EPSG:3857"
@@ -332,22 +336,14 @@ class MapController(QObject):
             path = Path(map_target)
             profile = self._map_catalog_service.get_profile_by_path(path)
 
-        self._active_profile = profile
-        self._map_path = path
-
         map_title = profile.name if profile else path.stem
         logger.info("Загрузка карты '%s' из: %s", map_title, path)
 
         if not path.is_file():
             err_msg = f"{tr('msg.map_file_not_found')}:\n{path}"
             logger.error("Файл карты не найден: %s", path)
-            self._map_canvas.set_error(err_msg)
-            self._set_status(tr("status.error_map_not_found"))
+            self._handle_map_load_error(err_msg, tr("status.error_map_not_found"))
             return
-
-        # Если ранее была активна онлайн-подложка, отключаем её
-        if hasattr(self._map_canvas, "clear_online_basemap"):
-            self._map_canvas.clear_online_basemap()
 
         # -------------------------------------------------------------
         # Специальная обработка геопривязанного растра (Stage 21: georeferenced_image)
@@ -368,26 +364,24 @@ class MapController(QObject):
             if not BackendFactory.supports_geotiff():
                 err_msg = tr("msg.geotiff_backend_unavailable") or "Поддержка GeoTIFF недоступна в этой сборке."
                 logger.error("Поддержка GeoTIFF недоступна для %s", path)
-                self._map_canvas.set_error(err_msg)
-                self._set_status(err_msg)
+                self._handle_map_load_error(err_msg, err_msg)
                 return
 
             try:
+                self._close_raster_backend()
                 rb = get_raster_backend()
                 info = rb.inspect_raster(path)
                 crs_val = info.get("crs")
                 if not crs_val:
                     err_msg = tr("msg.geotiff_no_crs") or "В файле отсутствует система координат."
                     logger.error(err_msg)
-                    self._map_canvas.set_error(err_msg)
-                    self._set_status(err_msg)
+                    self._handle_map_load_error(err_msg, err_msg)
                     return
 
                 if not info.get("is_valid_georef"):
                     err_msg = tr("msg.geotiff_no_georef") or "Файл не содержит корректной географической привязки."
                     logger.error(err_msg)
-                    self._map_canvas.set_error(err_msg)
-                    self._set_status(err_msg)
+                    self._handle_map_load_error(err_msg, err_msg)
                     return
 
                 rgba_preview, meta = rb.read_preview(path, max_dimension=4096)
@@ -419,7 +413,7 @@ class MapController(QObject):
                 def raster_provider(win_extent, target_w, target_h):
                     return rb.read_window(path, win_extent, target_w, target_h)
 
-                self._layers_panel.clear_layers()
+                self._clear_previous_map_layers()
                 self._map_canvas.add_raster_item(
                     layer=raster_layer,
                     image_or_array=rgba_preview,
@@ -431,8 +425,10 @@ class MapController(QObject):
                 self._loaded_layers = [raster_layer]
                 self._active_crs = crs_val
                 self._boundary_geometry = None
+                self._map_path = path
 
                 if profile is not None:
+                    self._active_profile = profile
                     if not profile.extent:
                         profile.extent = info.get("extent")
                     if not profile.crs:
@@ -478,8 +474,7 @@ class MapController(QObject):
 
             except Exception as raster_err:
                 logger.exception("Ошибка при загрузке растровой карты %s: %s", path, raster_err)
-                self._map_canvas.set_error(f"Ошибка чтения GeoTIFF:\n{raster_err}")
-                self._set_status(tr("status.error_geotiff_load"))
+                self._handle_map_load_error(f"Ошибка чтения GeoTIFF:\n{raster_err}", tr("status.error_geotiff_load"))
                 return
 
         # -------------------------------------------------------------
@@ -496,11 +491,10 @@ class MapController(QObject):
             if not discovered_layers:
                 err_msg = tr("msg.no_layers_found")
                 logger.error(err_msg)
-                self._map_canvas.set_error(err_msg)
-                self._set_status(tr("status.error_no_layers"))
+                self._handle_map_load_error(err_msg, tr("status.error_no_layers"))
                 return
 
-            self._layers_panel.clear_layers()
+            self._clear_previous_map_layers()
             successfully_loaded: list[MapLayer] = []
             common_crs = (profile.crs if profile and profile.crs else None) or "OGC:CRS84"
             self._boundary_geometry = None
@@ -530,10 +524,14 @@ class MapController(QObject):
                 except Exception as layer_err:
                     logger.exception("Ошибка загрузки слоя '%s': %s", layer.display_name, layer_err)
                     if (profile and profile.boundary_required and layer.role == LayerRole.BOUNDARY):
-                        self._map_canvas.set_error(f"Ошибка чтения границы карты:\n{layer_err}")
-                        self._set_status(tr("status.error_boundary_read"))
+                        self._handle_map_load_error(
+                            f"Ошибка чтения границы карты:\n{layer_err}",
+                            tr("status.error_boundary_read"),
+                        )
                         return
 
+            self._active_profile = profile
+            self._map_path = path
             self._loaded_layers = successfully_loaded
             self._active_crs = common_crs
 
@@ -560,8 +558,7 @@ class MapController(QObject):
 
         except Exception as e:
             logger.exception("Критическая ошибка при загрузке карты из %s: %s", path, e)
-            self._map_canvas.set_error(f"Ошибка при чтении карты:\n{e}")
-            self._set_status(tr("status.error_map_load"))
+            self._handle_map_load_error(f"Ошибка при чтении карты:\n{e}", tr("status.error_map_load"))
 
     def set_layer_visibility(self, layer_id: str, visible: bool) -> None:
         """Переключение видимости слоя и обновление состояния."""
@@ -584,17 +581,7 @@ class MapController(QObject):
         """Загрузка и отображение геопривязанного пользовательского растра (Stage 21)."""
         from rme_mapper.services.georeference_service import GeoreferenceService
 
-        # 1. Закрываем предыдущий растровый бэкенд, если был
-        if self._map_path and BackendFactory.supports_geotiff():
-            try:
-                rb = get_raster_backend()
-                rb.close(self._map_path)
-            except Exception as e:
-                logger.debug("Ошибка закрытия растрового бэкенда: %s", e)
-
-        # 2. Если была онлайн-подложка, отключаем
-        if hasattr(self._map_canvas, "clear_online_basemap"):
-            self._map_canvas.clear_online_basemap()
+        self._close_raster_backend()
 
         try:
             rgba_preview, full_size = GeoreferenceService.load_preview_image(path, max_dimension=4096)
@@ -638,7 +625,7 @@ class MapController(QObject):
             def raster_provider(win_extent, target_w, target_h):
                 return rgba_preview, {"transform": affine_coeffs, "crs": crs_val}
 
-            self._layers_panel.clear_layers()
+            self._clear_previous_map_layers()
             self._map_canvas.add_raster_item(
                 layer=raster_layer,
                 image_or_array=rgba_preview,
@@ -669,8 +656,7 @@ class MapController(QObject):
 
         except Exception as e:
             logger.exception("Ошибка при загрузке геопривязанного изображения %s: %s", path, e)
-            self._map_canvas.set_error(f"Ошибка чтения изображения:\n{e}")
-            self._set_status(tr("status.error_image_load"))
+            self._handle_map_load_error(f"Ошибка чтения изображения:\n{e}", tr("status.error_image_load"))
 
     def edit_georeferencing(self, on_applied: Any = None, undo_manager: Any = None) -> bool:
         """Открытие диалога повторного редактирования геопривязки текущей карты (Stage 21)."""

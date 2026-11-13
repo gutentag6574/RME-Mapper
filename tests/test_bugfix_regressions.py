@@ -163,3 +163,119 @@ def test_crit02_undo_delete_first_and_middle_point_preserves_rows_and_order(qapp
         win.project_controller.set_modified(False)
         win.close()
 
+
+def _write_test_geotiff(path: Path, xmin: float = 47.80, ymax: float = 56.70, crs: str = "EPSG:4326") -> None:
+    data = np.full((32, 32), 180, dtype=np.uint8)
+    transform = Affine(0.001, 0.0, xmin, 0.0, -0.001, ymax)
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=32,
+        width=32,
+        count=1,
+        dtype=np.uint8,
+        crs=crs,
+        transform=transform,
+    ) as dst:
+        dst.write(data, 1)
+
+
+def test_crit03_switching_maps_and_error_cleanup(qapp, tmp_path):
+    """CRIT-03: Смена карты очищает старые слои/границы, а несуществующий файл не портит состояние."""
+    tif_a = tmp_path / "map_a.tif"
+    _write_test_geotiff(tif_a, xmin=47.80, ymax=56.70, crs="EPSG:4326")
+
+    gpkg_b = tmp_path / "map_b.gpkg"
+    import geopandas as gpd
+    from shapely.geometry import Polygon
+
+    gdf = gpd.GeoDataFrame(
+        {"name": ["Zone B"]},
+        geometry=[Polygon([(500000.0, 6000000.0), (501000.0, 6000000.0), (501000.0, 6001000.0), (500000.0, 6001000.0)])],
+        crs="EPSG:32637",
+    )
+    gdf.to_file(gpkg_b, driver="GPKG", layer="boundary")
+
+    win = MainWindow()
+    try:
+        # 1. Загружаем GeoTIFF и имитируем старый векторный слой + границы + точку с зоной
+        win.map_controller.load_map(tif_a)
+        assert win.map_canvas._raster_item is not None
+        assert win.map_controller.active_crs == "EPSG:4326"
+
+        win.point_controller._cmd_add_point(
+            MapPoint(id="pt-crit03", name="Точка", latitude=56.69, longitude=47.81, radius_m=150.0, zone_enabled=True)
+        )
+        assert "pt-crit03" in win.map_canvas._user_zone_items
+
+        # 2. Загружаем векторную GeoPackage поверх GeoTIFF: старый растр должен полностью очиститься
+        win.map_controller.load_map(gpkg_b)
+        assert win.map_canvas._raster_item is None
+        assert win.map_canvas._raster_window_item is None
+        assert win.map_canvas._raster_provider is None
+        assert win.map_controller.active_crs == "EPSG:32637"
+        assert len(win.map_canvas._layer_items) == 1
+
+        # 3. Загружаем GeoTIFF поверх GeoPackage: старые векторные слои и boundary_bounds должны уйти
+        win.map_controller.load_map(tif_a)
+        assert list(win.map_canvas._layer_items.keys()) == ["raster_base"]
+        assert win.map_canvas._boundary_bounds is None
+        assert win.map_canvas._raster_item is not None
+        assert win.map_controller.active_crs == "EPSG:4326"
+
+        # 4. Попытка загрузить несуществующий файл с HTML-символами
+        missing_path = tmp_path / "<missing>&map.gpkg"
+        win.map_controller.load_map(missing_path)
+        assert win.map_controller.active_profile is None
+        assert win.map_controller.map_path is None
+        assert win.map_controller.active_crs == "OGC:CRS84"
+        assert win.map_canvas._raster_item is None
+        assert win.map_canvas._user_point_items == {}
+        assert win.map_canvas._user_zone_items == {}
+        assert win.map_canvas._user_label_items == {}
+        assert win.map_canvas._selection_halo_items == {}
+        assert win.map_canvas._scale_overlay._is_map_loaded is False
+
+        # После set_error очистка карты не должна падать на удалённых Qt-элементах
+        win.map_canvas.clear_user_points()
+        win.map_canvas.clear_measurements()
+
+        # Экранирование HTML в сообщении об ошибке
+        win.map_canvas.set_error("<b>bad</b> & <script>alert(1)</script>")
+        from PySide6.QtWidgets import QGraphicsTextItem
+
+        text_items = [it for it in win.map_canvas.scene().items() if isinstance(it, QGraphicsTextItem)]
+        assert len(text_items) == 1
+        assert "<script>" not in text_items[0].toPlainText() or "<script>alert(1)</script>" in text_items[0].toPlainText()
+        assert "&lt;script&gt;" in text_items[0].toHtml()
+    finally:
+        win.project_controller.set_modified(False)
+        win.map_controller.unload_map()
+        win.close()
+
+
+def test_crit03_clear_online_basemap_and_unload_reset_crs(qapp):
+    """CRIT-03: Отключение онлайн-подложки и выгрузка карты сбрасывают _active_crs и ScaleOverlay."""
+    win = MainWindow()
+    try:
+        from rme_mapper.models.online_provider import ProviderRegistry
+
+        provider = ProviderRegistry.get_provider("osm_standard")
+        assert win.map_controller.load_online_map(provider=provider) is True
+        assert win.map_canvas._active_crs == "EPSG:3857"
+        assert win.map_canvas._scale_overlay._is_map_loaded is True
+
+        win.map_canvas.clear_online_basemap()
+        assert win.map_canvas._active_crs == "OGC:CRS84"
+        assert win.map_canvas._scale_overlay._is_map_loaded is False
+
+        win.map_controller.load_online_map(provider=provider)
+        assert win.map_controller.active_crs == "EPSG:3857"
+        win.map_controller.unload_map()
+        assert win.map_controller.active_crs == "OGC:CRS84"
+        assert win.map_canvas._active_crs == "OGC:CRS84"
+    finally:
+        win.project_controller.set_modified(False)
+        win.close()
+

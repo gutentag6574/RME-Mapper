@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 
+import html
 import logging
 import math
 from typing import Any
@@ -818,7 +819,7 @@ class MapCanvas(QGraphicsView):
             return
 
         # Проверка наличия активной карты
-        if not self._boundary_bounds and not self._layer_items and not self._raster_item and not self._scene.items():
+        if not self._boundary_bounds and not self._layer_items and not self._raster_item and not self.is_online_map_active():
             self._scale_overlay.set_map_loaded(False)
             return
 
@@ -1107,18 +1108,18 @@ class MapCanvas(QGraphicsView):
         if self._show_coordinate_grid:
             self._grid_debounce_timer.start()
 
-    def clear_map(self) -> None:
-        """Полная очистка карты (слои, границы, точки, зоны, растр, сетка, измерения)."""
+    def clear_map_layers(self) -> None:
+        """Очистка слоёв карты, растра, онлайн-подложки, сетки и границ без удаления точек."""
         self.clear_online_basemap()
-        self.clear_measurements()
         self._clear_coordinate_grid()
-        if hasattr(self, "_scale_overlay"):
-            self._scale_overlay.set_map_loaded(False)
+        if hasattr(self, "_grid_debounce_timer"):
+            self._grid_debounce_timer.stop()
 
-        self.clear_user_points()
         for item in self._layer_items.values():
-            self._scene.removeItem(item)
+            if item.scene() == self._scene:
+                self._scene.removeItem(item)
         self._layer_items.clear()
+
         if self._raster_item is not None:
             if self._raster_item.scene() == self._scene:
                 self._scene.removeItem(self._raster_item)
@@ -1131,12 +1132,25 @@ class MapCanvas(QGraphicsView):
         self._raster_affine = None
         self._raster_full_size = None
         self._raster_provider = None
-        self._raster_debounce_timer.stop()
+        if hasattr(self, "_raster_debounce_timer"):
+            self._raster_debounce_timer.stop()
 
         self._boundary_bounds = None
+        self._initial_fit_done = False
+
+    def clear_map(self) -> None:
+        """Полная очистка карты (слои, границы, точки, зоны, растр, сетка, измерения)."""
+        self.clear_measurements()
+        self.clear_user_points()
+        self.clear_map_layers()
+        if hasattr(self, "_labels_debounce_timer"):
+            self._labels_debounce_timer.stop()
+        self._active_crs = "OGC:CRS84"
+        if hasattr(self, "_scale_overlay"):
+            self._scale_overlay.set_map_loaded(False)
+
         self._scene.clear()
         self.resetTransform()
-        self._initial_fit_done = False
         self.show_empty_state()
 
     # -------------------------------------------------------------------------
@@ -2270,18 +2284,26 @@ class MapCanvas(QGraphicsView):
 
     def set_error(self, message: str) -> None:
         """Отображение сообщения об ошибке на холсте."""
+        self.hide_empty_state()
+        self.clear_measurements()
+        self.clear_user_points()
+        self.clear_map_layers()
+        if hasattr(self, "_labels_debounce_timer"):
+            self._labels_debounce_timer.stop()
+        self._active_crs = "OGC:CRS84"
+        if hasattr(self, "_scale_overlay"):
+            self._scale_overlay.set_map_loaded(False)
+
         self._scene.clear()
-        self._boundary_bounds = None
-        self._layer_items.clear()
-        self._user_point_items.clear()
         self.resetTransform()
 
+        safe_message = html.escape(str(message))
         text_item = QGraphicsTextItem()
         text_item.setHtml(
             f"""
             <div style="text-align: center; color: #D32F2F; font-family: sans-serif;">
                 <h3 style="margin-bottom: 8px;">Ошибка загрузки карты</h3>
-                <p style="color: #555555; white-space: pre-line;">{message}</p>
+                <p style="color: #555555; white-space: pre-line;">{safe_message}</p>
             </div>
             """
         )
@@ -2397,12 +2419,19 @@ class MapCanvas(QGraphicsView):
 
     def clear_online_basemap(self) -> None:
         """Отключение онлайн-подложки и скрытие оверлея атрибуции."""
+        if hasattr(self, "_online_tile_debounce_timer"):
+            self._online_tile_debounce_timer.stop()
         if hasattr(self, "_online_tile_manager"):
             self._online_tile_manager.clear()
             self._online_tile_manager.set_provider(None)
         if hasattr(self, "_attribution_overlay"):
             self._attribution_overlay.set_map_active(False)
             self._attribution_overlay.set_attribution("")
+        has_local_map = bool(self._layer_items or self._raster_item is not None or self._boundary_bounds)
+        if not has_local_map:
+            self._active_crs = "OGC:CRS84"
+            if hasattr(self, "_scale_overlay"):
+                self._scale_overlay.set_map_loaded(False)
 
     def _on_online_tiles_updated(self) -> None:
         """Обработка добавления/обновления тайлов."""
