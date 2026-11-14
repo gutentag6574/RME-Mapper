@@ -3,6 +3,7 @@ from __future__ import annotations
 
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -78,7 +79,7 @@ class StyleValidator:
         else:
             raise ValidationError("val.style.size_number")
 
-        if val < MIN_SIZE or val > MAX_SIZE:
+        if not math.isfinite(val) or val < MIN_SIZE or val > MAX_SIZE:
             raise ValidationError("val.style.size_range", min=MIN_SIZE, max=MAX_SIZE, value=val)
         return val
 
@@ -199,6 +200,9 @@ class StyleValidator:
         else:
             raise ValidationError("val.zone.opacity_number")
 
+        if not math.isfinite(num):
+            raise ValidationError("val.zone.opacity_number")
+
         if not num.is_integer():
             num = round(num)
 
@@ -224,7 +228,7 @@ class StyleValidator:
         else:
             raise ValidationError("val.style.stroke_width_number")
 
-        if val < MIN_STROKE_WIDTH or val > MAX_STROKE_WIDTH:
+        if not math.isfinite(val) or val < MIN_STROKE_WIDTH or val > MAX_STROKE_WIDTH:
             raise ValidationError("val.style.stroke_width_range", min=MIN_STROKE_WIDTH, max=MAX_STROKE_WIDTH, value=val)
         return val
 
@@ -244,7 +248,7 @@ class StyleValidator:
         else:
             raise ValidationError("val.zone.border_width_number")
 
-        if val < MIN_BORDER_WIDTH or val > MAX_BORDER_WIDTH:
+        if not math.isfinite(val) or val < MIN_BORDER_WIDTH or val > MAX_BORDER_WIDTH:
             raise ValidationError("val.zone.border_width_range", min=MIN_BORDER_WIDTH, max=MAX_BORDER_WIDTH, value=val)
         return val
 

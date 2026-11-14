@@ -159,7 +159,13 @@ class MapProfile:
         if affine_transform is None and "affine_transform" in data and isinstance(data["affine_transform"], (list, tuple)):
             affine_transform = tuple(float(x) for x in data["affine_transform"])
         if control_points is None and "control_points" in data and isinstance(data["control_points"], list):
-            control_points = [dict(cp) for cp in data["control_points"] if isinstance(cp, dict)]
+            from rme_mapper.models.georeference import ControlPoint
+
+            control_points = [
+                ControlPoint.from_dict(cp) if isinstance(cp, dict) else cp
+                for cp in data["control_points"]
+                if isinstance(cp, (dict, ControlPoint))
+            ]
         if "transformation_type" in data:
             transformation_type = str(data["transformation_type"])
 

@@ -181,7 +181,10 @@ class RuntimeCapabilities:
         if "supports_webp" in cls._overrides:
             return cls._overrides["supports_webp"]
         try:
+            from PySide6.QtCore import QCoreApplication
             from PySide6.QtGui import QImageReader
+            if QCoreApplication.instance() is None:
+                return False
             supported = QImageReader.supportedImageFormats()
             return b"webp" in supported or b"WEBP" in supported
         except Exception:
@@ -207,6 +210,8 @@ class RuntimeCapabilities:
             return cls.supports_online_maps()
         elif st in ("georeferenced_image", "image"):
             return cls.supports_georeferencing()
+        if st:
+            logger.warning("Неизвестный тип источника карты в supports_source_type: '%s'", source_type)
         return False
 
     # -------------------------------------------------------------------------
@@ -257,14 +262,28 @@ class RuntimeCapabilities:
 
         qt_ver = "Unknown"
         try:
-            from PySide6.QtCore import qVersion
-            qt_ver = f"PySide6 (Qt {qVersion()})"
+            from rme_mapper import qt_compat
+            if qt_compat.QT_BINDING and qt_compat.QtCore is not None:
+                qt_ver = f"{qt_compat.QT_BINDING} (Qt {qt_compat.QtCore.qVersion()})"
         except ImportError:
+            pass
+        if qt_ver == "Unknown":
             try:
-                from PyQt5.QtCore import qVersion
-                qt_ver = f"PyQt5 (Qt {qVersion()})"
+                if "PyQt5" in sys.modules:
+                    from PyQt5.QtCore import qVersion
+                    qt_ver = f"PyQt5 (Qt {qVersion()})"
+                elif "PySide2" in sys.modules:
+                    from PySide2.QtCore import qVersion
+                    qt_ver = f"PySide2 (Qt {qVersion()})"
+                else:
+                    from PySide6.QtCore import qVersion
+                    qt_ver = f"PySide6 (Qt {qVersion()})"
             except ImportError:
-                pass
+                try:
+                    from PyQt5.QtCore import qVersion
+                    qt_ver = f"PyQt5 (Qt {qVersion()})"
+                except ImportError:
+                    pass
 
         logger.info(
             "=== %s v%s Startup Environment ===",

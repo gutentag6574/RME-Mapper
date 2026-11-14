@@ -2,6 +2,7 @@
 from __future__ import annotations
 from pathlib import Path
 import math
+import re
 import xml.etree.ElementTree as ET
 import zipfile
 from rme_mapper.models.map_point import MapPoint
@@ -36,33 +37,55 @@ def read_field_file(path):
         if count>MAX_COORDINATES or not math.isfinite(lon) or not math.isfinite(lat) or not(-180<=lon<=180 and -90<=lat<=90):
             raise ValueError("Invalid or too many field coordinates")
         return [lon,lat]
+    def _parse_kml_tuples(text):
+        normalized = re.sub(r"\s*,\s*", ",", (text or "").strip())
+        if not normalized:
+            return []
+        tuples = []
+        for token in normalized.split():
+            parts = token.split(",")
+            if len(parts) < 2:
+                raise ValueError("Invalid KML coordinate tuple")
+            tuples.append(parts[:2])
+        return tuples
+
     if root.tag=='gpx':
         for node in root.findall('wpt'):
-            lon,lat=coordinate(node.attrib['lon'],node.attrib['lat'])
+            raw_lon = node.attrib.get('lon')
+            raw_lat = node.attrib.get('lat')
+            if raw_lon is None or raw_lat is None:
+                raise ValueError("GPX waypoint missing lat/lon attributes")
+            lon,lat=coordinate(raw_lon,raw_lat)
             points.append(MapPoint(node.findtext('name') or str(len(points)+1),lat,lon))
         for node in root.findall('trk')+root.findall('rte'):
             segments=node.findall('trkseg') if node.tag=='trk' else [node]
             for segment in segments:
-                coords=[coordinate(p.attrib['lon'],p.attrib['lat']) for p in segment if p.tag in ('trkpt','rtept')]
+                coords=[]
+                for p in segment:
+                    if p.tag in ('trkpt','rtept'):
+                        raw_lon = p.attrib.get('lon')
+                        raw_lat = p.attrib.get('lat')
+                        if raw_lon is None or raw_lat is None:
+                            raise ValueError("GPX track/route point missing lat/lon attributes")
+                        coords.append(coordinate(raw_lon,raw_lat))
                 if len(coords)>=2:
                     annotations.append(dict(kind='line',coordinates=coords,name=node.findtext('name') or path.stem))
     elif root.tag=='kml':
         for feature in root.iter('Placemark'):
-            name=feature.findtext('name') or str(len(points)+1)
+            raw_name=feature.findtext('name')
             for node in feature.iter('Point'):
-                text=node.findtext('coordinates') or ''
-                vals=text.strip().split()[0].split(',') if text.strip() else []
-                if len(vals)>=2:
-                    lon,lat=coordinate(*vals[:2])
-                    points.append(MapPoint(name,lat,lon))
+                vals_list=_parse_kml_tuples(node.findtext('coordinates'))
+                if vals_list:
+                    lon,lat=coordinate(*vals_list[0])
+                    points.append(MapPoint(raw_name or str(len(points)+1),lat,lon))
             for kind in ('LineString','Polygon'):
                 for node in feature.iter(kind):
                     text=node.findtext('coordinates') if kind=='LineString' else node.findtext('outerBoundaryIs/LinearRing/coordinates')
-                    coords=[coordinate(*token.split(',')[:2]) for token in (text or '').split()]
+                    coords=[coordinate(*vals) for vals in _parse_kml_tuples(text)]
                     if kind=='Polygon' and node.find('innerBoundaryIs') is not None:
                         raise ValueError("KML polygon holes are not supported")
                     if len(coords)>=(3 if kind=='Polygon' else 2):
-                        annotations.append(dict(kind='polygon' if kind=='Polygon' else 'line',coordinates=coords,name=name))
+                        annotations.append(dict(kind='polygon' if kind=='Polygon' else 'line',coordinates=coords,name=raw_name or str(len(annotations)+1)))
     else:
         raise ValueError("Expected GPX or KML document")
     return points,annotations

@@ -1679,7 +1679,7 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
             has_supported = any(
-                url.toLocalFile().lower().endswith((".gpkg", ".tif", ".tiff", ".png", ".jpg", ".jpeg", ".pgw", ".pngw", ".jgw", ".jpgw", ".jpegw", ".tfw", ".tifw", ".tiffw", ".wld", ".gpmap", ".rmeproject", ".gpx", ".kml", ".kmz", ".xlsx", ".csv", ".txt"))
+                url.toLocalFile().lower().endswith((".gpkg", ".tif", ".tiff", ".png", ".jpg", ".jpeg", ".pgw", ".pngw", ".jgw", ".jpgw", ".jpegw", ".tfw", ".tifw", ".tiffw", ".wld", ".gpmap", ".rmeproject", ".gpx", ".kml", ".kmz", ".xlsx", ".csv", ".tsv", ".txt"))
                 for url in urls
             )
             if has_supported:
@@ -1727,7 +1727,7 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         elif ext in (".gpx", ".kml", ".kmz"):
             event.acceptProposedAction()
             self.import_field_file(first_path)
-        elif ext in (".xlsx", ".csv", ".txt"):
+        elif ext in (".xlsx", ".csv", ".tsv", ".txt"):
             event.acceptProposedAction()
             self.import_controller.open_import_wizard(first_path)
         else:

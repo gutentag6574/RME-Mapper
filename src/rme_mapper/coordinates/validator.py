@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 import logging
+import math
 
 from rme_mapper.coordinates.converter import dms_to_decimal
 
@@ -151,6 +152,9 @@ class CoordinateValidator:
             sec = float(value)
         else:
             raise ValidationError("val.dms.enter_component", component="секунды", coord_label=coord_label)
+
+        if not math.isfinite(sec):
+            raise ValidationError("val.dms.seconds_must_be_number", coord_label=coord_label)
 
         return sec
 

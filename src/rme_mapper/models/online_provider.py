@@ -121,7 +121,6 @@ class OnlineTileProvider:
             "logo_required": self.logo_required,
             "additional_attribution": self.additional_attribution,
             "requires_api_key": self.requires_api_key,
-            "api_key_param_name": self.api_key_param_name,
             "api_key_env_name": self.api_key_env_name,
             "api_key_param_name": self.api_key_param_name,
             "subdomains": list(self.subdomains),
@@ -267,7 +266,15 @@ class ProviderRegistry:
         api_key_param_name: str | None = None,
     ) -> OnlineTileProvider:
         """Создание и регистрация пользовательского провайдера Custom XYZ."""
-        safe_id = id or ("custom_" + re.sub(r"[^a-zA-Z0-9_]", "_", name.strip().lower()))
+        if id:
+            safe_id = id
+        else:
+            import hashlib
+
+            raw_name = name.strip()
+            slug = re.sub(r"[^a-zA-Z0-9_]", "_", raw_name.lower()).strip("_")
+            digest = hashlib.sha256(f"{raw_name}\0{url_template.strip()}".encode("utf-8")).hexdigest()[:8]
+            safe_id = f"custom_{slug}_{digest}" if slug else f"custom_{digest}"
         provider = OnlineTileProvider(
             id=safe_id,
             display_name=name.strip(),

@@ -1335,6 +1335,129 @@ def test_med04_dialogs_and_workspace_layout(qapp, tmp_path, monkeypatch):
     assert dialog_opened == [True]
 
 
+def test_med05_models_validation_field_import_and_capabilities(qapp, tmp_path, monkeypatch):
+    """MED-05: Verify custom provider IDs, MapProfile control_points, NaN validation, GPX/KML parsing, .tsv drag-drop, and startup init order."""
+    from pathlib import Path
+    from types import SimpleNamespace
+    from PySide6.QtCore import QMimeData, QPointF, Qt, QUrl
+
+    from rme_mapper.coordinates.validator import CoordinateValidator, ValidationError
+    from rme_mapper.models.georeference import ControlPoint
+    from rme_mapper.models.map_profile import MapProfile
+    from rme_mapper.models.online_provider import ProviderRegistry
+    from rme_mapper.models.point_style import StyleValidator
+    from rme_mapper.services.field_import_service import read_field_file
+    from rme_mapper.services.runtime_capabilities import RuntimeCapabilities
+    from rme_mapper.ui.main_window import MainWindow
+
+    # 1. Distinct IDs for Cyrillic custom providers & no duplicate keys in OnlineTileProvider.to_dict AST
+    import ast
+    provider_ast = ast.parse(Path("d:/RME-Mapper/src/rme_mapper/models/online_provider.py").read_text(encoding="utf-8"))
+    for node in ast.walk(provider_ast):
+        if isinstance(node, ast.FunctionDef) and node.name == "to_dict":
+            for inner in ast.walk(node):
+                if isinstance(inner, ast.Dict):
+                    str_keys = [k.value for k in inner.keys if isinstance(k, ast.Constant) and isinstance(k.value, str)]
+                    assert len(str_keys) == len(set(str_keys)), f"Duplicate keys in to_dict: {str_keys}"
+
+    p1 = ProviderRegistry.create_custom_provider(name="Москва", url_template="https://a.example.com/{z}/{x}/{y}.png", attribution="© A")
+    p2 = ProviderRegistry.create_custom_provider(name="Казань", url_template="https://b.example.com/{z}/{x}/{y}.png", attribution="© B")
+    try:
+        assert p1.id != p2.id
+    finally:
+        ProviderRegistry._providers.pop(p1.id, None)
+        ProviderRegistry._providers.pop(p2.id, None)
+
+    # 2. Top-level control_points in MapProfile converted to ControlPoint
+    profile = MapProfile.from_dict({
+        "id": "m1",
+        "name": "M1",
+        "source": {"type": "georeferenced_image", "path": "img.png"},
+        "control_points": [{"pixel_x": 1.0, "pixel_y": 2.0, "world_x": 37.5, "world_y": 55.7}],
+    })
+    assert profile.control_points is not None and len(profile.control_points) == 1
+    assert isinstance(profile.control_points[0], ControlPoint)
+
+    # 3. Point style NaN raises ValidationError (no raw ValueError from round)
+    for fn in (
+        StyleValidator.validate_size,
+        StyleValidator.validate_stroke_width,
+        StyleValidator.validate_border_width,
+        StyleValidator.validate_opacity,
+    ):
+        try:
+            fn(float("nan"))
+            raise AssertionError(f"Expected ValidationError from {fn.__name__}")
+        except ValidationError:
+            pass
+
+    # 4. DMS seconds NaN/Inf raises ValidationError
+    for args in ((55, 30, "nan", "N"), (55, 30, float("inf"), "N")):
+        try:
+            CoordinateValidator.validate_dms_latitude(*args)
+            raise AssertionError("Expected ValidationError for nonfinite DMS seconds")
+        except ValidationError:
+            pass
+
+    # 5. Field import GPX missing lat/lon -> ValueError; KML spaces after comma & unnamed line numbering
+    bad_gpx = tmp_path / "bad.gpx"
+    bad_gpx.write_text('<gpx><wpt lat="55.7"><name>A</name></wpt></gpx>', encoding="utf-8")
+    try:
+        read_field_file(bad_gpx)
+        raise AssertionError("Expected ValueError for GPX missing lon")
+    except ValueError:
+        pass
+
+    kml_file = tmp_path / "lines.kml"
+    kml_file.write_text(
+        '<kml><Document>'
+        '<Placemark><Point><coordinates>37.6, 55.7, 0</coordinates></Point></Placemark>'
+        '<Placemark><LineString><coordinates>37.6, 55.7 37.7, 55.8</coordinates></LineString></Placemark>'
+        '<Placemark><LineString><coordinates>37.8, 55.9 37.9, 56.0</coordinates></LineString></Placemark>'
+        '</Document></kml>',
+        encoding="utf-8",
+    )
+    pts, anns = read_field_file(kml_file)
+    assert len(pts) == 1
+    assert abs(pts[0].longitude - 37.6) < 1e-6
+    assert len(anns) == 2
+    assert anns[0]["name"] == "1" and anns[1]["name"] == "2"
+
+    # 6. MainWindow accepts .tsv on dragEnterEvent and dropEvent
+    tsv_path = tmp_path / "points.tsv"
+    tsv_path.write_text("lat\tlon\n55.7\t37.6\n", encoding="utf-8")
+    opened_wizard = []
+    accepted_flags = []
+
+    class _DummyEvent:
+        def __init__(self, path: Path):
+            self._mime = QMimeData()
+            self._mime.setUrls([QUrl.fromLocalFile(str(path))])
+        def mimeData(self):
+            return self._mime
+        def acceptProposedAction(self):
+            accepted_flags.append(True)
+        def ignore(self):
+            accepted_flags.append(False)
+
+    dummy_win = SimpleNamespace(
+        import_controller=SimpleNamespace(open_import_wizard=lambda p: opened_wizard.append(p)),
+        open_map=lambda p: None,
+        project_controller=SimpleNamespace(open_project_workflow=lambda p: None),
+        import_field_file=lambda p: None,
+    )
+    MainWindow.dragEnterEvent(dummy_win, _DummyEvent(tsv_path))
+    MainWindow.dropEvent(dummy_win, _DummyEvent(tsv_path))
+    assert accepted_flags == [True, True]
+    assert opened_wizard == [tsv_path]
+
+    # 7. RuntimeCapabilities unknown source_type returns False & main.py calls log_runtime_environment after QApplication
+    assert RuntimeCapabilities.supports_source_type("unknown_backend") is False
+    main_src = Path("d:/RME-Mapper/src/rme_mapper/main.py").read_text(encoding="utf-8")
+    assert main_src.index("QApplication(sys.argv)") < main_src.index("log_runtime_environment()")
+
+
+
 
 
 
