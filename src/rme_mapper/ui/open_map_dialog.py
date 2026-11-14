@@ -435,7 +435,11 @@ class OpenMapDialog(QDialog):
         from rme_mapper.i18n import tr
 
         if not path.is_file():
-            QMessageBox.warning(self, "Ошибка", f"Файл не существует:\n{path}")
+            QMessageBox.warning(
+                self,
+                tr("dialog.error_title"),
+                tr("dialog.open_map.file_not_exists", path=path),
+            )
             return
 
         # Clear previous selection before inspecting another file.
@@ -768,8 +772,8 @@ class OpenMapDialog(QDialog):
             if not selected_layer_names:
                 QMessageBox.warning(
                     self,
-                    "Слои не выбраны",
-                    "Выберите хотя бы один слой для отображения на карте.",
+                    tr("dialog.open_map.no_layers_title"),
+                    tr("dialog.open_map.no_layers_msg"),
                 )
                 return
 

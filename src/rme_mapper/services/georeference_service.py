@@ -41,7 +41,8 @@ class GeoreferenceService:
         if p.suffix.lower() not in WORLD_FILE_EXTENSIONS:
             return p
         if not p.is_file():
-            raise FileNotFoundError(f"Файл привязки не найден: {p}")
+            from rme_mapper.i18n import tr
+            raise FileNotFoundError(tr("err.georef.world_file_not_found", path=p))
         families = {
             ".pgw": {".png"}, ".pngw": {".png"},
             ".jgw": {".jpg", ".jpeg"}, ".jpgw": {".jpg"}, ".jpegw": {".jpeg"},
@@ -51,7 +52,8 @@ class GeoreferenceService:
         matches = [f for f in p.parent.iterdir() if f.is_file()
                    and f.stem.casefold() == p.stem.casefold() and f.suffix.lower() in extensions]
         if len(matches) != 1:
-            raise ValueError(f"Для {p.name} требуется одно изображение с тем же именем в той же папке.")
+            from rme_mapper.i18n import tr
+            raise ValueError(tr("err.georef.world_image_missing", name=p.name))
         return matches[0]
 
     @staticmethod
@@ -75,13 +77,16 @@ class GeoreferenceService:
         try:
             values = [float(line.strip()) for line in world.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
         except (ValueError, UnicodeError) as exc:
-            raise ValueError(f"Некорректный файл привязки {world.name}: требуется 6 чисел.") from exc
+            from rme_mapper.i18n import tr
+            raise ValueError(tr("err.georef.world_invalid_6_nums", name=world.name)) from exc
         if len(values) != 6 or not all(math.isfinite(v) for v in values):
-            raise ValueError(f"Некорректный файл привязки {world.name}: требуется 6 конечных чисел.")
+            from rme_mapper.i18n import tr
+            raise ValueError(tr("err.georef.world_invalid_6_finite", name=world.name))
         a, d, b, e, center_x, center_y = values
         det = a * e - b * d
         if not math.isfinite(det) or det == 0:
-            raise ValueError(f"Вырожденная трансформация в {world.name}.")
+            from rme_mapper.i18n import tr
+            raise ValueError(tr("err.georef.world_degenerate", name=world.name))
         affine = (a, b, center_x - (a + b) / 2, d, e, center_y - (d + e) / 2)
         crs = None
         prj = next((f for f in image.parent.iterdir() if f.is_file()
@@ -96,19 +101,24 @@ class GeoreferenceService:
     @staticmethod
     def inspect_image(path: Path | str) -> dict[str, Any]:
         """Инспекция метаданных растрового изображения без полной загрузки в память."""
+        from rme_mapper.i18n import tr
         p = Path(path).resolve()
         if not p.is_file():
-            raise FileNotFoundError(f"Файл изображения не найден: {p}")
+            raise FileNotFoundError(tr("err.georef.image_not_found", path=p))
 
         ext = p.suffix.lower()
         if ext not in SUPPORTED_IMAGE_EXTENSIONS:
             raise ValueError(
-                f"Неподдерживаемый формат изображения '{ext}'. Поддерживаются: {', '.join(sorted(SUPPORTED_IMAGE_EXTENSIONS))}"
+                tr(
+                    "err.georef.image_unsupported_ext",
+                    ext=ext,
+                    allowed=", ".join(sorted(SUPPORTED_IMAGE_EXTENSIONS)),
+                )
             )
 
         file_size = p.stat().st_size
         if file_size == 0:
-            raise ValueError("Файл изображения имеет нулевой размер (0 байт).")
+            raise ValueError(tr("err.georef.image_empty_file"))
 
         try:
             with Image.open(p) as img:
@@ -120,8 +130,13 @@ class GeoreferenceService:
                 num_pixels = raw_w * raw_h
                 if num_pixels > MAX_SAFE_PIXELS:
                     raise ValueError(
-                        f"Разрешение изображения ({raw_w} × {raw_h} = {num_pixels / 1e6:.1f} Мпкс) "
-                        f"превышает предел безопасности ({MAX_SAFE_PIXELS / 1e6:.1f} Мпкс)."
+                        tr(
+                            "err.georef.image_too_large",
+                            w=raw_w,
+                            h=raw_h,
+                            mp=num_pixels / 1e6,
+                            max_mp=MAX_SAFE_PIXELS / 1e6,
+                        )
                     )
 
                 # Проверка ориентации EXIF
@@ -144,7 +159,7 @@ class GeoreferenceService:
                 }
         except Exception as e:
             logger.warning("Ошибка инспекции файла изображения %s: %s", p, e)
-            raise ValueError(f"Не удалось открыть файл изображения: {e}") from e
+            raise ValueError(tr("err.georef.image_open_failed", error=e)) from e
 
     @staticmethod
     def load_preview_image(path: Path | str, max_dimension: int = 2048) -> tuple[QImage, tuple[int, int]]:
@@ -217,13 +232,14 @@ class GeoreferenceService:
         """
         if crs is not None:
             crs_str = crs
+        from rme_mapper.i18n import tr
         from rme_mapper.models.georeference import MAX_CONTROL_POINTS
         if len(control_points) > MAX_CONTROL_POINTS:
-            raise ValueError(f"Превышен лимит контрольных точек: максимум {MAX_CONTROL_POINTS}")
+            raise ValueError(tr("err.georef.max_control_points", max=MAX_CONTROL_POINTS))
 
         enabled_pts = [p for p in control_points if p.enabled]
         if len(enabled_pts) < 3:
-            raise ValueError("Недостаточно контрольных точек: требуется как минимум 3 активные точки.")
+            raise ValueError(tr("err.georef.min_control_points"))
 
         # 1. Извлечение координат
         px = np.array([float(p.pixel_x) for p in enabled_pts], dtype=np.float64)
@@ -242,7 +258,7 @@ class GeoreferenceService:
             or np.any(np.isinf(tx))
             or np.any(np.isinf(ty))
         ):
-            raise ValueError("Координаты контрольных точек содержат недопустимые значения (NaN или Inf).")
+            raise ValueError(tr("err.georef.non_finite_coords"))
 
         # 3. Проверка на дублирование пиксельных координат
         n = len(enabled_pts)
@@ -250,11 +266,19 @@ class GeoreferenceService:
             for j in range(i + 1, n):
                 if abs(px[i] - px[j]) < 1e-6 and abs(py[i] - py[j]) < 1e-6:
                     raise ValueError(
-                        f"Контрольные точки {enabled_pts[i].name or i+1} и {enabled_pts[j].name or j+1} имеют одинаковые координаты на изображении."
+                        tr(
+                            "err.georef.duplicate_pixel_coords",
+                            p1=enabled_pts[i].name or i + 1,
+                            p2=enabled_pts[j].name or j + 1,
+                        )
                     )
                 if abs(tx[i] - tx[j]) < 1e-9 and abs(ty[i] - ty[j]) < 1e-9:
                     raise ValueError(
-                        f"Контрольные точки {enabled_pts[i].name or i+1} и {enabled_pts[j].name or j+1} имеют одинаковые целевые координаты."
+                        tr(
+                            "err.georef.duplicate_target_coords",
+                            p1=enabled_pts[i].name or i + 1,
+                            p2=enabled_pts[j].name or j + 1,
+                        )
                     )
 
         # 4. Построение матрицы плана (Design Matrix) M: N x 3
@@ -266,15 +290,13 @@ class GeoreferenceService:
         # Ранг матрицы должен быть равен 3
         rank = np.linalg.matrix_rank(M, tol=1e-7)
         if rank < 3:
-            raise ValueError(
-                "Контрольные точки расположены на одной прямой (коллинеарны). Разместите точки по площади изображения."
-            )
+            raise ValueError(tr("err.georef.collinear_points"))
 
         # 6. Решение системы уравнений
         if n == 3:
             det = np.linalg.det(M)
             if abs(det) < 1e-10:
-                raise ValueError("Матрица контрольных точек вырождена (коллинеарность или близкие точки).")
+                raise ValueError(tr("err.georef.singular_matrix"))
             coeffs_x = np.linalg.solve(M, tx)
             coeffs_y = np.linalg.solve(M, ty)
         else:
@@ -288,7 +310,7 @@ class GeoreferenceService:
         # 7. Проверка вырожденности полученного аффинного преобразования
         det_affine = a * e - b * d
         if abs(det_affine) < 1e-15 or np.isnan(det_affine) or np.isinf(det_affine):
-            raise ValueError("Вычисленная трансформация вырождена (целевые координаты точек коллинеарны).")
+            raise ValueError(tr("err.georef.degenerate_transform"))
 
         # 8. Определение типа CRS (географическая или спроецированная) для расчета невязок в метрах
         is_geographic = False
@@ -297,7 +319,7 @@ class GeoreferenceService:
         try:
             parsed_crs = pyproj.CRS.from_user_input(crs_str)
         except Exception as e:
-            raise ValueError(f"Недопустимая или неподдерживаемая CRS: '{crs_str}'") from e
+            raise ValueError(tr("err.georef.invalid_crs", crs=crs_str)) from e
 
         is_geographic = parsed_crs.is_geographic
         if is_geographic:

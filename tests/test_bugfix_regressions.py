@@ -1564,6 +1564,142 @@ def test_section4_3_dark_theme_and_style_filter(qapp):
         tm.apply_theme(qapp, ThemeManager.THEME_LIGHT)
 
 
+def test_section4_2_i18n_english_localization(qapp, tmp_path):
+    """Section 4.2: Проверка полного двуязычного перевода UI, единиц и сообщений об ошибках."""
+    import re
+    import string
+    import pytest
+    from PySide6.QtGui import QImage
+    from PySide6.QtWidgets import QLabel
+
+    from rme_mapper.coordinates.converter import dms_to_decimal
+    from rme_mapper.coordinates.validator import CoordinateValidator, ValidationError
+    from rme_mapper.i18n import get_translation_service
+    from rme_mapper.i18n.translations_en import TRANSLATIONS_EN
+    from rme_mapper.i18n.translations_ru import TRANSLATIONS_RU
+    from rme_mapper.importers.import_service import ImportService
+    from rme_mapper.models.map_point import MapPoint
+    from rme_mapper.models.object_group import ObjectGroup
+    from rme_mapper.models.point_style import StyleValidator
+    from rme_mapper.models.project_data import ProjectData
+    from rme_mapper.services.geodesic_service import GeodesicService
+    from rme_mapper.services.georeference_service import GeoreferenceService
+    from rme_mapper.services.group_service import GroupService
+    from rme_mapper.services.object_export_service import ObjectExportFormat, ObjectExportOptions, ObjectExportService
+    from rme_mapper.ui.clipboard_coordinates_dialog import ClipboardCoordinatesDialog
+    from rme_mapper.ui.georeference_dialog import GeoreferenceDialog
+    from rme_mapper.ui.main_window import MainWindow
+    from rme_mapper.ui.panels.properties_panel import PropertiesPanel
+
+    assert set(TRANSLATIONS_RU.keys()) == set(TRANSLATIONS_EN.keys())
+    fmt = string.Formatter()
+    for key in TRANSLATIONS_RU:
+        ru_fields = {f for _, f, _, _ in fmt.parse(TRANSLATIONS_RU[key]) if f is not None}
+        en_fields = {f for _, f, _, _ in fmt.parse(TRANSLATIONS_EN[key]) if f is not None}
+        assert ru_fields == en_fields, f"Placeholder mismatch for {key}: {ru_fields} != {en_fields}"
+
+    ts = get_translation_service()
+    prev_lang = ts.get_language()
+    cyr_re = re.compile(r"[А-Яа-яЁё]")
+    try:
+        ts.set_language("en")
+
+        # 1. Dialogs & Panels
+        clip_dlg = ClipboardCoordinatesDialog("37.6\t55.7\tA\n")
+        try:
+            headers = [clip_dlg.table.horizontalHeaderItem(i).text() for i in range(5)]
+            assert headers[0] == "#"
+            assert headers[2] == "Longitude"
+            assert headers[3] == "Latitude"
+        finally:
+            clip_dlg.close()
+
+        raw_img = tmp_path / "geo.png"
+        QImage(32, 32, QImage.Format.Format_RGBA8888).save(str(raw_img))
+        geo_dlg = GeoreferenceDialog(raw_img)
+        try:
+            res_hdr = geo_dlg.points_table.horizontalHeaderItem(5).text()
+            assert "(m)" in res_hdr and "(м)" not in res_hdr
+            assert geo_dlg.lbl_cursor_coords.text().startswith("Size:")
+            with pytest.raises(RuntimeError) as exc:
+                geo_dlg.get_affine_transform()
+            assert not cyr_re.search(str(exc.value))
+        finally:
+            geo_dlg.close()
+
+        pp = PropertiesPanel()
+        try:
+            pt = MapPoint(name="Alpha", latitude=55.75, longitude=37.61, symbol="circle", size=14.0)
+            pp.update_properties(pt)
+            assert "px" in pp.prop_size_val.text()
+            assert not cyr_re.search(pp.prop_shape_val.text())
+        finally:
+            pp.close()
+
+        # 2. Validators, Models, Services without Cyrillic in EN mode
+        with pytest.raises(ValidationError) as exc:
+            StyleValidator.validate_rgb("abc", 0, 0)
+        assert "Red" in str(exc.value) and not cyr_re.search(str(exc.value))
+
+        with pytest.raises(ValidationError) as exc:
+            CoordinateValidator.validate_dms_latitude("", "0", "0", "N")
+        assert not cyr_re.search(str(exc.value))
+
+        for fn in (
+            lambda: dms_to_decimal(-1, 0, 0, "N"),
+            lambda: ObjectGroup(""),
+            lambda: ProjectData.from_dict("bad"),  # type: ignore[arg-type]
+            lambda: GeoreferenceService.compute_affine_transform([], "EPSG:4326"),
+            lambda: GeodesicService.parse_radius(""),
+            lambda: GroupService().delete_group("missing"),
+            lambda: ImportService._parse_dd_number(True),
+            lambda: ImportService._parse_int_component(True, "lat_deg"),
+            lambda: ObjectExportService.export_points(
+                [],
+                ObjectExportOptions(format=ObjectExportFormat.CSV, field_keys=["x", "y"], target_crs=""),
+                tmp_path / "out.csv",
+            ),
+        ):
+            with pytest.raises(Exception) as exc:
+                fn()
+            assert not cyr_re.search(str(exc.value)), f"Unexpected Cyrillic in EN error: {exc.value}"
+
+        # 3. Import auto-naming uses EN "Point 1"
+        from rme_mapper.importers.models import CoordinateFormat, ImportOptions
+        csv_path = tmp_path / "anon.csv"
+        csv_path.write_text("latitude;longitude\n55.75;37.61\n", encoding="utf-8")
+        res = ImportService().validate_file(csv_path, ImportOptions(coordinate_format=CoordinateFormat.DD))
+        assert res.rows[0].point.name == "Point 1"
+
+        # 4. MainWindow status coordinates: pyproj is_geographic (EPSG:4284) and projected precision + unit.m
+        class _FakeSettings:
+            def get_integer(self, key, default=6, min_v=0, max_v=10):
+                return 3
+
+        class _FakeMapController:
+            active_profile = object()
+            map_path = None
+            active_crs = "EPSG:4284"
+
+        class _DummyWin:
+            _settings_service = _FakeSettings()
+            map_controller = _FakeMapController()
+            status_coords_label = QLabel()
+
+        dummy = _DummyWin()
+        MainWindow._on_canvas_cursor_moved(dummy, 37.617635, 55.755814)
+        assert dummy.status_coords_label.text() == "X: 37.618  Y: 55.756"
+
+        dummy.map_controller.active_crs = "EPSG:32639"
+        MainWindow._on_canvas_cursor_moved(dummy, 500000.0, 6100000.0)
+        proj_txt = dummy.status_coords_label.text()
+        assert " m  Y: " in proj_txt and " м " not in proj_txt
+        assert re.search(r"\(\d+\.\d{3}, \d+\.\d{3}\)", proj_txt)
+    finally:
+        ts.set_language(prev_lang)
+
+
+
 
 
 

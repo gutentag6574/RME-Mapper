@@ -366,7 +366,7 @@ class OnlineBasemapDialog(QDialog):
 
         if mtype is None:
             url = self._url_edit.text().strip()
-            attr = self._attr_edit.text().strip() or "Custom XYZ"
+            attr = self._attr_edit.text().strip() or tr("dialog.online_map.default_custom_attribution")
             attr_req = self._chk_mandatory_attr.isChecked()
             import hashlib
             if not OnlineTileProvider.validate_url_template(url):

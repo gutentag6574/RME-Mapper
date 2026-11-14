@@ -1074,7 +1074,8 @@ class ImportService:
                 )
                 result.rows.append(row_item)
             else:
-                final_name = name_str if name_str else f"Точка {auto_point_counter}"
+                from rme_mapper.i18n import tr
+                final_name = name_str if name_str else tr("ux.default_point_name", index=auto_point_counter)
                 auto_point_counter += 1
 
                 pt = MapPoint(
@@ -1165,15 +1166,16 @@ class ImportService:
     @staticmethod
     def _parse_dd_number(val: Any) -> float:
         """Парсинг вещественного числа с поддержкой точки и запятой."""
+        from rme_mapper.i18n import tr
         if isinstance(val, bool):
-            raise ValueError(f"Булево значение недопустимо: {val}")
+            raise ValueError(tr("import.err.bool_not_allowed", value=val))
         if isinstance(val, (int, float)):
             num = float(val)
         else:
             s = str(val).strip().replace(",", ".")
             num = float(s)
         if not math.isfinite(num):
-            raise ValueError(f"Неконечное числовое значение: {val}")
+            raise ValueError(tr("import.err.non_finite_number", value=val))
         return num
 
     def _validate_dms_row(
@@ -1286,30 +1288,32 @@ class ImportService:
     @staticmethod
     def _parse_int_component(val: Any, name: str) -> int:
         """Парсинг целого компонента DMS."""
+        from rme_mapper.i18n import tr
         if isinstance(val, bool):
-            raise ValueError(f"Компонент {name} обязан быть целым числом: {val}")
+            raise ValueError(tr("import.err.dms_comp_int", name=name, value=val))
         if isinstance(val, int):
             return val
         if isinstance(val, float):
             if math.isfinite(val) and val.is_integer():
                 return int(val)
-            raise ValueError(f"Компонент {name} обязан быть целым числом: {val}")
+            raise ValueError(tr("import.err.dms_comp_int", name=name, value=val))
         s = str(val).strip().replace(",", ".")
         f = float(s)
         if not (math.isfinite(f) and f.is_integer()):
-            raise ValueError(f"Компонент {name} обязан быть целым числом: {val}")
+            raise ValueError(tr("import.err.dms_comp_int", name=name, value=val))
         return int(f)
 
     @staticmethod
     def _parse_float_component(val: Any, name: str) -> float:
         """Парсинг вещественного компонента секунд DMS."""
+        from rme_mapper.i18n import tr
         if isinstance(val, bool):
-            raise ValueError(f"Компонент {name} обязан быть числом: {val}")
+            raise ValueError(tr("import.err.dms_comp_num", name=name, value=val))
         if isinstance(val, (int, float)):
             num = float(val)
         else:
             s = str(val).strip().replace(",", ".")
             num = float(s)
         if not math.isfinite(num):
-            raise ValueError(f"Компонент {name} обязан быть конечным числом: {val}")
+            raise ValueError(tr("import.err.dms_comp_finite", name=name, value=val))
         return num

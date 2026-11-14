@@ -64,7 +64,8 @@ class ControlPoint:
     def from_dict(cls, data: dict[str, Any]) -> "ControlPoint":
         """Десериализация контрольной точки из словаря."""
         if not isinstance(data, dict):
-            raise ValueError("Данные контрольной точки должны быть словарем")
+            from rme_mapper.i18n import tr
+            raise ValueError(tr("err.georef.gcp_dict_required"))
 
         res_x = data.get("residual_x")
         res_y = data.get("residual_y")

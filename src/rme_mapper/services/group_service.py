@@ -41,7 +41,8 @@ class GroupService:
 
         # Проверка уникальности имени без учёта регистра
         if self.find_group_by_name(cleaned_name) is not None:
-            raise ValueError(f"Группа с названием '{cleaned_name}' уже существует.")
+            from rme_mapper.i18n import tr
+            raise ValueError(tr("err.group.already_exists", name=cleaned_name))
 
         kwargs = {
             "name": cleaned_name,
@@ -67,14 +68,15 @@ class GroupService:
         new_description: str | None = None,
     ) -> ObjectGroup:
         """Переименование группы и/или обновление её описания."""
+        from rme_mapper.i18n import tr
         group = self.get_group(group_id)
         if not group:
-            raise KeyError(f"Группа с id '{group_id}' не найдена.")
+            raise KeyError(tr("err.group.not_found", group_id=group_id))
 
         cleaned_name = validate_group_name(new_name)
         existing = self.find_group_by_name(cleaned_name)
         if existing and existing.id != group_id:
-            raise ValueError(f"Группа с названием '{cleaned_name}' уже существует.")
+            raise ValueError(tr("err.group.already_exists", name=cleaned_name))
 
         group.name = cleaned_name
         if new_description is not None:
@@ -86,7 +88,8 @@ class GroupService:
     def delete_group(self, group_id: str) -> ObjectGroup:
         """Удаление группы из реестра. Точки группы не удаляются (обрабатываются вызывающей стороной)."""
         if group_id not in self._groups:
-            raise KeyError(f"Группа с id '{group_id}' не найдена.")
+            from rme_mapper.i18n import tr
+            raise KeyError(tr("err.group.not_found", group_id=group_id))
         group = self._groups.pop(group_id)
         logger.info("Группа удалена: id=%s, name='%s'", group.id, group.name)
         return group
@@ -111,7 +114,8 @@ class GroupService:
         """Управление видимостью группы."""
         group = self.get_group(group_id)
         if not group:
-            raise KeyError(f"Группа с id '{group_id}' не найдена.")
+            from rme_mapper.i18n import tr
+            raise KeyError(tr("err.group.not_found", group_id=group_id))
         group.visible = bool(visible)
         logger.info("Видимость группы '%s' изменена на %s", group.name, group.visible)
 

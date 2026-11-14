@@ -61,13 +61,13 @@ class ClipboardCoordinatesDialog(QDialog):
             self.delimiter.addItem(label, value)
         self.skip_header = QCheckBox(tr("ux.skip_header"))
         self.x_column, self.y_column, self.name_column = QComboBox(), QComboBox(), QComboBox()
-        for label, widget in ((tr("ux.separator"), self.delimiter), ("X / Easting / Lon", self.x_column), ("Y / Northing / Lat", self.y_column), (tr("ux.name"), self.name_column)):
+        for label, widget in ((tr("ux.separator"), self.delimiter), (tr("ux.col_x_easting_lon"), self.x_column), (tr("ux.col_y_northing_lat"), self.y_column), (tr("ux.name"), self.name_column)):
             row.addWidget(QLabel(label))
             row.addWidget(widget)
         layout.addLayout(row)
         layout.addWidget(self.skip_header)
         self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["№", tr("ux.name"), "Longitude", "Latitude", tr("ux.validation")])
+        self.table.setHorizontalHeaderLabels([tr("table.col_index"), tr("ux.name"), tr("table.col_lon"), tr("table.col_lat"), tr("ux.validation")])
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.table, 1)
         self.status = QLabel()

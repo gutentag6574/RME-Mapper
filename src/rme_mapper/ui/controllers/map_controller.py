@@ -474,7 +474,10 @@ class MapController(QObject):
 
             except Exception as raster_err:
                 logger.exception("Ошибка при загрузке растровой карты %s: %s", path, raster_err)
-                self._handle_map_load_error(f"Ошибка чтения GeoTIFF:\n{raster_err}", tr("status.error_geotiff_load"))
+                self._handle_map_load_error(
+                    tr("msg.geotiff_read_error", error=raster_err),
+                    tr("status.error_geotiff_load"),
+                )
                 return
 
         # -------------------------------------------------------------
@@ -525,7 +528,7 @@ class MapController(QObject):
                     logger.exception("Ошибка загрузки слоя '%s': %s", layer.display_name, layer_err)
                     if (profile and profile.boundary_required and layer.role == LayerRole.BOUNDARY):
                         self._handle_map_load_error(
-                            f"Ошибка чтения границы карты:\n{layer_err}",
+                            tr("msg.boundary_read_error", error=layer_err),
                             tr("status.error_boundary_read"),
                         )
                         return
@@ -558,7 +561,7 @@ class MapController(QObject):
 
         except Exception as e:
             logger.exception("Критическая ошибка при загрузке карты из %s: %s", path, e)
-            self._handle_map_load_error(f"Ошибка при чтении карты:\n{e}", tr("status.error_map_load"))
+            self._handle_map_load_error(tr("msg.map_read_error", error=e), tr("status.error_map_load"))
 
     def set_layer_visibility(self, layer_id: str, visible: bool) -> None:
         """Переключение видимости слоя и обновление состояния."""
@@ -656,7 +659,7 @@ class MapController(QObject):
 
         except Exception as e:
             logger.exception("Ошибка при загрузке геопривязанного изображения %s: %s", path, e)
-            self._handle_map_load_error(f"Ошибка чтения изображения:\n{e}", tr("status.error_image_load"))
+            self._handle_map_load_error(tr("msg.image_read_error", error=e), tr("status.error_image_load"))
 
     def edit_georeferencing(self, on_applied: Any = None, undo_manager: Any = None) -> bool:
         """Открытие диалога повторного редактирования геопривязки текущей карты (Stage 21)."""

@@ -1573,19 +1573,39 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
 
         crs = self.map_controller.active_crs or "OGC:CRS84"
         from rme_mapper.services.coordinate_service import CoordinateService
+        import pyproj
 
-        is_geo = "4326" in crs or "CRS84" in crs.upper()
+        prec = 6
+        if self._settings_service and hasattr(self._settings_service, "get_integer"):
+            prec = self._settings_service.get_integer("coordinates/precision", 6, 0, 10)
+
+        try:
+            is_geo = pyproj.CRS.from_user_input(crs).is_geographic
+        except Exception:
+            is_geo = "4326" in crs or "CRS84" in crs.upper()
 
         if is_geo:
             lon, lat = map_x, map_y
-            self.status_coords_label.setText(f"X: {lon:.6f}  Y: {lat:.6f}")
+            self.status_coords_label.setText(f"X: {lon:.{prec}f}  Y: {lat:.{prec}f}")
         else:
             mx, my = map_x, map_y
+            unit_m = tr("unit.m")
             try:
                 lon, lat = CoordinateService.transform_xy(mx, my, source_crs=crs, target_crs="OGC:CRS84")
-                self.status_coords_label.setText(f"X: {mx:.2f} м  Y: {my:.2f} м  ({lat:.6f}, {lon:.6f})")
+                self.status_coords_label.setText(
+                    tr(
+                        "status.coords_projected",
+                        mx=mx,
+                        my=my,
+                        unit=unit_m,
+                        lat=f"{lat:.{prec}f}",
+                        lon=f"{lon:.{prec}f}",
+                    )
+                )
             except Exception:
-                self.status_coords_label.setText(f"X: {mx:.2f} м  Y: {my:.2f} м")
+                self.status_coords_label.setText(
+                    tr("status.coords_projected_only", mx=mx, my=my, unit=unit_m)
+                )
         self.status_coords_label.setVisible(True)
 
     def _on_canvas_cursor_left(self) -> None:
@@ -1794,9 +1814,9 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
 
         if not RuntimeCapabilities.supports_online_maps():
             reason = (
-                "Онлайн-карты недоступны: безопасный стек TLS 1.2+ не поддерживается в данной сборке."
+                tr("runtime.online_tls_unsupported_tooltip")
                 if not RuntimeCapabilities.supports_secure_tls()
-                else "Онлайн-карты недоступны: сетевой менеджер не поддерживается."
+                else tr("runtime.online_network_unsupported_tooltip")
             )
             if hasattr(self, "online_map_menu"):
                 self.online_map_menu.setEnabled(False)
@@ -1815,7 +1835,7 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         if not RuntimeCapabilities.supports_georeferencing():
             if hasattr(self, "georeference_image_action"):
                 self.georeference_image_action.setEnabled(False)
-                self.georeference_image_action.setToolTip("Геопривязка недоступна в данной сборке.")
+                self.georeference_image_action.setToolTip(tr("runtime.georef_unsupported_tooltip"))
 
     def load_online_standard_map(self) -> None:
         """Загрузка стандартной онлайн-карты OpenStreetMap."""
@@ -1823,8 +1843,8 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         if not RuntimeCapabilities.supports_online_maps():
             QMessageBox.warning(
                 self,
-                tr("dialog.online_map.title") or "Онлайн-карты",
-                "Онлайн-карты недоступны: безопасный стек TLS 1.2+ не поддерживается на данной платформе.",
+                tr("dialog.online_map.title"),
+                tr("runtime.online_tls_unsupported_warning"),
             )
             return
         from rme_mapper.models.online_provider import ProviderRegistry
@@ -1838,8 +1858,8 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         if not RuntimeCapabilities.supports_online_maps():
             QMessageBox.warning(
                 self,
-                tr("dialog.online_map.title") or "Онлайн-карты",
-                "Онлайн-карты недоступны: безопасный стек TLS 1.2+ не поддерживается на данной платформе.",
+                tr("dialog.online_map.title"),
+                tr("runtime.online_tls_unsupported_warning"),
             )
             return
         from rme_mapper.models.online_provider import ProviderRegistry
@@ -1863,8 +1883,8 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         if not RuntimeCapabilities.supports_online_maps():
             QMessageBox.warning(
                 self,
-                tr("dialog.online_map.title") or "Онлайн-карты",
-                "Онлайн-карты недоступны: безопасный стек TLS 1.2+ не поддерживается на данной платформе.",
+                tr("dialog.online_map.title"),
+                tr("runtime.online_tls_unsupported_warning"),
             )
             return
         from rme_mapper.models.online_provider import ProviderRegistry
@@ -1888,8 +1908,8 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         if not RuntimeCapabilities.supports_online_maps():
             QMessageBox.warning(
                 self,
-                tr("dialog.online_map.title") or "Онлайн-карты",
-                "Онлайн-карты недоступны: безопасный стек TLS 1.2+ не поддерживается на данной платформе.",
+                tr("dialog.online_map.title"),
+                tr("runtime.online_tls_unsupported_warning"),
             )
             return
         from rme_mapper.ui.online_basemap_dialog import OnlineBasemapDialog

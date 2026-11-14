@@ -1145,7 +1145,7 @@ class PointController(QObject):
         web_menu=menu.addMenu(tr("audit.open_location"))
         act_osm=web_menu.addAction("OpenStreetMap")
         act_google=web_menu.addAction("Google Maps")
-        act_yandex=web_menu.addAction("Яндекс Карты")
+        act_yandex=web_menu.addAction(tr("audit.open_yandex"))
         menu.addSeparator()
         act_delete = menu.addAction(tr("action.delete_point"))
 

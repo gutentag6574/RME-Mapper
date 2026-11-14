@@ -19,14 +19,15 @@ _HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 def validate_group_name(name: str) -> str:
     """Валидация названия группы: обязательно, trim whitespace, 1..200 символов."""
+    from rme_mapper.i18n import tr
     if not isinstance(name, str):
-        raise ValueError("Название группы должно быть строкой.")
+        raise ValueError(tr("val.group.name_type"))
     cleaned = name.strip()
     if not cleaned:
-        raise ValueError("Название группы не может быть пустым.")
+        raise ValueError(tr("val.group.name_empty"))
     if len(cleaned) > MAX_GROUP_NAME_LENGTH:
         raise ValueError(
-            f"Название группы не должно превышать {MAX_GROUP_NAME_LENGTH} символов (получено {len(cleaned)})."
+            tr("val.group.name_length_exact", max=MAX_GROUP_NAME_LENGTH, value=len(cleaned))
         )
     return cleaned
 
@@ -35,14 +36,15 @@ def validate_group_description(description: str) -> str:
     """Валидация описания группы: plain text, до 8192 символов, без HTML."""
     if not description:
         return ""
+    from rme_mapper.i18n import tr
     if not isinstance(description, str):
-        raise ValueError("Описание группы должно быть строкой.")
+        raise ValueError(tr("val.group.desc_type"))
     cleaned = description.strip()
     if _HTML_TAG_RE.search(cleaned):
-        raise ValueError("Описание группы не должно содержать HTML-разметку.")
+        raise ValueError(tr("val.group.desc_no_html"))
     if len(cleaned) > MAX_GROUP_DESCRIPTION_LENGTH:
         raise ValueError(
-            f"Описание группы не должно превышать {MAX_GROUP_DESCRIPTION_LENGTH} символов (получено {len(cleaned)})."
+            tr("val.group.desc_length_exact", max=MAX_GROUP_DESCRIPTION_LENGTH, value=len(cleaned))
         )
     return cleaned
 
@@ -69,7 +71,8 @@ class ObjectGroup:
     def from_dict(cls, data: dict[str, Any]) -> "ObjectGroup":
         """Создание экземпляра из словаря с валидацией."""
         if not isinstance(data, dict):
-            raise ValueError("Данные группы должны быть словарем.")
+            from rme_mapper.i18n import tr
+            raise ValueError(tr("val.group.dict_required"))
         raw_name = str(data.get("name") or "")
         group_id = str(data.get("id") or uuid4().hex)
         desc = str(data.get("description") or "")

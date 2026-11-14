@@ -32,13 +32,13 @@ def dms_to_decimal(
     sec = float(seconds)
 
     if deg < 0 or mn < 0 or sec < 0:
-        raise ValueError("Градусы, минуты и секунды не могут быть отрицательными.")
+        from rme_mapper.i18n import tr
+        raise ValueError(tr("val.dms.negative_components"))
 
     dir_clean = direction.strip().upper()
     if dir_clean not in {"N", "S", "E", "W"}:
-        raise ValueError(
-            f"Недопустимое направление '{direction}'. Разрешены только N, S, E, W."
-        )
+        from rme_mapper.i18n import tr
+        raise ValueError(tr("val.dms.invalid_direction", direction=direction))
 
     abs_value = deg + (mn / 60.0) + (sec / 3600.0)
 

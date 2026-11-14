@@ -420,12 +420,12 @@ class GeoreferenceDialog(QDialog):
 
         self.points_table = QTableWidget(0, 7, right_widget)
         self.points_table.setHorizontalHeaderLabels([
-            "№",
+            tr("table.col_index"),
             tr("dialog.georef.pixel_x"),
             tr("dialog.georef.pixel_y"),
             tr("dialog.georef.target_x"),
             tr("dialog.georef.target_y"),
-            f"{tr('dialog.georef.residual')} (м)",
+            f"{tr('dialog.georef.residual')} ({tr('unit.m')})",
             tr("dialog.georef.enable"),
         ])
         self.points_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -538,7 +538,7 @@ class GeoreferenceDialog(QDialog):
             extent = self.get_extent()
             self.review_text.setText(tr("ux.georef_review", name=self.image_path.name,
                 crs=self._active_crs, width=self._full_size[0], height=self._full_size[1],
-                rmse="—" if not self._control_points else f"{self._current_rmse:.3f} m", **extent))
+                rmse="—" if not self._control_points else f"{self._current_rmse:.3f} {tr('unit.m')}", **extent))
 
     def _load_image(self) -> None:
         """Инспекция и загрузка изображения в компонент предварительного просмотра."""
@@ -547,10 +547,22 @@ class GeoreferenceDialog(QDialog):
             qimg, full_size = GeoreferenceService.load_preview_image(self.image_path, max_dimension=2048)
             self._full_size = full_size
             self.image_view.set_image(qimg, full_size)
-            self.lbl_cursor_coords.setText(f"Размер: {full_size[0]} × {full_size[1]} px | Формат: {self._image_info['format']}")
+            self.lbl_cursor_coords.setText(
+                tr(
+                    "dialog.georef.image_size_format",
+                    width=full_size[0],
+                    height=full_size[1],
+                    unit=tr("unit.px"),
+                    fmt=self._image_info["format"],
+                )
+            )
         except Exception as e:
             logger.exception("Ошибка загрузки изображения %s: %s", self.image_path, e)
-            QMessageBox.critical(self, "Ошибка загрузки", f"Не удалось загрузить изображение:\n{e}")
+            QMessageBox.critical(
+                self,
+                tr("dialog.georef.load_error_title"),
+                tr("dialog.georef.load_error_msg", error=e),
+            )
             self.reject()
 
     def _update_crs_ui(self) -> None:
@@ -808,7 +820,7 @@ class GeoreferenceDialog(QDialog):
                     res_item.setText(res_str)
             self.points_table.blockSignals(False)
 
-            self.lbl_rmse.setText(f"{tr('dialog.georef.rmse')} {rmse:.2f} м")
+            self.lbl_rmse.setText(f"{tr('dialog.georef.rmse')} {rmse:.2f} {tr('unit.m')}")
             self.lbl_status_msg.setText("")
             self.btn_apply.setEnabled(True)
 
@@ -837,14 +849,21 @@ class GeoreferenceDialog(QDialog):
         xs = [c_tl[0], c_tr[0], c_bl[0], c_br[0]]
         ys = [c_tl[1], c_tr[1], c_bl[1], c_br[1]]
 
-        msg = (
-            f"Аффинные коэффициенты:\n"
-            f"X = {a:.8f}·x + {b:.8f}·y + {c:.4f}\n"
-            f"Y = {d:.8f}·x + {e:.8f}·y + {f:.4f}\n\n"
-            f"Охват карты в {self._active_crs}:\n"
-            f"X: от {min(xs):.4f} до {max(xs):.4f}\n"
-            f"Y: от {min(ys):.4f} до {max(ys):.4f}\n\n"
-            f"RMSE: {self._current_rmse:.2f} м"
+        msg = tr(
+            "dialog.georef.preview_details",
+            a=a,
+            b=b,
+            c=c,
+            d=d,
+            e=e,
+            f=f,
+            crs=self._active_crs,
+            xmin=min(xs),
+            xmax=max(xs),
+            ymin=min(ys),
+            ymax=max(ys),
+            rmse=self._current_rmse,
+            unit=tr("unit.m"),
         )
         QMessageBox.information(self, tr("dialog.georef.preview"), msg)
 
@@ -891,7 +910,7 @@ class GeoreferenceDialog(QDialog):
     def get_affine_transform(self) -> tuple[float, float, float, float, float, float]:
         """Получение коэффициентов аффинной трансформации (a, b, c, d, e, f)."""
         if self._current_affine is None:
-            raise RuntimeError("Трансформация не вычислена")
+            raise RuntimeError(tr("dialog.georef.transform_not_computed"))
         return self._current_affine
 
     def get_control_points(self) -> list[ControlPoint]:

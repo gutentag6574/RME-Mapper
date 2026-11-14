@@ -317,7 +317,7 @@ class BulkPointStyleDialog(QDialog):
             self._update_color_sample(self.zone_color_sample, col)
 
     def _pick_zone_border_color(self) -> None:
-        col = QColorDialog.getColor(self._zone_border_color, self, "Выбор цвета границы зоны")
+        col = QColorDialog.getColor(self._zone_border_color, self, tr("bulk_style.pick_zone_border_color"))
         if col.isValid():
             self._zone_border_color = col
             self._update_color_sample(self.zone_border_color_sample, col)
@@ -327,7 +327,7 @@ class BulkPointStyleDialog(QDialog):
             QMessageBox.information(
                 self,
                 tr("dialog.error_title"),
-                "Отметьте хотя бы одно свойство для применения.",
+                tr("bulk_style.select_at_least_one"),
             )
             return
 
@@ -341,7 +341,7 @@ class BulkPointStyleDialog(QDialog):
                 QMessageBox.warning(
                     self,
                     tr("dialog.error_title"),
-                    "Укажите корректный положительный радиус зоны.",
+                    tr("bulk_style.invalid_zone_radius"),
                 )
                 return
 

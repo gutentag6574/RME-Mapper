@@ -2405,11 +2405,13 @@ class MapCanvas(QGraphicsView):
         self.resetTransform()
 
         safe_message = html.escape(str(message))
+        from rme_mapper.i18n import tr
+
         text_item = QGraphicsTextItem()
         text_item.setHtml(
             f"""
             <div style="text-align: center; color: #D32F2F; font-family: sans-serif;">
-                <h3 style="margin-bottom: 8px;">Ошибка загрузки карты</h3>
+                <h3 style="margin-bottom: 8px;">{html.escape(tr("map.canvas_load_error_heading"))}</h3>
                 <p style="color: #555555; white-space: pre-line;">{safe_message}</p>
             </div>
             """

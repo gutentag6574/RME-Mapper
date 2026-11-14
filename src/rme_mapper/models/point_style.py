@@ -116,9 +116,10 @@ class StyleValidator:
     @classmethod
     def validate_rgb(cls, red: Any, green: Any, blue: Any) -> tuple[int, int, int]:
         """Комплексная проверка трех компонент цвета RGB."""
-        r = cls.validate_rgb_component(red, "Red (красный)")
-        g = cls.validate_rgb_component(green, "Green (зеленый)")
-        b = cls.validate_rgb_component(blue, "Blue (синий)")
+        from rme_mapper.i18n import tr
+        r = cls.validate_rgb_component(red, tr("val.style.rgb_red"))
+        g = cls.validate_rgb_component(green, tr("val.style.rgb_green"))
+        b = cls.validate_rgb_component(blue, tr("val.style.rgb_blue"))
         return r, g, b
 
     @classmethod

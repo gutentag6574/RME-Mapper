@@ -311,24 +311,29 @@ class ProjectData:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ProjectData":
         """Десериализация проекта из словаря."""
+        from rme_mapper.i18n import tr
         if not isinstance(data, dict):
-            raise ValueError("Данные проекта должны быть JSON-объектом (словарем).")
+            raise ValueError(tr("err.project.dict_required"))
 
         fmt = data.get("format")
         if fmt not in SUPPORTED_PROJECT_FORMATS:
             raise ValueError(
-                f"Неподдерживаемый формат проекта: '{fmt}'. "
-                f"Ожидается '{PRIMARY_PROJECT_FORMAT}' или '{LEGACY_PROJECT_FORMAT}'."
+                tr(
+                    "err.project.unsupported_format",
+                    fmt=fmt,
+                    primary=PRIMARY_PROJECT_FORMAT,
+                    legacy=LEGACY_PROJECT_FORMAT,
+                )
             )
 
         ver = data.get("version")
         if ver is None:
-            raise ValueError("В файле проекта отсутствует поле 'version'.")
+            raise ValueError(tr("err.project.missing_version"))
 
         try:
             ver_int = int(ver)
         except (ValueError, TypeError):
-            raise ValueError(f"Некорректная версия проекта: '{ver}'.")
+            raise ValueError(tr("err.project.invalid_version", ver=ver))
 
         map_data = ProjectMapData.from_dict(data.get("map"))
 

@@ -305,10 +305,11 @@ class PropertiesPanel(QWidget):
         self.prop_description_val.setText(point.description or "—")
         self.prop_visibility_val.setText(tr("properties.visible_yes") if point.visible else tr("properties.visible_no"))
 
+        px_unit = tr("unit.px")
         self.prop_lat_val.setText(f"{point.latitude:.6f}")
         self.prop_lon_val.setText(f"{point.longitude:.6f}")
         self.prop_shape_val.setText(get_symbol_display_name(point.symbol))
-        self.prop_size_val.setText(f"{point.size:.1f} px")
+        self.prop_size_val.setText(f"{point.size:.1f} {px_unit}")
         self.prop_color_val.setText(f"RGB({point.red}, {point.green}, {point.blue})")
         self.prop_color_swatch.setStyleSheet(
             f"background-color: rgb({point.red}, {point.green}, {point.blue}); "
@@ -316,7 +317,7 @@ class PropertiesPanel(QWidget):
         )
         self.prop_opacity_val.setText(f"{int(point.opacity)}%")
         self.prop_stroke_val.setText(
-            f"RGB({point.stroke_red}, {point.stroke_green}, {point.stroke_blue}), {point.stroke_width:.1f} px"
+            f"RGB({point.stroke_red}, {point.stroke_green}, {point.stroke_blue}), {point.stroke_width:.1f} {px_unit}"
         )
         self.prop_stroke_swatch.setStyleSheet(
             f"background-color: rgb({point.stroke_red}, {point.stroke_green}, {point.stroke_blue}); "
@@ -335,7 +336,7 @@ class PropertiesPanel(QWidget):
             b_style_name = tr(f"border_style.{point.zone_border_style}") if get_translation_service().has_translation(f"border_style.{point.zone_border_style}") else point.zone_border_style
             self.prop_zone_border_val.setText(
                 f"RGB({point.zone_border_red}, {point.zone_border_green}, {point.zone_border_blue}), "
-                f"{point.zone_border_width:.1f} px, {b_style_name}"
+                f"{point.zone_border_width:.1f} {px_unit}, {b_style_name}"
             )
             self.prop_zone_border_swatch.setStyleSheet(
                 f"background-color: rgb({point.zone_border_red}, {point.zone_border_green}, {point.zone_border_blue}); "

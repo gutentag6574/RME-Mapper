@@ -164,8 +164,14 @@ class ObjectExportService:
             except Exception as e:
                 logger.error("Ошибка проецирования точки %s в %s: %s", point.id, target_crs_str, e)
                 if any(k in options.field_keys for k in ("x", "y")):
+                    from rme_mapper.i18n import tr
                     raise ValueError(
-                        f"Не удалось преобразовать координаты точки '{point.name or point.id}' в целевую CRS '{target_crs_str}': {e}"
+                        tr(
+                            "err.export_obj.transform_failed",
+                            point=point.name or point.id,
+                            crs=target_crs_str,
+                            error=e,
+                        )
                     ) from e
                 x_val = None
                 y_val = None
@@ -225,16 +231,17 @@ class ObjectExportService:
         # Валидация Target CRS при запросе спроецированных координат (X/Y) или CRS
         needs_projected = any(k in options.field_keys for k in ("x", "y", "crs"))
         if needs_projected:
+            from rme_mapper.i18n import tr
             target_crs_str = (options.target_crs or "").strip()
             if not target_crs_str:
-                raise ValueError("Целевая система координат (Target CRS) не указана для экспорта координат X/Y.")
+                raise ValueError(tr("err.export_obj.target_crs_missing"))
             try:
                 import pyproj
                 crs_obj = pyproj.CRS.from_user_input(target_crs_str)
                 _ = pyproj.Transformer.from_crs("EPSG:4326", crs_obj, always_xy=True)
             except Exception as err:
                 raise ValueError(
-                    f"Недопустимая целевая система координат (Target CRS): '{target_crs_str}'. Ошибка: {err}"
+                    tr("err.export_obj.target_crs_invalid", crs=target_crs_str, error=err)
                 ) from err
 
         filtered_points = cls.filter_points(
@@ -281,7 +288,8 @@ class ObjectExportService:
                 group_service=group_service,
             )
         else:
-            raise ValueError(f"Неподдерживаемый формат экспорта: {fmt}")
+            from rme_mapper.i18n import tr
+            raise ValueError(tr("err.export_obj.unsupported_format", fmt=fmt))
 
     @classmethod
     def _export_delimited(

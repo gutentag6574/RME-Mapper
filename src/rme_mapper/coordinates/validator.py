@@ -137,13 +137,15 @@ class CoordinateValidator:
         coord_label: str,
     ) -> float:
         """Вспомогательный метод парсинга секунд DMS (поддерживает точку и запятую)."""
+        from rme_mapper.i18n import tr
+        sec_label = tr("val.dms.comp_seconds")
         if value is None:
-            raise ValidationError("val.dms.enter_component", component="секунды", coord_label=coord_label)
+            raise ValidationError("val.dms.enter_component", component=sec_label, coord_label=coord_label)
 
         if isinstance(value, str):
             cleaned = value.strip().replace(",", ".")
             if not cleaned:
-                raise ValidationError("val.dms.enter_component", component="секунды", coord_label=coord_label)
+                raise ValidationError("val.dms.enter_component", component=sec_label, coord_label=coord_label)
             try:
                 sec = float(cleaned)
             except ValueError:
@@ -151,7 +153,7 @@ class CoordinateValidator:
         elif isinstance(value, (int, float)):
             sec = float(value)
         else:
-            raise ValidationError("val.dms.enter_component", component="секунды", coord_label=coord_label)
+            raise ValidationError("val.dms.enter_component", component=sec_label, coord_label=coord_label)
 
         if not math.isfinite(sec):
             raise ValidationError("val.dms.seconds_must_be_number", coord_label=coord_label)
@@ -175,9 +177,11 @@ class CoordinateValidator:
             - Направление: 'N' или 'S'
             - При широте 90° минуты и секунды обязаны быть 0.
         """
-        deg = cls._parse_dms_int(degrees, "градусы", "широты")
-        mn = cls._parse_dms_int(minutes, "минуты", "широты")
-        sec = cls._parse_dms_seconds(seconds, "широты")
+        from rme_mapper.i18n import tr
+        lat_label = tr("val.dms.coord_latitude")
+        deg = cls._parse_dms_int(degrees, tr("val.dms.comp_degrees"), lat_label)
+        mn = cls._parse_dms_int(minutes, tr("val.dms.comp_minutes"), lat_label)
+        sec = cls._parse_dms_seconds(seconds, lat_label)
 
         if deg < 0 or deg > 90:
             raise ValidationError("val.dms.lat_deg_range", value=deg)
@@ -219,9 +223,11 @@ class CoordinateValidator:
             - Направление: 'E' или 'W'
             - При долготе 180° минуты и секунды обязаны быть 0.
         """
-        deg = cls._parse_dms_int(degrees, "градусы", "долготы")
-        mn = cls._parse_dms_int(minutes, "минуты", "долготы")
-        sec = cls._parse_dms_seconds(seconds, "долготы")
+        from rme_mapper.i18n import tr
+        lon_label = tr("val.dms.coord_longitude")
+        deg = cls._parse_dms_int(degrees, tr("val.dms.comp_degrees"), lon_label)
+        mn = cls._parse_dms_int(minutes, tr("val.dms.comp_minutes"), lon_label)
+        sec = cls._parse_dms_seconds(seconds, lon_label)
 
         if deg < 0 or deg > 180:
             raise ValidationError("val.dms.lon_deg_range", value=deg)

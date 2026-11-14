@@ -116,12 +116,13 @@ class MapProfile:
     @classmethod
     def from_dict(cls, data: dict[str, Any], base_dir: Path | None = None) -> "MapProfile":
         """Создание экземпляра MapProfile из словаря метаданных metadata.json."""
+        from rme_mapper.i18n import tr
         if not isinstance(data, dict):
-            raise ValueError("Метаданные карты должны быть словарем (JSON-объектом).")
+            raise ValueError(tr("err.map_profile.dict_required"))
 
         profile_id = str(data.get("id") or data.get("map_id") or "").strip()
         if not profile_id:
-            raise ValueError("В метаданных профиля карты отсутствует обязательное поле 'id'.")
+            raise ValueError(tr("err.map_profile.missing_id"))
 
         name = str(data.get("name") or profile_id).strip()
         description = data.get("description")

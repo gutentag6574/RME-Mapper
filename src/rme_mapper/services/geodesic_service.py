@@ -64,13 +64,16 @@ class GeodesicService:
             segments = num_points
 
         if longitude is None or latitude is None:
-            raise ValueError("Необходимо указать долготу и широту центральной точки.")
+            from rme_mapper.i18n import tr
+            raise ValueError(tr("err.geodesic.center_required"))
 
         if radius_m <= 0:
-            raise ValueError(f"Радиус должен быть положительным числом (> 0). Получено: {radius_m}")
+            from rme_mapper.i18n import tr
+            raise ValueError(tr("err.geodesic.radius_positive", value=radius_m))
 
         if segments < 16:
-            raise ValueError(f"Количество сегментов должно быть не менее 16. Получено: {segments}")
+            from rme_mapper.i18n import tr
+            raise ValueError(tr("err.geodesic.min_segments", value=segments))
 
         cache_key = (
             round(float(longitude), 6),
@@ -126,24 +129,25 @@ class GeodesicService:
             10, 10.5, '10,5'
             Единицы: 'м', 'm', 'км', 'km'.
         """
+        from rme_mapper.i18n import tr
         if value is None:
-            raise ValueError("Радиус не может быть пустым.")
+            raise ValueError(tr("err.geodesic.radius_empty"))
 
         if isinstance(value, str):
             cleaned = value.strip().replace(",", ".")
             if not cleaned:
-                raise ValueError("Радиус не может быть пустым.")
+                raise ValueError(tr("err.geodesic.radius_empty"))
             try:
                 num = float(cleaned)
             except ValueError:
-                raise ValueError(f"Некорректное числовое значение радиуса: '{value}'")
+                raise ValueError(tr("err.geodesic.radius_invalid_num", value=value))
         elif isinstance(value, (int, float)):
             num = float(value)
         else:
-            raise ValueError(f"Некорректный тип значения радиуса: {type(value).__name__}")
+            raise ValueError(tr("err.geodesic.radius_invalid_type", type=type(value).__name__))
 
         if num <= 0:
-            raise ValueError(f"Радиус должен быть больше 0. Получено: {num}")
+            raise ValueError(tr("err.geodesic.radius_gt_zero", value=num))
 
         unit_clean = unit.strip().lower()
         if unit_clean in {"км", "km"}:
@@ -151,7 +155,7 @@ class GeodesicService:
         elif unit_clean in {"м", "m"}:
             radius_m = num
         else:
-            raise ValueError(f"Неизвестная единица измерения: '{unit}'. Допустимы: 'м', 'км'.")
+            raise ValueError(tr("err.geodesic.unknown_unit", unit=unit))
 
         return radius_m
 
