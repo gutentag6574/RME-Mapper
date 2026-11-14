@@ -53,3 +53,4 @@ tools/innosetup/
 release/
 audit/
 *.zip
+smoke_success.txt

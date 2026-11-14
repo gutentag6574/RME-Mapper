@@ -12,6 +12,7 @@ if str(project_src) not in sys.path:
     sys.path.insert(0, str(project_src))
 
 import rme_mapper  # noqa: F401 - инициализирует PROJ_DATA, GDAL_DATA и DLL каталоги
+import rme_mapper.qt_compat  # noqa: F401 - подключает shim PySide6 для PySide2/PyQt5 на Win7
 
 from PySide6.QtWidgets import QApplication
 
@@ -58,6 +59,15 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
+
+    def _cleanup_backends() -> None:
+        try:
+            from rme_mapper.backends.factory import BackendFactory
+            BackendFactory.close_all()
+        except Exception:
+            pass
+
+    app.aboutToQuit.connect(_cleanup_backends)
 
     try:
         from rme_mapper.services.runtime_capabilities import RuntimeCapabilities
@@ -116,6 +126,7 @@ def main() -> int:
             app.processEvents()
             window.close()
             app.processEvents()
+            _cleanup_backends()
             try:
                 Path("smoke_success.txt").write_text("SMOKE-TEST SUCCESS", encoding="utf-8")
             except Exception:
@@ -124,6 +135,7 @@ def main() -> int:
             print("[SMOKE-TEST] SUCCESS")
             return 0
         except Exception as e:
+            _cleanup_backends()
             logger.error("[SMOKE-TEST] Ошибка при валидации: %s", e, exc_info=True)
             print(f"[SMOKE-TEST] FAILED: {e}", file=sys.stderr)
             return 1

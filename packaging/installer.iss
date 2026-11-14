@@ -55,8 +55,9 @@ Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Registry]
-; File association for *.gpmap
+; File association for *.gpmap and *.rmeproject
 Root: HKCU; Subkey: "Software\Classes\.gpmap"; ValueType: string; ValueName: ""; ValueData: "GeoPointMapper.Project"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.rmeproject"; ValueType: string; ValueName: ""; ValueData: "GeoPointMapper.Project"; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Classes\GeoPointMapper.Project"; ValueType: string; ValueName: ""; ValueData: "GeoPoint Mapper Project"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\GeoPointMapper.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName},0"
 Root: HKCU; Subkey: "Software\Classes\GeoPointMapper.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""

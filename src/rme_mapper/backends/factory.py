@@ -86,6 +86,18 @@ class BackendFactory:
         return cls._raster_instances[key]
 
     @classmethod
+    def close_all(cls) -> None:
+        """Закрытие всех кэшированных экземпляров растровых бэкендов и освобождение дескрипторов."""
+        for backend in list(cls._raster_instances.values()):
+            close_fn = getattr(backend, "close", None)
+            if callable(close_fn):
+                try:
+                    close_fn()
+                except Exception as exc:
+                    logger.debug("Ошибка при закрытии растрового бэкенда %s: %s", backend, exc)
+        cls._raster_instances.clear()
+
+    @classmethod
     def list_available(cls) -> list[str]:
         """Список зарегистрированных имен векторных бэкендов."""
         cls._ensure_defaults()

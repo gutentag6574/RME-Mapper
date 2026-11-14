@@ -92,8 +92,8 @@ def validate_release_dir(bundle_dir: Path) -> list[str]:
         "**/.pytest_cache",
         "**/__pycache__",
         "**/*.pyc",
-        "tests",
-        "scratch",
+        "**/tests",
+        "**/scratch",
     ]
     for pattern in forbidden_patterns:
         found = list(bundle_dir.glob(pattern))

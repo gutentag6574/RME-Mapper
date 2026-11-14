@@ -165,14 +165,9 @@ def clean_build_artifacts() -> None:
 def build_standalone(spec_file: Path) -> Path:
     """Запуск сборки Standalone onedir через PyInstaller."""
     log(f"Запуск сборки PyInstaller по спецификации {spec_file.name}...")
-    pyinstaller_exe = shutil.which("pyinstaller")
+    pyinstaller_exe = find_pyinstaller_executable()
     if not pyinstaller_exe:
-        # Поиск в виртуальном окружении
-        venv_pyinstaller = PROJECT_ROOT / ".venv" / "Scripts" / "pyinstaller.exe"
-        if venv_pyinstaller.exists():
-            pyinstaller_exe = str(venv_pyinstaller)
-        else:
-            raise FileNotFoundError("PyInstaller не найден в PATH или .venv/Scripts")
+        raise FileNotFoundError("PyInstaller не найден в PATH или .venv/Scripts")
 
     cmd = [pyinstaller_exe, "--noconfirm", "--clean", str(spec_file)]
     subprocess.run(cmd, cwd=PROJECT_ROOT, check=True)
@@ -243,27 +238,136 @@ def create_portable_zip(dist_dir: Path, output_zip: Path) -> Path:
     log(f"Portable архив создан: {output_zip} ({output_zip.stat().st_size / (1024*1024):.1f} MB)")
     return output_zip
 
-def get_canonical_version() -> str:
-    """Получение канонической версии приложения из src/rme_mapper/app_info.py."""
-    import re
-    app_info_path = PROJECT_ROOT / "src" / "rme_mapper" / "app_info.py"
-    content = app_info_path.read_text(encoding="utf-8")
-    m = re.search(r'APP_VERSION:\s*Final\[str\]\s*=\s*["\']([^"\']+)["\']', content)
-    if not m:
-        raise ValueError(f"Не удалось извлечь APP_VERSION из {app_info_path}")
-    return m.group(1)
+def find_pyinstaller_executable() -> str | None:
+    """Поиск исполняемого файла PyInstaller."""
+    exe = shutil.which("pyinstaller")
+    if exe:
+        return exe
+    venv_pyinstaller = PROJECT_ROOT / ".venv" / "Scripts" / "pyinstaller.exe"
+    if venv_pyinstaller.exists():
+        return str(venv_pyinstaller)
+    return None
 
 
-def build_installer(iss_file: Path, app_version: str) -> Path:
-    """Компиляция инсталлятора через Inno Setup Compiler (ISCC)."""
-    log(f"Компиляция инсталлятора для версии {app_version} через Inno Setup...")
+def find_iscc_executable() -> str | None:
+    """Поиск компилятора Inno Setup (ISCC.exe)."""
     iscc_candidates = [
         shutil.which("iscc"),
         str(PROJECT_ROOT / "tools" / "innosetup" / "ISCC.exe"),
         r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
         r"C:\Program Files\Inno Setup 6\ISCC.exe",
     ]
-    iscc_exe = next((c for c in iscc_candidates if c and Path(c).exists()), None)
+    return next((c for c in iscc_candidates if c and Path(c).exists()), None)
+
+
+def _read_pe_product_version(exe_path: Path) -> str | None:
+    """Чтение строкового ProductVersion/FileVersion из PE-ресурсов Windows."""
+    if sys.platform != "win32" or not exe_path.is_file():
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        version_dll = ctypes.windll.version
+        size = version_dll.GetFileVersionInfoSizeW(str(exe_path), None)
+        if not size:
+            return None
+        buf = ctypes.create_string_buffer(size)
+        if not version_dll.GetFileVersionInfoW(str(exe_path), 0, size, buf):
+            return None
+
+        class _VS_FIXEDFILEINFO(ctypes.Structure):
+            _fields_ = [
+                ("dwSignature", wintypes.DWORD),
+                ("dwStrucVersion", wintypes.DWORD),
+                ("dwFileVersionMS", wintypes.DWORD),
+                ("dwFileVersionLS", wintypes.DWORD),
+                ("dwProductVersionMS", wintypes.DWORD),
+                ("dwProductVersionLS", wintypes.DWORD),
+                ("dwFileFlagsMask", wintypes.DWORD),
+                ("dwFileFlags", wintypes.DWORD),
+                ("dwFileOS", wintypes.DWORD),
+                ("dwFileType", wintypes.DWORD),
+                ("dwFileSubtype", wintypes.DWORD),
+                ("dwFileDateMS", wintypes.DWORD),
+                ("dwFileDateLS", wintypes.DWORD),
+            ]
+
+        ptr = ctypes.c_void_p()
+        length = wintypes.UINT()
+        if not version_dll.VerQueryValueW(buf, "\\", ctypes.byref(ptr), ctypes.byref(length)):
+            return None
+        info = ctypes.cast(ptr, ctypes.POINTER(_VS_FIXEDFILEINFO)).contents
+        major = (info.dwProductVersionMS >> 16) & 0xFFFF
+        minor = info.dwProductVersionMS & 0xFFFF
+        patch = (info.dwProductVersionLS >> 16) & 0xFFFF
+        if major == 0 and minor == 0 and patch == 0:
+            return None
+        return f"{major}.{minor}.{patch}"
+    except Exception:
+        return None
+
+
+def get_pyinstaller_version() -> str:
+    """Определение фактической версии установленного PyInstaller."""
+    try:
+        import PyInstaller
+        ver = getattr(PyInstaller, "__version__", None)
+        if ver:
+            return f"PyInstaller {ver}"
+    except Exception:
+        pass
+
+    pyinstaller_exe = find_pyinstaller_executable()
+    if pyinstaller_exe:
+        try:
+            res = subprocess.run(
+                [pyinstaller_exe, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True,
+            )
+            ver = res.stdout.strip()
+            if ver:
+                return f"PyInstaller {ver}"
+        except Exception:
+            pass
+    return "PyInstaller (unknown)"
+
+
+def get_inno_setup_version(iscc_path: str | None = None) -> str:
+    """Определение фактической версии установленного Inno Setup."""
+    exe = iscc_path or find_iscc_executable()
+    if not exe:
+        return "Inno Setup (unknown)"
+
+    exe_path = Path(exe)
+    pe_ver = _read_pe_product_version(exe_path) or _read_pe_product_version(exe_path.parent / "unins000.exe")
+    if pe_ver:
+        return f"Inno Setup {pe_ver}"
+
+    try:
+        res = subprocess.run(
+            [str(exe_path), "/?"],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=10,
+        )
+        combined = f"{res.stdout}\n{res.stderr}"
+        m = re.search(r"Inno Setup\s+([0-9]+(?:\.[0-9]+)*)", combined)
+        if m:
+            return f"Inno Setup {m.group(1)}"
+    except Exception:
+        pass
+    return "Inno Setup (unknown)"
+
+
+def build_installer(iss_file: Path, app_version: str) -> Path:
+    """Компиляция инсталлятора через Inno Setup Compiler (ISCC)."""
+    log(f"Компиляция инсталлятора для версии {app_version} через Inno Setup...")
+    iscc_exe = find_iscc_executable()
     if not iscc_exe:
         raise FileNotFoundError("Inno Setup Compiler (ISCC.exe) не найден.")
 
@@ -370,8 +474,8 @@ def main() -> int:
         "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
         "architecture": "x64 (AMD64)",
         "qt_binding": "PySide6",
-        "packaging_tool": "PyInstaller 6.22.3",
-        "installer_tool": "Inno Setup 7.1.1",
+        "packaging_tool": get_pyinstaller_version(),
+        "installer_tool": get_inno_setup_version(),
         "build_type": "release",
         "artifacts": artifacts,
     }

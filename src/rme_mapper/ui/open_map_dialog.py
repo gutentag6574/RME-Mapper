@@ -496,6 +496,11 @@ class OpenMapDialog(QDialog):
                 logger.exception("Ошибка инспекции GeoTIFF %s: %s", path, e)
                 QMessageBox.critical(self, "Ошибка чтения GeoTIFF", f"Не удалось прочитать файл:\n{path}\n\n{e}")
                 return
+            finally:
+                try:
+                    rb.close(path)
+                except Exception:
+                    pass
 
             # Проверка наличия CRS и геопривязки в GeoTIFF; если отсутствуют, проверяем world-файл
             if not info.get("crs") or not info.get("is_valid_georef"):

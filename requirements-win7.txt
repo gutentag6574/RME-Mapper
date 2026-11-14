@@ -13,8 +13,14 @@ openpyxl==3.1.2
 Pillow==10.0.0
 
 # Примечание:
-# rasterio, GDAL и pyogrio ИСКЛЮЧЕНЫ из стандартного pip-профиля Win7,
-# так как не имеют официальных pre-built wheels на PyPI для Python 3.8 / Win7.
+# Данный профиль предназначен исключительно для Legacy-запуска из исходников на Windows 7 (Python 3.8.10)
+# с использованием шима `rme_mapper.qt_compat` (`PySide2` / `PyQt5`).
+# Современная сборка (`pyproject.toml`, `build_release.py`, `GeoPointMapper.spec`) требует Python >= 3.12 и PySide6
+# и явно исключает PySide2/PyQt5/PyQt6.
+# rasterio, GDAL, pyogrio, geopandas и pandas (используется только через geopandas) ИСКЛЮЧЕНЫ из Win7-профиля,
+# так как гео-стековые пакеты не имеют официальных pre-built wheels на PyPI для Python 3.8 / Win7.
 # В Win7-профиле активируется Graceful Degradation (RuntimeCapabilities.has_geotiff = False,
 # has_geopackage = False / sqlite3 fallback).
+# При необходимости запуска табличной аналитики с pandas под Python 3.8 можно дополнительно установить:
+# pandas==2.0.3
 

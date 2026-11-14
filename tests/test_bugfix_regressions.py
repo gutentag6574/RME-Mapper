@@ -1699,6 +1699,100 @@ def test_section4_2_i18n_english_localization(qapp, tmp_path):
         ts.set_language(prev_lang)
 
 
+def test_section5_packaging_tools_and_cleanup(tmp_path):
+    """Section 5.1-5.6: spec, qt_compat в main.py, build_release, installer.iss, tools и очистка smoke_success.txt."""
+    import ast
+    from pathlib import Path
+    from PIL import Image
+
+    root = Path(__file__).resolve().parent.parent
+
+    # 5.1: GeoPointMapper.spec без несуществующих hiddenimports
+    spec_text = (root / "GeoPointMapper.spec").read_text(encoding="utf-8")
+    for bad_mod in (
+        "rme_mapper.backends.geopackage",
+        "rme_mapper.backends.geotiff",
+        "rme_mapper.backends.online_xyz",
+    ):
+        assert bad_mod not in spec_text
+
+    # 5.2: main.py подключает rme_mapper.qt_compat до импорта PySide6
+    main_text = (root / "src" / "rme_mapper" / "main.py").read_text(encoding="utf-8")
+    idx_compat = main_text.find("import rme_mapper.qt_compat")
+    idx_pyside = main_text.find("from PySide6.QtWidgets")
+    assert idx_compat != -1 and idx_pyside != -1 and idx_compat < idx_pyside
+
+    # 5.3: build_release.py без дубля get_canonical_version и без зашитых версий инструментов
+    build_text = (root / "build_release.py").read_text(encoding="utf-8")
+    tree = ast.parse(build_text)
+    fn_names = [n.name for n in tree.body if isinstance(n, ast.FunctionDef)]
+    assert fn_names.count("get_canonical_version") == 1
+    assert '"PyInstaller 6.22.3"' not in build_text
+    assert '"Inno Setup 7.1.1"' not in build_text
+
+    import build_release
+    assert build_release.get_pyinstaller_version().startswith("PyInstaller ")
+    assert build_release.get_inno_setup_version().startswith("Inno Setup ")
+
+    # 5.4: installer.iss регистрирует .gpmap и .rmeproject
+    iss_text = (root / "packaging" / "installer.iss").read_text(encoding="utf-8")
+    assert ".gpmap" in iss_text
+    assert ".rmeproject" in iss_text
+
+    # 5.5: validate_release отлавливает вложенные tests/scratch, а audit_metrics проверяет ключи, дубли и плейсхолдеры
+    from tools.validate_release import validate_release_dir
+    bundle = tmp_path / "bundle"
+    (bundle / "_internal" / "pkg" / "tests").mkdir(parents=True)
+    (bundle / "_internal" / "pkg" / "scratch").mkdir(parents=True)
+    (bundle / "GeoPointMapper.exe").write_bytes(b"MZ")
+    (bundle / "_internal" / "PySide6" / "plugins" / "platforms").mkdir(parents=True)
+    (bundle / "_internal" / "PySide6" / "plugins" / "platforms" / "qwindows.dll").write_bytes(b"")
+    (bundle / "_internal" / "share" / "proj").mkdir(parents=True)
+    (bundle / "_internal" / "share" / "proj" / "proj.db").write_bytes(b"")
+    (bundle / "_internal" / "share" / "gdal").mkdir(parents=True)
+    (bundle / "_internal" / "share" / "gdal" / "header.dxf").write_bytes(b"")
+    (bundle / "_internal" / "rme_mapper" / "resources").mkdir(parents=True)
+    Image.new("RGBA", (16, 16), (0, 0, 0, 255)).save(bundle / "_internal" / "rme_mapper" / "resources" / "icon.png")
+    errors = validate_release_dir(bundle)
+    assert any("**/tests" in e for e in errors)
+    assert any("**/scratch" in e for e in errors)
+
+    from tools.audit_metrics import count_localization_metrics
+    metrics = count_localization_metrics()
+    assert metrics["missing_in_ru_count"] == 0
+    assert metrics["missing_in_en_count"] == 0
+    assert metrics["dictionaries_parity"] is True
+    assert metrics["duplicate_ru_keys_count"] == 0
+    assert metrics["duplicate_en_keys_count"] == 0
+    assert metrics["placeholder_mismatch_count"] == 0
+
+    # 5.6: .gitignore содержит smoke_success.txt, файл не отслеживается git, BackendFactory.close_all() работает
+    import subprocess
+    gitignore_text = (root / ".gitignore").read_text(encoding="utf-8")
+    assert "smoke_success.txt" in gitignore_text
+    if (root / ".git").exists():
+        tracked = subprocess.run(
+            ["git", "ls-files", "smoke_success.txt"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+        assert tracked.stdout.strip() == ""
+
+    from rme_mapper.backends.factory import BackendFactory
+    closed_calls = []
+
+    class _DummyRaster:
+        def close(self):
+            closed_calls.append(True)
+
+    BackendFactory._raster_instances["dummy_test"] = _DummyRaster()
+    BackendFactory.close_all()
+    assert closed_calls == [True]
+    assert "dummy_test" not in BackendFactory._raster_instances
+
+
+
 
 
 

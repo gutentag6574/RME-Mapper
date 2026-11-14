@@ -1765,6 +1765,11 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         if self.project_controller.maybe_save_prompt(tr("dialog.unsaved_action_exit")):
             self.save_ui_state()
             self.project_controller.cleanup_on_exit()
+            try:
+                from rme_mapper.backends.factory import BackendFactory
+                BackendFactory.close_all()
+            except Exception:
+                pass
             event.accept()
         else:
             event.ignore()
