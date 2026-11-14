@@ -17,8 +17,6 @@ def parse_clipboard_coordinates(text, crs, x_column, y_column, name_column=None,
     rows = [row for row in rows if any(cell.strip() for cell in row)]
     if skip_header:
         rows = rows[1:]
-    if len(rows) + existing_count > MAX_PROJECT_POINTS:
-        raise ValueError(tr("ux.paste_limit", limit=MAX_PROJECT_POINTS))
     if x_column == y_column:
         raise ValueError(tr("ux.different_axes"))
     transformer = pyproj.Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
@@ -38,6 +36,8 @@ def parse_clipboard_coordinates(text, crs, x_column, y_column, name_column=None,
             preview.append((number, point.name, f"{lon:.7f}", f"{lat:.7f}", "OK"))
         except (ValueError, IndexError, pyproj.exceptions.ProjError) as error:
             preview.append((number, "", "", "", str(error)))
+    if len(points) + existing_count > MAX_PROJECT_POINTS:
+        raise ValueError(tr("ux.paste_limit", limit=MAX_PROJECT_POINTS))
     return points, preview
 
 
@@ -53,7 +53,7 @@ class ClipboardCoordinatesDialog(QDialog):
         self.source = QPlainTextEdit(text)
         self.source.setMaximumHeight(140)
         layout.addWidget(self.source)
-        self.crs_picker = CrsPicker("", self)
+        self.crs_picker = CrsPicker("EPSG:4326", self)
         layout.addWidget(self.crs_picker)
         row = QHBoxLayout()
         self.delimiter = QComboBox()

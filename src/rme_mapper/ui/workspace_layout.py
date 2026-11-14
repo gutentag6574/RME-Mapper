@@ -58,13 +58,14 @@ class WorkspaceLayoutMixin(AuditFeaturesMixin):
             return 0
 
     def _read_workspace_sizes(self):
+        count = max(2, self.workspace_splitter.count())
         try:
             sizes = [int(v) for v in self._settings_service._get_string_list("ui/workspace_sizes")]
-            if len(sizes) == 2 and min(sizes) > 0:
+            if len(sizes) == count and min(sizes) > 0:
                 return sizes
         except (ValueError, TypeError):
             pass
-        return [600, 230]
+        return [600, 230] if count == 2 else [500, 220, 200][:count]
 
     def set_points_bottom(self, enabled):
         if not enabled:

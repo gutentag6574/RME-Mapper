@@ -68,7 +68,7 @@ class AuditFeaturesMixin:
         self._last_measurement=None
         self.map_canvas.measurement_geometry_finished.connect(self.remember_measurement)
         self.field_import_action=self.import_menu.addAction(tr("audit.import_field"))
-        self.field_import_action.triggered.connect(self.import_field_file)
+        self.field_import_action.triggered.connect(lambda _checked=False: self.import_field_file())
         self.apply_preferences()
 
     def retranslate_audit(self):
@@ -261,6 +261,8 @@ class AuditFeaturesMixin:
             self.save_measurement_button.setEnabled(False)
 
     def import_field_file(self, path=None):
+        if isinstance(path, bool):
+            path = None
         from PySide6.QtWidgets import QFileDialog
         from rme_mapper.services.field_import_service import read_field_file
         if self.map_controller.active_profile is None:

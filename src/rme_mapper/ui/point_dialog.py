@@ -1090,7 +1090,7 @@ class PointDialog(QDialog):
             s_b = int(self.stroke_b_edit.text().strip())
             s_w = self.stroke_width_spin.value()
             op = float(self.marker_opacity_spin.value())
-            if 0 <= r <= 255 and 0 <= g <= 255 and 0 <= b <= 255:
+            if all(0 <= c <= 255 for c in (r, g, b, s_r, s_g, s_b)):
                 self.preview_widget.update_style(
                     symbol=symbol,
                     size=size,
@@ -1276,12 +1276,21 @@ class PointDialog(QDialog):
                 QMessageBox.warning(self, tr("common.warning"), str(err))
                 return
         else:
-            radius_m = 0.0
-            z_r, z_g, z_b = 220, 30, 30
-            opacity = 30
-            zb_r, zb_g, zb_b = 30, 58, 138
-            zb_w = 1.5
-            zb_style = "solid"
+            unit = self.zone_unit_combo.currentData() or self.zone_unit_combo.currentText()
+            try:
+                parsed_off = GeodesicService.parse_radius(self.zone_radius_edit.text(), unit)
+                radius_m = parsed_off if math.isfinite(parsed_off) and parsed_off > 0 else (float(self._point.radius_m) if self._point is not None else 0.0)
+            except Exception:
+                radius_m = float(self._point.radius_m) if self._point is not None else 0.0
+            z_r = self._point.zone_red if self._point is not None else 220
+            z_g = self._point.zone_green if self._point is not None else 30
+            z_b = self._point.zone_blue if self._point is not None else 30
+            opacity = self._point.zone_opacity if self._point is not None else 30
+            zb_r = getattr(self._point, "zone_border_red", 30) if self._point is not None else 30
+            zb_g = getattr(self._point, "zone_border_green", 58) if self._point is not None else 58
+            zb_b = getattr(self._point, "zone_border_blue", 138) if self._point is not None else 138
+            zb_w = getattr(self._point, "zone_border_width", 1.5) if self._point is not None else 1.5
+            zb_style = getattr(self._point, "zone_border_style", "solid") if self._point is not None else "solid"
 
         # 4. Валидация полей расширенной модели объекта (Этап 17)
         name = self.name_edit.text().strip()

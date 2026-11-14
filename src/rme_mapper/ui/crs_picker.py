@@ -29,7 +29,7 @@ class CrsPicker(QWidget):
         self.results=QComboBox()
         self.results.hide()
         self.search.textChanged.connect(self.search_crs)
-        self.results.activated.connect(lambda index:self.edit.setText(self.results.itemData(index)))
+        self.results.activated.connect(self._on_result_activated)
         layout.addWidget(self.search)
         layout.addWidget(self.results)
         layout.addWidget(self.favorites)
@@ -38,7 +38,7 @@ class CrsPicker(QWidget):
         self.info.setWordWrap(True)
         layout.addWidget(self.info)
         self.edit.textChanged.connect(self.validate_crs)
-        self.favorites.activated.connect(lambda index: self.edit.setText(self.favorites.itemData(index)))
+        self.favorites.activated.connect(self._on_favorite_activated)
         self.star.clicked.connect(self.toggle_favorite)
         self.refresh_favorites()
         self.validate_crs(value)
@@ -77,18 +77,37 @@ class CrsPicker(QWidget):
         self.refresh_favorites()
         self.validate_crs(self.edit.text())
 
+    def _on_favorite_activated(self, index: int) -> None:
+        data = self.favorites.itemData(index)
+        if data:
+            self.edit.setText(str(data))
+
+    def _on_result_activated(self, index: int) -> None:
+        data = self.results.itemData(index)
+        if data:
+            self.edit.setText(str(data))
+
     def search_crs(self, text):
-        if len(text.strip())<2:
+        if len(text.strip()) < 2:
             self.results.hide()
             return
-        query=text.strip().casefold()
-        query={"ск-42":"pulkovo 1942","ск-95":"pulkovo 1995","мск":"msk"}.get(query,query)
-        if not hasattr(type(self),"_crs_catalog"):
-            type(self)._crs_catalog=pyproj.database.query_crs_info(auth_name="EPSG",allow_deprecated=False)
+        raw_query = text.strip().casefold()
+        aliases = {
+            "ск-42": ("pulkovo 1942",),
+            "ск-95": ("pulkovo 1995",),
+            "гск-2011": ("gsk-2011",),
+            "мск": ("msk", "pulkovo 1942 / 3-degree gauss-kruger", "pulkovo 1942 / gauss-kruger"),
+        }
+        queries = aliases.get(raw_query, (raw_query,))
+        if not hasattr(type(self), "_crs_catalog"):
+            type(self)._crs_catalog = pyproj.database.query_crs_info(allow_deprecated=False)
         self.results.clear()
         for info in self._crs_catalog:
-            if query in info.name.casefold() or query in info.code:
-                self.results.addItem(f"EPSG:{info.code} — {info.name}",f"EPSG:{info.code}")
-                if self.results.count()>=100:
+            name_cf = info.name.casefold()
+            code_str = f"{info.auth_name}:{info.code}".casefold()
+            if any(q in name_cf or q in info.code or q in code_str for q in queries):
+                auth_code = f"{info.auth_name}:{info.code}"
+                self.results.addItem(f"{auth_code} — {info.name}", auth_code)
+                if self.results.count() >= 100:
                     break
-        self.results.setVisible(self.results.count()>0)
+        self.results.setVisible(self.results.count() > 0)

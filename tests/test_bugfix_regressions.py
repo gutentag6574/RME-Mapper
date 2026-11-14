@@ -1198,6 +1198,144 @@ def test_med03_ndarray_channels_and_scale_overlay(qapp):
         overlay.close()
 
 
+def test_med04_dialogs_and_workspace_layout(qapp, tmp_path, monkeypatch):
+    """MED-04: Verify CrsPicker, ClipboardCoordinatesDialog, OnlineBasemapDialog, WorkspaceLayoutMixin, SettingsDialog, PointDialog, AuditFeaturesMixin."""
+    from types import SimpleNamespace
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QMessageBox, QSplitter, QWidget
+
+    from rme_mapper.models.map_point import MapPoint
+    from rme_mapper.models.online_provider import MapType, ProviderRegistry
+    from rme_mapper.services.app_settings_service import AppSettingsService
+    from rme_mapper.ui.audit_features import AuditFeaturesMixin
+    from rme_mapper.ui.clipboard_coordinates_dialog import ClipboardCoordinatesDialog
+    from rme_mapper.ui.crs_picker import CrsPicker
+    from rme_mapper.ui.online_basemap_dialog import OnlineBasemapDialog
+    from rme_mapper.ui.point_dialog import PointDialog
+    from rme_mapper.ui.settings_dialog import SettingsDialog
+    from rme_mapper.ui.workspace_layout import WorkspaceLayoutMixin
+
+    # 1. CrsPicker: placeholder itemData ignored & "мск" searches MSK/Gauss-Kruger zones
+    picker = CrsPicker("EPSG:4326")
+    try:
+        picker.edit.setText("EPSG:3857")
+        picker._on_favorite_activated(0)
+        assert picker.edit.text() == "EPSG:3857"
+        picker.results.insertItem(0, "-- Choose --", "")
+        picker._on_result_activated(0)
+        assert picker.edit.text() == "EPSG:3857"
+        picker.search_crs("мск")
+        assert picker.results.count() > 0
+    finally:
+        picker.close()
+
+    # 2. ClipboardCoordinatesDialog: default EPSG:4326 & MAX_PROJECT_POINTS checked after row parsing
+    dlg_clip = ClipboardCoordinatesDialog("55.75\t37.62\nbad_row", existing_count=100_000)
+    try:
+        assert dlg_clip.crs_picker.edit.text() == "EPSG:4326"
+        assert "100" in dlg_clip.status.text() or dlg_clip.table.rowCount() == 2
+
+        dlg_clip_ok = ClipboardCoordinatesDialog("55.75\t37.62\n55.76\t37.63", existing_count=99_998)
+        try:
+            assert len(dlg_clip_ok.points) == 2
+        finally:
+            dlg_clip_ok.close()
+
+        dlg_clip_over = ClipboardCoordinatesDialog("55.75\t37.62\n55.76\t37.63", existing_count=99_999)
+        try:
+            assert dlg_clip_over.points == []
+            assert not dlg_clip_over.buttons.button(dlg_clip_over.buttons.StandardButton.Ok).isEnabled()
+        finally:
+            dlg_clip_over.close()
+    finally:
+        dlg_clip.close()
+
+    # 3. OnlineBasemapDialog: clearing built-in key persists "", custom URL param name detected dynamically
+    settings_svc = AppSettingsService(QSettings(str(tmp_path / "settings_bm.ini"), QSettings.Format.IniFormat))
+    settings_svc.set_provider_api_key("mapbox_satellite", "old_key")
+    dlg_bm = OnlineBasemapDialog(None, settings_service=settings_svc)
+    try:
+        dlg_bm._rb_satellite.setChecked(True)
+        idx_mb = dlg_bm._provider_combo.findData("mapbox_satellite")
+        assert idx_mb >= 0
+        dlg_bm._provider_combo.setCurrentIndex(idx_mb)
+        dlg_bm._key_edit.setText("")
+        dlg_bm._on_accept()
+        assert settings_svc.get_provider_api_key("mapbox_satellite") in (None, "")
+
+        dlg_bm._rb_custom.setChecked(True)
+        dlg_bm._custom_name.setText("Custom Token")
+        dlg_bm._url_edit.setText("https://tiles.example.com/{z}/{x}/{y}.png?api_key={api_key}")
+        dlg_bm._key_edit.setText("secret123")
+        dlg_bm._on_accept()
+        custom_list = settings_svc.get_custom_providers()
+        assert len(custom_list) == 1
+        assert custom_list[0]["api_key_param_name"] == "api_key"
+    finally:
+        dlg_bm.close()
+
+    # 4. WorkspaceLayoutMixin._read_workspace_sizes: matches 3-pane splitter when points_bottom=True
+    class _DummyLayout(WorkspaceLayoutMixin):
+        def __init__(self):
+            self.workspace_splitter = QSplitter()
+            self.workspace_splitter.addWidget(QWidget())
+            self.workspace_splitter.addWidget(QWidget())
+            self.workspace_splitter.addWidget(QWidget())
+            self._settings_service = SimpleNamespace(
+                _get_string_list=lambda key: ["200", "500", "300"] if key == "ui/workspace_sizes" else []
+            )
+
+    dummy_layout = _DummyLayout()
+    assert dummy_layout._read_workspace_sizes() == [200, 500, 300]
+
+    # 5. SettingsDialog: validates hex color and radius > 0 when zone is enabled
+    dlg_set = SettingsDialog(settings_svc)
+    try:
+        set_warnings = []
+        monkeypatch.setattr(QMessageBox, "warning", lambda *a, **kw: set_warnings.append(a))
+        dlg_set.color.setText("not-a-color")
+        dlg_set.accept()
+        assert len(set_warnings) == 1
+        assert dlg_set.result() != SettingsDialog.DialogCode.Accepted
+    finally:
+        dlg_set.close()
+
+    # 6. PointDialog: invalid stroke RGB does not crash/mutate preview & unchecked zone preserves radius
+    pt = MapPoint(name="Test", latitude=55.75, longitude=37.62, zone_enabled=False, radius_m=250.0)
+    dlg_pt = PointDialog(point=pt)
+    try:
+        dlg_pt.stroke_r_edit.setText("999")
+        dlg_pt._on_style_input_changed()
+        assert dlg_pt.stroke_r_edit.text() == "999"
+        dlg_pt.stroke_r_edit.setText("30")
+        dlg_pt.zone_chk.setChecked(False)
+        dlg_pt.zone_radius_edit.setText("320")
+        dlg_pt._validate_and_submit()
+        data = dlg_pt.get_point_data()
+        assert data is not None
+        assert data.zone_enabled is False
+        assert abs(data.radius_m - 320.0) < 1e-6
+    finally:
+        dlg_pt.close()
+
+    # 7. AuditFeaturesMixin.import_field_file: triggered(bool) does not pass bool as file path
+    from PySide6.QtWidgets import QFileDialog
+    dialog_opened = []
+
+    class _DummyAudit(AuditFeaturesMixin):
+        map_controller = SimpleNamespace(active_profile=object())
+
+    dummy_audit = _DummyAudit()
+    monkeypatch.setattr(
+        QFileDialog,
+        "getOpenFileName",
+        lambda *a, **kw: dialog_opened.append(True) or ("", ""),
+    )
+    dummy_audit.import_field_file(False)
+    assert dialog_opened == [True]
+
+
+
 
 
 

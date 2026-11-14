@@ -1,7 +1,7 @@
 """Preferences backed by the same settings used by map and editing controllers."""
 from __future__ import annotations
 import json
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QTabWidget, QWidget, QComboBox, QCheckBox, QSpinBox, QDoubleSpinBox, QDialogButtonBox, QLineEdit, QPushButton, QColorDialog
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QTabWidget, QWidget, QComboBox, QCheckBox, QSpinBox, QDoubleSpinBox, QDialogButtonBox, QLineEdit, QPushButton, QColorDialog, QMessageBox
 from PySide6.QtGui import QColor
 from rme_mapper.i18n import tr
 
@@ -70,7 +70,7 @@ class SettingsDialog(QDialog):
         self.zone.setChecked(defaults.get("zone_enabled",False))
         points.addRow(self.zone)
         self.radius=QDoubleSpinBox()
-        self.radius.setRange(0,10000000)
+        self.radius.setRange(0.1,10000000)
         self.radius.setValue(defaults.get("radius_m",100))
         points.addRow(tr("audit.radius_m"),self.radius)
         coords=page("coordinates")
@@ -100,7 +100,12 @@ class SettingsDialog(QDialog):
 
     def accept(self):
         if not QColor(self.color.text()).isValid():
+            QMessageBox.warning(self, tr("common.warning"), tr("import.err.invalid_rgb") if tr("import.err.invalid_rgb") != "import.err.invalid_rgb" else "Некорректный цвет маркера.")
             self.color.setFocus()
+            return
+        if self.zone.isChecked() and self.radius.value() <= 0:
+            QMessageBox.warning(self, tr("common.warning"), tr("import.err.radius_required_when_zone_enabled"))
+            self.radius.setFocus()
             return
         s=self.settings
         s.set_language(self.language.currentData())

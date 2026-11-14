@@ -372,13 +372,28 @@ class OnlineBasemapDialog(QDialog):
             if not OnlineTileProvider.validate_url_template(url):
                 return
             saved_id = self._provider_combo.currentData()
+            existing = self._custom_providers.get(str(saved_id)) if saved_id in self._custom_providers else None
+            import re
+            query_match = re.search(r"[?&]([A-Za-z0-9_.-]+)=\{(?:api_key|token|access_token|key)\}", url)
+            if query_match:
+                api_key_param_name = query_match.group(1)
+            elif "{access_token}" in url or "access_token=" in url:
+                api_key_param_name = "access_token"
+            elif "{apikey}" in url or "apikey=" in url:
+                api_key_param_name = "apikey"
+            elif "{token}" in url or "token=" in url:
+                api_key_param_name = "token"
+            elif existing is not None:
+                api_key_param_name = existing.api_key_param_name
+            else:
+                api_key_param_name = "key"
             provider = ProviderRegistry.create_custom_provider(
                 id=str(saved_id) if saved_id in self._custom_providers else "custom_" + hashlib.sha256(url.encode()).hexdigest()[:12],
                 name=self._custom_name.text().strip() or tr("dialog.online_map.custom_map_default_name"),
                 url_template=url,
                 attribution=attr,
                 attribution_required=attr_req,
-                api_key_param_name="access_token" if "access_token" in url else "key",
+                api_key_param_name=api_key_param_name,
             )
             self._settings.save_custom_provider(provider.to_dict())
             self._settings.set_provider_api_key(provider.id, key or "")
@@ -390,8 +405,8 @@ class OnlineBasemapDialog(QDialog):
             if provider is None:
                 self.reject()
                 return
-            if key and self._settings:
-                self._settings.set_provider_api_key(provider.id, key)
+            if self._settings:
+                self._settings.set_provider_api_key(provider.id, key or "")
             self._selected_provider = provider
             self._api_key = key
 
