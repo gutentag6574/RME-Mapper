@@ -1137,6 +1137,7 @@ class MapCanvas(QGraphicsView):
 
         self._boundary_bounds = None
         self._initial_fit_done = False
+        self._scene.setSceneRect(QRectF())
 
     def clear_map(self) -> None:
         """Полная очистка карты (слои, границы, точки, зоны, растр, сетка, измерения)."""
@@ -1616,9 +1617,30 @@ class MapCanvas(QGraphicsView):
         return path
 
     @staticmethod
-    def _create_zone_path(longitude: float, latitude: float, radius_m: float) -> QPainterPath:
-        """Создание QPainterPath для геодезической зоны радиуса в WGS84 (lon/lat)."""
-        polygon = GeodesicService.create_geodesic_circle(longitude, latitude, radius_m)
+    def _create_zone_path(
+        longitude: float,
+        latitude: float,
+        radius_m: float,
+        source_crs: str = "EPSG:4326",
+        target_crs: str | None = None,
+    ) -> QPainterPath:
+        """Создание QPainterPath для геодезической зоны радиуса с перепроецированием в CRS карты."""
+        lon_wgs, lat_wgs = longitude, latitude
+        src = (source_crs or "EPSG:4326").strip()
+        if src.upper() not in ("EPSG:4326", "OGC:CRS84"):
+            lon_wgs, lat_wgs = CoordinateService.transform_xy(
+                longitude,
+                latitude,
+                source_crs=src,
+                target_crs="EPSG:4326",
+            )
+        polygon = GeodesicService.create_geodesic_circle(lon_wgs, lat_wgs, radius_m)
+        if target_crs:
+            polygon = CoordinateService.transform_polygon(
+                polygon,
+                source_crs="EPSG:4326",
+                target_crs=target_crs,
+            )
         return MapCanvas._create_zone_path_from_polygon(polygon)
 
     def update_point_zone(
@@ -1639,7 +1661,13 @@ class MapCanvas(QGraphicsView):
         if zone_polygon is not None:
             path = self._create_zone_path_from_polygon(zone_polygon)
         else:
-            path = self._create_zone_path(point.longitude, point.latitude, point.radius_m)
+            path = self._create_zone_path(
+                point.longitude,
+                point.latitude,
+                point.radius_m,
+                source_crs=point.source_crs,
+                target_crs=self._active_crs,
+            )
 
         alpha = int(point.zone_opacity * 255 / 100.0)
         brush_color = QColor(point.zone_red, point.zone_green, point.zone_blue, alpha)
@@ -2176,24 +2204,41 @@ class MapCanvas(QGraphicsView):
         longitude: float,
         latitude: float,
         min_zoom: float = 350.0,
+        source_crs: str = "EPSG:4326",
     ) -> None:
-        """Центрирование карты на заданных географических координатах (обратная совместимость).
+        """Центрирование карты на географических координатах с перепроецированием в active_crs.
 
-        Если текущий масштаб слишком мелкий, выполняется умеренное приближение
-        для комфортного детального обзора точки.
+        Если текущий масштаб слишком мелкий на географической карте, выполняется умеренное
+        приближение для комфортного детального обзора точки.
         """
-        scene_pos = QPointF(longitude, -latitude)
+        map_x, map_y = CoordinateService.transform_xy(
+            longitude,
+            latitude,
+            source_crs=source_crs or "EPSG:4326",
+            target_crs=self._active_crs,
+        )
+        scene_pos = QPointF(map_x, -map_y)
         self.centerOn(scene_pos)
 
-        current_scale = self.transform().m11()
-        if current_scale < min_zoom:
-            factor = min_zoom / current_scale
-            self.scale(factor, factor)
-            logger.info("Масштаб увеличен при центрировании: x%s", factor)
+        is_geographic = False
+        try:
+            import pyproj
+
+            is_geographic = pyproj.CRS.from_user_input(self._active_crs).is_geographic
+        except Exception:
+            is_geographic = self._active_crs.upper() in ("EPSG:4326", "OGC:CRS84")
+
+        if is_geographic:
+            current_scale = self.transform().m11()
+            if current_scale > 0 and current_scale < min_zoom:
+                factor = min_zoom / current_scale
+                self.scale(factor, factor)
+                self._current_zoom *= factor
+                logger.info("Масштаб увеличен при центрировании: x%s", factor)
 
         logger.info(
-            "Карта отцентрирована на точке: lon=%s, lat=%s (scene=%s)",
-            longitude, latitude, scene_pos,
+            "Карта отцентрирована на точке: lon=%s, lat=%s -> map=(%s, %s) (scene=%s)",
+            longitude, latitude, map_x, map_y, scene_pos,
         )
 
     # -------------------------------------------------------------------------
@@ -2403,6 +2448,9 @@ class MapCanvas(QGraphicsView):
 
         self.hide_empty_state()
         self._active_crs = "EPSG:3857"
+        self._scene.setSceneRect(
+            QRectF(-20037508.342789244, -20037508.342789244, 40075016.68557849, 40075016.68557849)
+        )
         self._online_tile_manager.set_provider(provider, api_key=api_key)
         self._attribution_overlay.set_attribution(provider.attribution)
         self._attribution_overlay.set_map_active(True)

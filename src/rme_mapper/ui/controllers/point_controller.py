@@ -755,7 +755,7 @@ class PointController(QObject):
         active_crs = self._get_active_crs()
         mx, my = CoordinateService.transform_xy(
             point.longitude, point.latitude,
-            source_crs="EPSG:4326",
+            source_crs=point.source_crs or "EPSG:4326",
             target_crs=active_crs,
         )
         text = f"{mx:.2f}, {my:.2f}"
@@ -842,24 +842,36 @@ class PointController(QObject):
             update_group=True,
         )
 
+    @staticmethod
+    def _build_zone_polygon_for_crs(point: MapPoint, target_crs: str):
+        """Построение полигона геодезической зоны точки в целевой CRS."""
+        if not point.zone_enabled or point.radius_m <= 0:
+            return None
+        src_crs = (point.source_crs or "EPSG:4326").strip()
+        lon_wgs, lat_wgs = point.longitude, point.latitude
+        if src_crs.upper() not in ("EPSG:4326", "OGC:CRS84"):
+            lon_wgs, lat_wgs = CoordinateService.transform_xy(
+                point.longitude,
+                point.latitude,
+                source_crs=src_crs,
+                target_crs="EPSG:4326",
+            )
+        geo_c = GeodesicService.create_geodesic_circle(lon_wgs, lat_wgs, point.radius_m)
+        return CoordinateService.transform_polygon(
+            geo_c,
+            source_crs="EPSG:4326",
+            target_crs=target_crs,
+        )
+
     def _render_point_on_canvas(self, point: MapPoint, is_update: bool = False) -> None:
         """Проецирование координат и отрисовка маркера/зоны на MapCanvas."""
         active_crs = self._get_active_crs()
         mx, my = CoordinateService.transform_xy(
             point.longitude, point.latitude,
-            source_crs="EPSG:4326",
+            source_crs=point.source_crs or "EPSG:4326",
             target_crs=active_crs,
         )
-        zone_poly = None
-        if point.zone_enabled and point.radius_m > 0:
-            geo_c = GeodesicService.create_geodesic_circle(
-                point.longitude, point.latitude, point.radius_m
-            )
-            zone_poly = CoordinateService.transform_polygon(
-                geo_c,
-                source_crs="EPSG:4326",
-                target_crs=active_crs,
-            )
+        zone_poly = self._build_zone_polygon_for_crs(point, active_crs)
 
         if is_update:
             self._map_canvas.update_user_point(point, map_x=mx, map_y=my, zone_polygon=zone_poly)
@@ -875,19 +887,10 @@ class PointController(QObject):
         for point in points:
             mx, my = CoordinateService.transform_xy(
                 point.longitude, point.latitude,
-                source_crs=point.source_crs,
+                source_crs=point.source_crs or "EPSG:4326",
                 target_crs=active_crs,
             )
-            zone_poly = None
-            if point.zone_enabled and point.radius_m > 0:
-                geo_c = GeodesicService.create_geodesic_circle(
-                    point.longitude, point.latitude, point.radius_m
-                )
-                zone_poly = CoordinateService.transform_polygon(
-                    geo_c,
-                    source_crs="EPSG:4326",
-                    target_crs=active_crs,
-                )
+            zone_poly = self._build_zone_polygon_for_crs(point, active_crs)
             batch_data.append((point, mx, my, zone_poly))
 
         self._map_canvas.add_user_points_batch(batch_data)
@@ -904,19 +907,10 @@ class PointController(QObject):
             for pt in self._point_service.get_points():
                 mx, my = CoordinateService.transform_xy(
                     pt.longitude, pt.latitude,
-                    source_crs=pt.source_crs,
+                    source_crs=pt.source_crs or "EPSG:4326",
                     target_crs=target_crs,
                 )
-                zone_poly = None
-                if pt.zone_enabled and pt.radius_m > 0:
-                    geo_circle = GeodesicService.create_geodesic_circle(
-                        pt.longitude, pt.latitude, pt.radius_m
-                    )
-                    zone_poly = CoordinateService.transform_polygon(
-                        geo_circle,
-                        source_crs="EPSG:4326",
-                        target_crs=target_crs,
-                    )
+                zone_poly = self._build_zone_polygon_for_crs(pt, target_crs)
                 self._map_canvas.add_user_point(pt, map_x=mx, map_y=my, zone_polygon=zone_poly)
 
     def move_points_to_group_workflow(self, target_group_id: str | None, point_ids: list[str] | None = None) -> None:

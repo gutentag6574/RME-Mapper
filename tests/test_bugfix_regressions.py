@@ -261,6 +261,9 @@ def test_crit03_clear_online_basemap_and_unload_reset_crs(qapp, monkeypatch):
 
     monkeypatch.setattr(OnlineTileManager, "update_viewport", lambda *args, **kwargs: None)
     win = MainWindow()
+    win.resize(900, 700)
+    win.show()
+    qapp.processEvents()
     try:
         from rme_mapper.models.online_provider import ProviderRegistry
 
@@ -401,6 +404,9 @@ def test_high02_unsaved_project_is_active_and_marks_modified_on_online_map(qapp,
 
     monkeypatch.setattr(OnlineTileManager, "update_viewport", lambda *args, **kwargs: None)
     win = MainWindow()
+    win.resize(900, 700)
+    win.show()
+    qapp.processEvents()
     try:
         assert win.project_controller.is_project_active is False
         win.point_controller._cmd_add_point(MapPoint(id="pt-h2", name="Точка", latitude=56.6, longitude=47.8))
@@ -414,6 +420,65 @@ def test_high02_unsaved_project_is_active_and_marks_modified_on_online_map(qapp,
         provider = ProviderRegistry.get_provider("osm_standard")
         assert win.map_controller.load_online_map(provider=provider) is True
         assert win.project_controller.is_modified is True
+    finally:
+        win.project_controller.set_modified(False)
+        win.map_controller.unload_map()
+        win.close()
+
+
+def test_high03_reprojection_in_center_zone_and_point_controller(qapp, monkeypatch):
+    """HIGH-03: center_on_coordinates, update_point_zone и PointController перепроецируют с учётом CRS."""
+    from rme_mapper.maps.online_tile_manager import OnlineTileManager
+    from rme_mapper.models.online_provider import ProviderRegistry
+    from rme_mapper.services.coordinate_service import CoordinateService
+
+    monkeypatch.setattr(OnlineTileManager, "update_viewport", lambda *args, **kwargs: None)
+    win = MainWindow()
+    win.resize(900, 700)
+    win.show()
+    qapp.processEvents()
+    try:
+        provider = ProviderRegistry.get_provider("osm_standard")
+        assert win.map_controller.load_online_map(provider=provider) is True
+        assert win.map_canvas.active_crs == "EPSG:3857"
+
+        # 1. Точка в Пулково-1942 (EPSG:4284), проверяем _render_point_on_canvas
+        pt = MapPoint(
+            id="pt-h3",
+            name="Цель 4284",
+            object_number="42",
+            latitude=56.63,
+            longitude=47.89,
+            source_crs="EPSG:4284",
+            zone_enabled=True,
+            radius_m=500.0,
+        )
+        win.point_controller._cmd_add_point(pt)
+
+        exp_x_4284, exp_y_4284 = CoordinateService.transform_xy(
+            47.89, 56.63, source_crs="EPSG:4284", target_crs="EPSG:3857"
+        )
+        wrong_x_4326, _ = CoordinateService.transform_xy(
+            47.89, 56.63, source_crs="EPSG:4326", target_crs="EPSG:3857"
+        )
+        assert abs(exp_x_4284 - wrong_x_4326) > 50.0
+        item_pos = win.map_canvas._user_point_items["pt-h3"].pos()
+        assert abs(item_pos.x() - exp_x_4284) < 1e-3
+        assert abs(item_pos.y() - (-exp_y_4284)) < 1e-3
+
+        # 2. update_point_zone с zone_polygon=None должен перепроецировать в EPSG:3857 (метры)
+        win.map_canvas.update_point_zone(pt, zone_polygon=None)
+        zone_rect = win.map_canvas._user_zone_items["pt-h3"].boundingRect()
+        assert zone_rect.width() > 500.0
+        assert abs(zone_rect.center().x() - exp_x_4284) < 50.0
+
+        # 3. navigate_to_input -> center_on_coordinates переводит в active_crs и не ставит zoom=350 на метры
+        win.navigate_edit.setText("Цель 4284")
+        win.navigate_to_input()
+        center_scene = win.map_canvas.mapToScene(win.map_canvas.viewport().rect().center())
+        assert abs(center_scene.x() - exp_x_4284) < 500.0
+        assert abs(center_scene.y() - (-exp_y_4284)) < 500.0
+        assert win.map_canvas.transform().m11() < 10.0
     finally:
         win.project_controller.set_modified(False)
         win.map_controller.unload_map()

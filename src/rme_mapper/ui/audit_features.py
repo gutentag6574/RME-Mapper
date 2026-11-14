@@ -219,7 +219,7 @@ class AuditFeaturesMixin:
         for point in self._point_service.get_points():
             if point.name.casefold()==text.casefold() or (point.object_number and point.object_number.casefold()==text.casefold()):
                 self.points_panel.select_point_ids([point.id])
-                self.map_canvas.center_on_coordinates(point.longitude,point.latitude)
+                self.map_canvas.center_on_coordinates(point.longitude, point.latitude, source_crs=point.source_crs)
                 return
         try:
             values=[float(value) for value in re.split(r"[;,\s]+",text) if value]
