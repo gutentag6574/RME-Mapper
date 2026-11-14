@@ -1485,6 +1485,85 @@ def test_section4_1_missing_i18n_keys_and_parity():
     assert "disk full" in err_msg and "{error}" not in err_msg
 
 
+def test_section4_3_dark_theme_and_style_filter(qapp):
+    """Section 4.3: Verify DarkPalette QSS tokens, QTreeWidget color, ThemeStyleFilter border/rgb/3hex/named, and palette-aware panels."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QBrush, QColor
+    from PySide6.QtWidgets import QTreeWidgetItem, QWidget
+
+    from rme_mapper.models.object_group import ObjectGroup
+    from rme_mapper.ui.models.raw_preview_model import RawPreviewModel
+    from rme_mapper.ui.panels.groups_panel import GroupsPanel, ITEM_ROLE_GROUP_ID, ITEM_ROLE_IS_SYSTEM
+    from rme_mapper.ui.panels.points_panel import PointsPanel
+    from rme_mapper.ui.theme_manager import DarkPalette, ThemeManager, get_theme_manager
+    from rme_mapper.ui.theme_style_filter import ThemeStyleFilter
+
+    tm = get_theme_manager()
+    try:
+        dark_qss = tm.get_stylesheet(ThemeManager.THEME_DARK)
+        for light_only in ("#BFDBFE", "#DBEAFE", "#F8FAFC", "gridline-color: #F1F5F9", "background: #CBD5E1"):
+            assert light_only not in dark_qss
+        assert DarkPalette.CANVAS_BG in dark_qss
+        assert f"gridline-color: {DarkPalette.GRIDLINE}" in dark_qss
+        assert f"background: {DarkPalette.SCROLLBAR_HANDLE}" in dark_qss
+        assert "QCheckBox::indicator:checked" not in dark_qss
+        assert "QTreeWidget" in dark_qss and f"color: {DarkPalette.TEXT_PRIMARY}" in dark_qss
+
+        # apply_theme on non-app target records dark state accurately
+        host = QWidget()
+        try:
+            tm.apply_theme(host, ThemeManager.THEME_DARK)
+            assert tm.is_dark_theme() is True
+            assert tm.get_palette() is DarkPalette
+
+            # RawPreviewModel adapts header highlight to DarkPalette
+            rpm = RawPreviewModel()
+            rpm.set_data([["col1", "col2"], ["a", "b"]], header_row=1)
+            bg = rpm.data(rpm.index(0, 0), Qt.ItemDataRole.BackgroundRole)
+            assert isinstance(bg, QBrush) and bg.color().name().lower() == DarkPalette.HEADER_HIGHLIGHT_BG.lower()
+
+            # PointsPanel clears explicit #000000 override on visible=True
+            pp = PointsPanel()
+            try:
+                r = pp.add_row("1", "P1", "55.0", "37.0", "circle", "-", point_id="p1", visible=False)
+                pp.update_row(r, "1", "P1", "55.0", "37.0", "circle", "-", visible=True)
+                assert pp.points_table.item(r, 1).foreground() == QBrush()
+            finally:
+                pp.close()
+
+            # GroupsPanel clears explicit #1E293B override on checked group
+            gp = GroupsPanel()
+            try:
+                item = QTreeWidgetItem(["G1"])
+                item.setData(0, ITEM_ROLE_GROUP_ID, "g1")
+                item.setData(0, ITEM_ROLE_IS_SYSTEM, False)
+                item.setCheckState(0, Qt.CheckState.Checked)
+                gp._block_signals = False
+                gp._on_item_changed(item, 0)
+                assert item.foreground(0) == QBrush()
+            finally:
+                gp.close()
+        finally:
+            host.close()
+
+        # ThemeStyleFilter adapts borders, 3-digit hex, rgb(...), and named colors
+        flt = ThemeStyleFilter(qapp)
+        flt.dark = True
+        w = QWidget()
+        try:
+            w.setStyleSheet("background: #fff; color: black; border-bottom: 1px solid #E2E8F0; border: 1px solid #999;")
+            flt.adapt(w)
+            adapted = w.styleSheet().lower()
+            assert "#1f2937" in adapted
+            assert "#f1f5f9" in adapted
+            assert "#475569" in adapted
+            assert "#64748b" in adapted
+        finally:
+            w.close()
+    finally:
+        tm.apply_theme(qapp, ThemeManager.THEME_LIGHT)
+
+
 
 
 

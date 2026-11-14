@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PySide6.QtGui import QBrush, QColor, QFont
+from rme_mapper.ui.theme_manager import get_theme_manager
 
 
 class RawPreviewModel(QAbstractTableModel):
@@ -60,7 +61,7 @@ class RawPreviewModel(QAbstractTableModel):
 
         if role == Qt.ItemDataRole.BackgroundRole:
             if is_header:
-                return QBrush(QColor(225, 240, 255))
+                return QBrush(QColor(get_theme_manager().get_palette().HEADER_HIGHLIGHT_BG))
             return None
 
         if role == Qt.ItemDataRole.FontRole:

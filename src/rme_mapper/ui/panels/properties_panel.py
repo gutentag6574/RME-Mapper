@@ -88,10 +88,13 @@ class PropertiesPanel(QWidget):
         name_form = QFormLayout()
         name_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
+        from rme_mapper.ui.theme_manager import get_theme_manager
+        prop_p = get_theme_manager().get_palette()
+
         self.prop_name_lbl = QLabel()
         self.prop_name_val = QLabel("—")
         self.prop_name_val.setWordWrap(True)
-        self.prop_name_val.setStyleSheet("font-weight: 600; color: #1E293B;")
+        self.prop_name_val.setStyleSheet(f"font-weight: 600; color: {prop_p.TEXT_PRIMARY};")
         name_form.addRow(self.prop_name_lbl, self.prop_name_val)
 
         self.prop_object_number_lbl = QLabel()
@@ -112,7 +115,7 @@ class PropertiesPanel(QWidget):
         self.prop_description_lbl = QLabel()
         self.prop_description_val = QLabel("—")
         self.prop_description_val.setWordWrap(True)
-        self.prop_description_val.setStyleSheet("color: #334155; max-height: 80px;")
+        self.prop_description_val.setStyleSheet(f"color: {prop_p.TEXT_SECONDARY}; max-height: 80px;")
         name_form.addRow(self.prop_description_lbl, self.prop_description_val)
 
         self.prop_visibility_lbl = QLabel()
@@ -124,10 +127,11 @@ class PropertiesPanel(QWidget):
         # 1. Раздел: Координаты
         self.sec_coords_lbl = QLabel()
         self.sec_coords_lbl.setObjectName("secCoordsLabel")
-        self.sec_coords_lbl.setStyleSheet(
-            "font-weight: 700; color: #475569; font-size: 11px; "
-            "border-bottom: 1px solid #E2E8F0; padding-bottom: 2px;"
+        sec_title_style = (
+            f"font-weight: 700; color: {prop_p.SECTION_TITLE}; font-size: 11px; "
+            f"border-bottom: 1px solid {prop_p.BORDER}; padding-bottom: 2px;"
         )
+        self.sec_coords_lbl.setStyleSheet(sec_title_style)
         prop_vbox.addWidget(self.sec_coords_lbl)
 
         coords_form = QFormLayout()
@@ -145,10 +149,7 @@ class PropertiesPanel(QWidget):
         # 2. Раздел: Маркер
         self.sec_marker_lbl = QLabel()
         self.sec_marker_lbl.setObjectName("secMarkerLabel")
-        self.sec_marker_lbl.setStyleSheet(
-            "font-weight: 700; color: #475569; font-size: 11px; "
-            "border-bottom: 1px solid #E2E8F0; padding-bottom: 2px;"
-        )
+        self.sec_marker_lbl.setStyleSheet(sec_title_style)
         prop_vbox.addWidget(self.sec_marker_lbl)
 
         marker_form = QFormLayout()
@@ -166,7 +167,7 @@ class PropertiesPanel(QWidget):
         self.prop_color_val = QLabel("—")
         self.prop_color_swatch = QFrame()
         self.prop_color_swatch.setFixedSize(18, 18)
-        self.prop_color_swatch.setStyleSheet("border: 1px solid #999; border-radius: 3px;")
+        self.prop_color_swatch.setStyleSheet(f"border: 1px solid {prop_p.BORDER}; border-radius: 3px;")
         color_row.addWidget(self.prop_color_val)
         color_row.addWidget(self.prop_color_swatch)
         color_row.addStretch()
@@ -181,7 +182,7 @@ class PropertiesPanel(QWidget):
         self.prop_stroke_val = QLabel("—")
         self.prop_stroke_swatch = QFrame()
         self.prop_stroke_swatch.setFixedSize(18, 18)
-        self.prop_stroke_swatch.setStyleSheet("border: 1px solid #999; border-radius: 3px;")
+        self.prop_stroke_swatch.setStyleSheet(f"border: 1px solid {prop_p.BORDER}; border-radius: 3px;")
         stroke_row.addWidget(self.prop_stroke_val)
         stroke_row.addWidget(self.prop_stroke_swatch)
         stroke_row.addStretch()
@@ -193,10 +194,7 @@ class PropertiesPanel(QWidget):
         # 3. Раздел: Зона
         self.sec_zone_lbl = QLabel()
         self.sec_zone_lbl.setObjectName("secZoneLabel")
-        self.sec_zone_lbl.setStyleSheet(
-            "font-weight: 700; color: #475569; font-size: 11px; "
-            "border-bottom: 1px solid #E2E8F0; padding-bottom: 2px;"
-        )
+        self.sec_zone_lbl.setStyleSheet(sec_title_style)
         prop_vbox.addWidget(self.sec_zone_lbl)
 
         zone_form = QFormLayout()

@@ -37,6 +37,17 @@ class LightPalette:
     SELECTION_TEXT = "#1E3A8A"
     SPLITTER_HANDLE = "#D9DDE3"
     SPLITTER_HANDLE_HOVER = "#2563EB"
+    CANVAS_BG = "#F8FAFC"
+    GRIDLINE = "#F1F5F9"
+    ACCENT_BORDER = "#BFDBFE"
+    ACCENT_HOVER_BG = "#DBEAFE"
+    SCROLLBAR_HANDLE = "#CBD5E1"
+    SCROLLBAR_HOVER = "#94A3B8"
+    HEADER_HIGHLIGHT_BG = "#E1F0FF"
+    SECTION_TITLE = "#475569"
+    STATUS_OK = "#15803D"
+    STATUS_ERR = "#DC2626"
+    STATUS_WARN = "#B45309"
 
 
 def get_light_stylesheet(palette=None) -> str:
@@ -189,11 +200,11 @@ def get_light_stylesheet(palette=None) -> str:
     /* Акцентная кнопка добавления */
     QPushButton#btnAddPoint {{
         background-color: {c.ACCENT_LIGHT};
-        border-color: #BFDBFE;
+        border-color: {c.ACCENT_BORDER};
         color: {c.ACCENT};
     }}
     QPushButton#btnAddPoint:hover {{
-        background-color: #DBEAFE;
+        background-color: {c.ACCENT_HOVER_BG};
         border-color: {c.ACCENT};
     }}
 
@@ -204,7 +215,7 @@ def get_light_stylesheet(palette=None) -> str:
 
     QPushButton#btnCreateGroup {{
         background-color: {c.ACCENT_LIGHT};
-        border-color: #BFDBFE;
+        border-color: {c.ACCENT_BORDER};
         color: {c.ACCENT};
         font-weight: 600;
         padding: 3px 8px;
@@ -257,14 +268,14 @@ def get_light_stylesheet(palette=None) -> str:
         color: {c.TEXT_PRIMARY};
         border: 1px solid {c.BORDER};
         border-radius: 4px;
-        gridline-color: #F1F5F9;
+        gridline-color: {c.GRIDLINE};
         selection-background-color: {c.SELECTION_BG};
         selection-color: {c.SELECTION_TEXT};
         font-size: 12px;
     }}
     QTableWidget::item {{
         padding: 4px 6px;
-        border-bottom: 1px solid #F1F5F9;
+        border-bottom: 1px solid {c.GRIDLINE};
     }}
     QTableWidget::item:selected {{
         background-color: {c.SELECTION_BG};
@@ -285,7 +296,12 @@ def get_light_stylesheet(palette=None) -> str:
     QGraphicsView#mapCanvas {{
         border: 1px solid {c.BORDER};
         border-radius: 4px;
-        background-color: #F8FAFC;
+        background-color: {c.CANVAS_BG};
+    }}
+    QWidget#measurementHUD {{
+        background-color: {c.BG_PANEL};
+        border: 1px solid {c.BORDER};
+        border-radius: 6px;
     }}
 
     /* --- Чекбоксы --- */
@@ -293,20 +309,6 @@ def get_light_stylesheet(palette=None) -> str:
         color: {c.TEXT_PRIMARY};
         spacing: 6px;
         font-size: 12px;
-    }}
-    QCheckBox::indicator {{
-        width: 16px;
-        height: 16px;
-        border: 1px solid {c.BORDER};
-        border-radius: 3px;
-        background-color: {c.BG_PANEL};
-    }}
-    QCheckBox::indicator:hover {{
-        border-color: {c.BORDER_FOCUS};
-    }}
-    QCheckBox::indicator:checked {{
-        background-color: {c.ACCENT};
-        border-color: {c.ACCENT};
     }}
 
     /* --- Панель свойств --- */
@@ -327,6 +329,7 @@ def get_light_stylesheet(palette=None) -> str:
     QMessageBox {{ background-color: {c.BG_PANEL}; }}
     QTreeWidget {{
         background-color: {c.BG_PANEL};
+        color: {c.TEXT_PRIMARY};
         border: 1px solid {c.BORDER};
         border-radius: 6px;
         padding: 3px;
@@ -334,8 +337,8 @@ def get_light_stylesheet(palette=None) -> str:
     QTreeWidget::item {{ padding: 5px 6px; border-radius: 4px; }}
     QTreeWidget::item:selected {{ background-color: {c.SELECTION_BG}; color: {c.SELECTION_TEXT}; }}
     QScrollBar:vertical {{ background: transparent; width: 10px; margin: 3px; }}
-    QScrollBar::handle:vertical {{ background: #CBD5E1; border-radius: 4px; min-height: 28px; }}
-    QScrollBar::handle:vertical:hover {{ background: #94A3B8; }}
+    QScrollBar::handle:vertical {{ background: {c.SCROLLBAR_HANDLE}; border-radius: 4px; min-height: 28px; }}
+    QScrollBar::handle:vertical:hover {{ background: {c.SCROLLBAR_HOVER}; }}
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
     """
 
@@ -349,6 +352,9 @@ class ThemeManager:
 
     def __init__(self) -> None:
         self._current_theme = self.THEME_LIGHT
+        self._theme_target_ref = None
+        self._color_scheme_slot = None
+        self._cleanup_slot = None
 
     @property
     def current_theme(self) -> str:
@@ -357,40 +363,74 @@ class ThemeManager:
     def get_available_themes(self) -> list[str]:
         return [self.THEME_LIGHT, self.THEME_DARK, self.THEME_SYSTEM]
 
-    def get_stylesheet(self, theme: str | None = None) -> str:
+    def _resolve_theme_name(self, theme: str | None = None) -> str:
         t = (theme or self._current_theme).lower()
         if t == self.THEME_SYSTEM:
             from PySide6.QtGui import QGuiApplication
             from PySide6.QtCore import Qt
-            t = self.THEME_DARK if QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark else self.THEME_LIGHT
-        palette = DarkPalette if t == self.THEME_DARK else LightPalette
+            return self.THEME_DARK if QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark else self.THEME_LIGHT
+        return self.THEME_DARK if t == self.THEME_DARK else self.THEME_LIGHT
+
+    def is_dark_theme(self, theme: str | None = None) -> bool:
+        """Возвращает True, если активна (или выбрана) тёмная тема."""
+        return self._resolve_theme_name(theme) == self.THEME_DARK
+
+    def get_palette(self, theme: str | None = None):
+        """Возвращает класс палитры (LightPalette или DarkPalette) для текущей темы."""
+        return DarkPalette if self.is_dark_theme(theme) else LightPalette
+
+    def get_stylesheet(self, theme: str | None = None) -> str:
+        palette = self.get_palette(theme)
         return get_light_stylesheet(palette) + get_shared_widget_stylesheet(palette)
 
     def apply_theme(self, target: Any, theme: str = THEME_LIGHT) -> None:
         """Применить выбранную тему оформления к приложению или окну."""
+        import weakref
         self._current_theme = theme
+        self._theme_target_ref = weakref.ref(target) if target is not None else None
+        is_dark = self.is_dark_theme(theme)
         qss = self.get_stylesheet(theme)
         if hasattr(target, "setStyleSheet"):
-            if target.styleSheet()==qss:
-                return
-            target.setStyleSheet(qss)
+            if target.styleSheet() != qss:
+                target.setStyleSheet(qss)
             from PySide6.QtWidgets import QApplication
             from rme_mapper.ui.theme_style_filter import ThemeStyleFilter
             app = QApplication.instance()
             if app:
-                if not hasattr(self, "_style_filter"):
+                if not hasattr(self, "_style_filter") or self._style_filter is None:
                     self._style_filter = ThemeStyleFilter(app)
                     app.installEventFilter(self._style_filter)
-                    import atexit
-                    def detach_filter(app=app, style_filter=self._style_filter):
-                        import shiboken6
-                        if shiboken6.isValid(app) and shiboken6.isValid(style_filter):
-                            app.removeEventFilter(style_filter)
-                    atexit.register(detach_filter)
-                    app.styleHints().colorSchemeChanged.connect(
-                        lambda *_: self.apply_theme(app, self.THEME_SYSTEM)
-                        if self.current_theme == self.THEME_SYSTEM else None)
-                self._style_filter.apply("#111827" in qss)
+
+                    def _cleanup_theme_hooks(*_args):
+                        try:
+                            import shiboken6
+                            style_filter = getattr(self, "_style_filter", None)
+                            if style_filter is not None and shiboken6.isValid(app) and shiboken6.isValid(style_filter):
+                                app.removeEventFilter(style_filter)
+                            if self._color_scheme_slot is not None and shiboken6.isValid(app):
+                                try:
+                                    app.styleHints().colorSchemeChanged.disconnect(self._color_scheme_slot)
+                                except (RuntimeError, TypeError):
+                                    pass
+                        except Exception:
+                            pass
+                        finally:
+                            self._style_filter = None
+                            self._color_scheme_slot = None
+
+                    def _on_system_scheme_changed(*_args):
+                        if self.current_theme != self.THEME_SYSTEM:
+                            return
+                        real_target = self._theme_target_ref() if self._theme_target_ref is not None else app
+                        if real_target is not None:
+                            self.apply_theme(real_target, self.THEME_SYSTEM)
+
+                    self._color_scheme_slot = _on_system_scheme_changed
+                    self._cleanup_slot = _cleanup_theme_hooks
+                    app.styleHints().colorSchemeChanged.connect(self._color_scheme_slot)
+                    app.aboutToQuit.connect(self._cleanup_slot)
+                if getattr(self, "_style_filter", None) is not None:
+                    self._style_filter.apply(is_dark)
             logger.info("Тема оформления '%s' успешно применена", theme)
 
 
@@ -421,6 +461,17 @@ class DarkPalette(LightPalette):
     DANGER_LIGHT = "#450A0A"
     DANGER = "#FCA5A5"
     SPLITTER_HANDLE = "#475569"
+    CANVAS_BG = "#0F172A"
+    GRIDLINE = "#334155"
+    ACCENT_BORDER = "#1D4ED8"
+    ACCENT_HOVER_BG = "#1E40AF"
+    SCROLLBAR_HANDLE = "#475569"
+    SCROLLBAR_HOVER = "#64748B"
+    HEADER_HIGHLIGHT_BG = "#1E3A5F"
+    SECTION_TITLE = "#CBD5E1"
+    STATUS_OK = "#4ADE80"
+    STATUS_ERR = "#FCA5A5"
+    STATUS_WARN = "#FCD34D"
 
 
 def get_shared_widget_stylesheet(c):

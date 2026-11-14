@@ -39,7 +39,9 @@ class AuditFeaturesMixin:
         self.center_panel.layout().insertWidget(1,self.navigation_bar)
         self.measure_bar=QWidget(self.map_canvas.viewport())
         self.measure_bar.setObjectName("measurementHUD")
-        self.measure_bar.setStyleSheet("QWidget#measurementHUD { background: #FFFFFF; border: 1px solid #D9DDE3; border-radius: 6px; }")
+        from rme_mapper.ui.theme_manager import get_theme_manager
+        hud_p = get_theme_manager().get_palette()
+        self.measure_bar.setStyleSheet(f"QWidget#measurementHUD {{ background: {hud_p.BG_PANEL}; border: 1px solid {hud_p.BORDER}; border-radius: 6px; }}")
         bar=QHBoxLayout(self.measure_bar)
         bar.setContentsMargins(0,0,0,0)
         self.measure_buttons=[]

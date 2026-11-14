@@ -11,6 +11,7 @@ from typing import Any
 import logging
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDialog,
@@ -253,17 +254,19 @@ class ImportDialog(QDialog):
                 field_prefix = f" ({warn.field})" if warn.field else ""
                 combined_items.append(("warning", f"⚠️ {row_prefix}{field_prefix}:", warn.localized_message()))
 
+        from rme_mapper.ui.theme_manager import get_theme_manager
+        palette = get_theme_manager().get_palette()
         if not combined_items:
             it = QListWidgetItem(f"✅ {tr('dialog.import_all_rows_valid')}")
-            it.setForeground(Qt.GlobalColor.darkGreen)
+            it.setForeground(QColor(palette.STATUS_OK))
             self.errors_list.addItem(it)
         else:
             for kind, prefix, msg in combined_items:
                 it = QListWidgetItem(f"{prefix} {msg}")
                 if kind == "error":
-                    it.setForeground(Qt.GlobalColor.red)
+                    it.setForeground(QColor(palette.STATUS_ERR))
                 else:
-                    it.setForeground(Qt.GlobalColor.darkYellow)
+                    it.setForeground(QColor(palette.STATUS_WARN))
                 self.errors_list.addItem(it)
 
         # Управление кнопкой импорта

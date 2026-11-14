@@ -13,7 +13,7 @@ from PySide6.QtCore import (
     Qt,
     Signal,
 )
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QBrush, QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -569,11 +569,11 @@ class PointsPanel(QWidget):
             if visible is not None and num_item:
                 num_item.setData(Qt.ItemDataRole.UserRole + 4, visible)
                 muted = not visible
-                fore_color = QColor("#94A3B8") if muted else QColor("#000000")
+                fore_brush = QBrush(QColor("#94A3B8")) if muted else QBrush()
                 for c in range(6):
                     it = self.points_table.item(row, c)
                     if it:
-                        it.setForeground(fore_color)
+                        it.setForeground(fore_brush)
             if update_group and num_item:
                 num_item.setData(Qt.ItemDataRole.UserRole + 5, group_id)
 

@@ -14,7 +14,7 @@ import logging
 from typing import Any
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QBrush, QColor, QFont
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
@@ -240,7 +240,7 @@ class GroupsPanel(QWidget):
         gid = item.data(0, ITEM_ROLE_GROUP_ID)
         if gid:
             vis = item.checkState(0) == Qt.CheckState.Checked
-            item.setForeground(0, QColor("#1E293B") if vis else QColor("#94A3B8"))
+            item.setForeground(0, QBrush() if vis else QBrush(QColor("#94A3B8")))
             self.group_visibility_toggled.emit(str(gid), vis)
 
     def _on_item_double_clicked(self, item: QTreeWidgetItem, column: int) -> None:
