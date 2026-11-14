@@ -422,8 +422,8 @@ class ExportObjectsDialog(QDialog):
 
         fmt = self._get_current_format()
         target_path = Path(target_str)
-        if not target_path.suffix:
-            target_path = target_path.with_suffix(f".{fmt.value}")
+        if target_path.suffix.lower() not in (".csv", ".xlsx"):
+            target_path = Path(f"{target_str}.{fmt.value}")
 
         # Проверка Target CRS при выборе спроецированных координат (X/Y/CRS)
         needs_projected = any(

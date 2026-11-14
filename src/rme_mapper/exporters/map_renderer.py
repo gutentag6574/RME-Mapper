@@ -235,6 +235,9 @@ class MapRenderer:
                     scale=scale,
                 )
 
+            # Коэффициент масштабирования экранных элементов
+            scale_factor = options.scale_factor()
+
             # Same order and opacity as the interactive additional raster layers.
             for overlay in reversed(raster_overlays or []):
                 if not overlay.get("visible", True):
@@ -243,32 +246,43 @@ class MapRenderer:
                 try:
                     painter.setOpacity(float(overlay.get("opacity", 1)))
                     import pyproj
-                    if overlay.get("crs") and not pyproj.CRS(overlay["crs"]).equals(pyproj.CRS(active_crs),ignore_axis_order=True):
+                    if overlay.get("crs") and not pyproj.CRS(overlay["crs"]).equals(pyproj.CRS(active_crs), ignore_axis_order=True):
                         from rme_mapper.services.georeference_service import GeoreferenceService
                         from rme_mapper.services.raster_warp_service import warp_image
-                        source,size=GeoreferenceService.load_full_image(overlay["path"])
-                        warped,_=warp_image(source,size,overlay["affine"],overlay["crs"],active_crs,adj_extent,(width,height))
-                        painter.drawImage(0,0,warped)
+                        source, size = GeoreferenceService.load_full_image(overlay["path"])
+                        warped, _ = warp_image(source, size, overlay["affine"], overlay["crs"], active_crs, adj_extent, (width, height))
+                        painter.drawImage(0, 0, warped)
                     else:
-                        cls._render_raster_layer(painter=painter, raster_source=overlay["path"],
-                            target_extent=adj_extent, width=width, height=height, min_x=min_x,
-                            max_y=max_y, scale=scale, raster_affine=overlay["affine"])
+                        cls._render_raster_layer(
+                            painter=painter,
+                            raster_source=overlay["path"],
+                            target_extent=adj_extent,
+                            width=width,
+                            height=height,
+                            min_x=min_x,
+                            max_y=max_y,
+                            scale=scale,
+                            raster_affine=overlay["affine"],
+                        )
+                except Exception as exc:
+                    logger.warning("Не удалось отрисовать растровый оверлей %s: %s", overlay.get("path"), exc, exc_info=True)
                 finally:
                     painter.restore()
 
             if annotations:
                 from rme_mapper.services.annotation_service import annotation_path
-                mapping=QTransform(scale,0,0,scale,-min_x*scale,max_y*scale)
+                mapping = QTransform(scale, 0, 0, scale, -min_x * scale, max_y * scale)
+                ann_pen = QPen(QColor("#2563eb"), max(1.0, 2.0 * scale_factor))
                 for record in annotations:
-                    if not record.get("visible",True):
+                    if not record.get("visible", True):
                         continue
-                    path=mapping.map(annotation_path(record,active_crs))
-                    painter.setPen(QPen(QColor("#2563eb"),2))
-                    painter.setBrush(QBrush(QColor(37,99,235,30)) if record["kind"]=="polygon" else QBrush(Qt.BrushStyle.NoBrush))
-                    painter.drawPath(path)
-
-            # Коэффициент масштабирования экранных элементов
-            scale_factor = options.scale_factor()
+                    try:
+                        path = mapping.map(annotation_path(record, active_crs))
+                        painter.setPen(ann_pen)
+                        painter.setBrush(QBrush(QColor(37, 99, 235, 30)) if record.get("kind") == "polygon" else QBrush(Qt.BrushStyle.NoBrush))
+                        painter.drawPath(path)
+                    except Exception as exc:
+                        logger.warning("Не удалось отрисовать аннотацию %s: %s", record.get("id"), exc, exc_info=True)
 
             # 4.5. Отрисовка координатной сетки (над базовыми слоями, под зонами и точками)
             if options.include_grid:
@@ -374,6 +388,7 @@ class MapRenderer:
                     image_rect=image_rect,
                     scale_factor=scale_factor,
                     margin=margin,
+                    has_north_arrow=options.include_north_arrow,
                 )
 
             # Стрелка севера

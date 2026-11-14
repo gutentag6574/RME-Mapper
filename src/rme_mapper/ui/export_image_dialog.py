@@ -3,6 +3,7 @@ from __future__ import annotations
 
 
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +51,22 @@ PRESETS = [
     ("export.preset_a4_portrait", 2480, 3508),
     ("export.preset_custom", 0, 0),
 ]
+
+
+_WINDOWS_RESERVED_STEMS = {
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
+
+
+def _sanitize_filename_stem(title: str | None) -> str:
+    """Очистить название карты для безопасного имени файла в Windows/POSIX."""
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", (title or "").strip())
+    cleaned = cleaned.strip(" .")
+    if not cleaned or cleaned.upper() in _WINDOWS_RESERVED_STEMS:
+        return "map"
+    return cleaned
 
 
 class ExportImageDialog(QDialog):
@@ -542,7 +559,7 @@ class ExportImageDialog(QDialog):
     def _on_browse_clicked(self) -> None:
         """Открытие диалога выбора файла для сохранения."""
         last_dir = self._settings_service.get_last_export_directory(check_exists=True)
-        default_name = f"{self._default_map_title or 'map'}.png"
+        default_name = f"{_sanitize_filename_stem(self._default_map_title)}.png"
         default_path = str(Path(last_dir) / default_name)
 
         filt = f"{tr('export.filter_png')};;{tr('export.filter_jpeg')};;{tr('export.filter_all')}"
@@ -667,7 +684,7 @@ class ExportImageDialog(QDialog):
             file_path="preview.png",
             format="PNG",
             width_px=540,
-            height_px=int(round(540 * (options.height_px / options.width_px))),
+            height_px=max(1, int(round(540 * (options.height_px / max(1, options.width_px))))),
             include_points=options.include_points,
             include_zones=options.include_zones,
             include_labels=options.include_labels,
@@ -719,7 +736,7 @@ class ExportImageDialog(QDialog):
 
             preview_dialog.exec()
         except Exception as e:
-            QMessageBox.warning(self, tr("dialog.export_map_title"), f"{tr('export.err_failed')}\n{e}")
+            QMessageBox.warning(self, tr("dialog.export_map_title"), tr("export.err_failed", error=str(e)))
 
     def _on_export_clicked(self) -> None:
         """Проверка параметров и закрытие с кодом Accepted."""
@@ -834,7 +851,7 @@ class ExportImageDialog(QDialog):
         last_dir = self._settings_service.get_last_export_directory(check_exists=True)
         fmt = self._settings_service.get_export_format(default="PNG")
         ext = ".png" if fmt == "PNG" else ".jpg"
-        def_name = f"{self._default_map_title or 'map'}{ext}"
+        def_name = f"{_sanitize_filename_stem(self._default_map_title)}{ext}"
         self.path_edit.setText(str(Path(last_dir) / def_name))
 
         idx_fmt = self.fmt_combo.findData(fmt)

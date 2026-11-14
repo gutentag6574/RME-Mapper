@@ -61,6 +61,40 @@ def _format_crs_string(raw_crs: Any) -> str:
         return str(raw_crs)
 
 
+def _extract_clean_crs(raw_crs: Any, formatted_crs: str) -> str:
+    """Извлечь валидную строку CRS без отображаемого суффикса ' (name)'."""
+    for candidate in (raw_crs, formatted_crs):
+        if not candidate:
+            continue
+        text = str(candidate).strip()
+        if not text:
+            continue
+        try:
+            parsed = pyproj.CRS.from_user_input(text)
+            epsg = parsed.to_epsg()
+            if epsg:
+                return f"EPSG:{epsg}"
+            auth = parsed.to_authority()
+            if auth and len(auth) == 2:
+                return f"{auth[0]}:{auth[1]}"
+            return parsed.to_string() or text
+        except Exception:
+            if " (" in text and text.endswith(")"):
+                stripped = text.rsplit(" (", 1)[0].strip()
+                try:
+                    parsed = pyproj.CRS.from_user_input(stripped)
+                    epsg = parsed.to_epsg()
+                    if epsg:
+                        return f"EPSG:{epsg}"
+                    auth = parsed.to_authority()
+                    if auth and len(auth) == 2:
+                        return f"{auth[0]}:{auth[1]}"
+                    return parsed.to_string() or stripped
+                except Exception:
+                    pass
+    return "OGC:CRS84"
+
+
 def _get_default_layer_style(geometry_type: str, is_boundary: bool = False) -> dict[str, Any]:
     """Генерация приятного стиля по умолчанию на основе типа геометрии слоя."""
     geom = (geometry_type or "").lower()
@@ -411,7 +445,7 @@ class OpenMapDialog(QDialog):
         self._raster_info = {}
         self.layers_table.setRowCount(0)
         from rme_mapper.services.georeference_service import GeoreferenceService, WORLD_FILE_EXTENSIONS
-        if path.suffix.lower() in WORLD_FILE_EXTENSIONS | {".png", ".jpg", ".jpeg", ".tif", ".tiff"}:
+        if path.suffix.lower() in WORLD_FILE_EXTENSIONS | {".png", ".jpg", ".jpeg"}:
             try:
                 binding = GeoreferenceService.read_world_file(path)
             except Exception as exc:
@@ -459,8 +493,16 @@ class OpenMapDialog(QDialog):
                 QMessageBox.critical(self, "Ошибка чтения GeoTIFF", f"Не удалось прочитать файл:\n{path}\n\n{e}")
                 return
 
-            # Проверка наличия CRS и геопривязки в GeoTIFF
+            # Проверка наличия CRS и геопривязки в GeoTIFF; если отсутствуют, проверяем world-файл
             if not info.get("crs") or not info.get("is_valid_georef"):
+                try:
+                    binding = GeoreferenceService.read_world_file(path)
+                except Exception as exc:
+                    QMessageBox.critical(self, tr("dialog.georef.title"), str(exc))
+                    return
+                if binding:
+                    self._launch_georeference_dialog(path)
+                    return
                 ret = QMessageBox.question(
                     self,
                     tr("msg.georef_offer_title") or "Геопривязка изображения",
@@ -759,12 +801,7 @@ class OpenMapDialog(QDialog):
 
             # Формируем runtime-профиль
             runtime_id = f"runtime_{uuid.uuid4().hex[:8]}"
-            clean_crs = self._inspected_crs_str
-            # Если CRS строка содержит " (name)", извлечем чистый код если есть
-            if clean_crs.startswith("EPSG:") and " (" in clean_crs:
-                clean_crs = clean_crs.split(" (", 1)[0]
-            elif clean_crs.startswith("OGC:CRS84"):
-                clean_crs = "OGC:CRS84"
+            clean_crs = _extract_clean_crs(self._inspected_crs_raw, self._inspected_crs_str)
 
             self._selected_profile = MapProfile(
                 id=runtime_id,

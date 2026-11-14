@@ -19,7 +19,8 @@ logger = logging.getLogger("rme_mapper.exporters.decorations")
 
 NICE_INTERVALS = [
     1, 2, 5, 10, 20, 50, 100, 200, 500,
-    1_000, 2_000, 5_000, 10_000, 20_000, 50_000, 100_000, 200_000, 500_000, 1_000_000,
+    1_000, 2_000, 5_000, 10_000, 20_000, 50_000, 100_000, 200_000, 500_000,
+    1_000_000, 2_000_000, 5_000_000, 10_000_000, 20_000_000,
 ]
 
 
@@ -114,6 +115,7 @@ class MapDecorationRenderer:
         image_rect: QRectF,
         scale_factor: float,
         margin: float,
+        has_north_arrow: bool = True,
     ) -> QRectF:
         """Отрисовка компактной легенды типов объектов (формы маркеров и зоны)."""
         # Анализируем, какие формы маркеров реально есть среди видимых точек
@@ -170,7 +172,7 @@ class MapDecorationRenderer:
             y = margin + 50.0 * scale_factor  # отступ ниже возможного заголовка
         elif pos == "top_right":
             x = image_rect.width() - margin - card_w
-            y = margin
+            y = margin + (68.0 * scale_factor if has_north_arrow else 0.0)
         elif pos == "bottom_left":
             x = margin
             y = image_rect.height() - margin - card_h - 40.0 * scale_factor  # выше CRS
@@ -497,10 +499,9 @@ class MapDecorationRenderer:
 
         import re
         display_text = re.sub(r"<[^>]+>", "", clean_text).strip()
-        if logo_required and "mapbox" in display_text.lower():
+        if logo_required and "mapbox" not in display_text.lower():
             # Если требуется логотип Mapbox, форматируем аккуратную плашку с указанием провайдера
-            if not display_text.startswith("mapbox"):
-                display_text = f"mapbox | {display_text}"
+            display_text = f"mapbox | {display_text}"
 
         font_size = max(8, round(9.0 * scale_factor))
         font = QFont("Segoe UI", font_size)

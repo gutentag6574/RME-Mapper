@@ -724,6 +724,8 @@ class GeoreferenceDialog(QDialog):
         text = item.text().strip().replace(",", ".")
         try:
             val = float(text)
+            if not math.isfinite(val):
+                raise ValueError()
             if col == 1:
                 pt.pixel_x = val
             elif col == 2:
@@ -732,8 +734,6 @@ class GeoreferenceDialog(QDialog):
                 pt.target_x = val
             elif col == 4:
                 pt.target_y = val
-            if not math.isfinite(val):
-                raise ValueError()
             item.setBackground(QBrush())
             item.setToolTip("")
         except ValueError:

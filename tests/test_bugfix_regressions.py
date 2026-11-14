@@ -893,6 +893,157 @@ def test_high09_importer_and_wizard_fixes(tmp_path, qapp):
     assert res_limit.points == []
 
 
+def test_high10_export_and_georef_dialog_fixes(qapp, tmp_path, monkeypatch):
+    """HIGH-10: Экспорт карты/объектов, декорации, санитизация имён и OpenMap/Georeference dialogs."""
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QImage, QPainter, QPainterPath
+    from PySide6.QtWidgets import QMessageBox
+
+    from rme_mapper.exporters.decorations import NICE_INTERVALS, MapDecorationRenderer
+    from rme_mapper.exporters.map_renderer import MapRenderer
+    from rme_mapper.exporters.models import ImageExportOptions
+    from rme_mapper.models.georeference import ControlPoint
+    from rme_mapper.ui.export_image_dialog import ExportImageDialog, _sanitize_filename_stem
+    from rme_mapper.ui.export_objects_dialog import ExportObjectsDialog
+    from rme_mapper.ui.georeference_dialog import GeoreferenceDialog
+    from rme_mapper.ui.open_map_dialog import OpenMapDialog, _extract_clean_crs
+
+    # 1. MapRenderer: битый оверлей и аннотация не срывают экспорт; перо аннотации масштабируется
+    img_out = MapRenderer.render_map(
+        options=ImageExportOptions(
+            file_path=str(tmp_path / "out.png"),
+            format="PNG",
+            width_px=2400,
+            height_px=1600,
+            include_legend=True,
+            legend_position="top_right",
+            include_north_arrow=True,
+            include_scale_bar=True,
+        ),
+        active_crs="EPSG:3857",
+        target_extent=(-10_000_000.0, -5_000_000.0, 10_000_000.0, 5_000_000.0),
+        loaded_layers_render_data=[],
+        points=[MapPoint(id="p1", name="P1", latitude=10.0, longitude=10.0, symbol="circle")],
+        selected_point_ids=set(),
+        raster_overlays=[{"path": str(tmp_path / "missing.tif"), "visible": True, "opacity": 0.8, "affine": [1, 0, 0, 0, -1, 0], "crs": "EPSG:3857"}],
+        annotations=[
+            {"id": "bad", "kind": "invalid_kind", "coordinates": [], "visible": True},
+            {"id": "ok", "kind": "line", "coordinates": [[0.0, 0.0], [10.0, 10.0]], "visible": True},
+        ],
+    )
+    assert not img_out.isNull()
+    assert img_out.width() == 2400
+
+    # 2. Decorations: top_right legend не пересекается с north_arrow; NICE_INTERVALS континентальный; Mapbox badge без дубликата
+    assert max(NICE_INTERVALS) >= 10_000_000
+    dec_img = QImage(800, 600, QImage.Format.Format_RGBA8888)
+    painter = QPainter(dec_img)
+    try:
+        rect = QRectF(0, 0, 800, 600)
+        arrow_rect = MapDecorationRenderer.render_north_arrow(
+            painter, (0.0, 0.0, 1000.0, 1000.0), "EPSG:3857", rect, 1.0, 16.0
+        )
+        legend_rect = MapDecorationRenderer.render_legend(
+            painter, [MapPoint(id="p1", name="P1", latitude=0.0, longitude=0.0)], False, "top_right", rect, 1.0, 16.0, has_north_arrow=True
+        )
+        assert not legend_rect.isEmpty()
+        assert not arrow_rect.intersects(legend_rect)
+
+        seen_texts: list[str] = []
+        orig_draw_text = QPainter.drawText
+        def _capture_draw_text(self_p, *args, **kwargs):
+            if args and isinstance(args[-1], str):
+                seen_texts.append(args[-1])
+            return orig_draw_text(self_p, *args, **kwargs)
+        monkeypatch.setattr(QPainter, "drawText", _capture_draw_text)
+        MapDecorationRenderer.render_attribution(painter, "© Mapbox © OpenStreetMap", rect, 1.0, 16.0, logo_required=True)
+        assert "© Mapbox © OpenStreetMap" in seen_texts
+        assert not any(t.startswith("mapbox | © Mapbox") for t in seen_texts)
+    finally:
+        painter.end()
+
+    # 3. ExportImageDialog: санитизация имени, preview height >= 1 и форматирование error=
+    assert _sanitize_filename_stem('Карта: <тест>/1?*.') == "Карта_ _тест_1_"
+    assert _sanitize_filename_stem("CON") == "map"
+
+    exp_dlg = ExportImageDialog(
+        parent=None,
+        active_crs="EPSG:3857",
+        map_title='Bad:Name<1>',
+        current_view_extent=(0.0, 0.0, 1000.0, 1000.0),
+        full_map_extent=(0.0, 0.0, 1000.0, 1000.0),
+        loaded_layers_render_data=[],
+        points=[],
+        selected_point_ids=set(),
+    )
+    try:
+        assert "<" not in exp_dlg.path_edit.text() and ":" not in Path(exp_dlg.path_edit.text()).name
+        exp_dlg.chk_lock_aspect.setChecked(False)
+        exp_dlg.spin_width.setValue(10000)
+        exp_dlg.spin_height.setValue(1)
+
+        captured_opts = {}
+        def _fail_render(**kwargs):
+            captured_opts["opts"] = kwargs["options"]
+            raise RuntimeError("boom-preview")
+        monkeypatch.setattr(MapRenderer, "render_map", staticmethod(_fail_render))
+        warned = []
+        monkeypatch.setattr(QMessageBox, "warning", lambda *a, **kw: warned.append(a[2] if len(a) > 2 else ""))
+        exp_dlg._on_preview_clicked()
+        assert captured_opts["opts"].height_px >= 1
+        assert warned and "boom-preview" in warned[0] and "{error}" not in warned[0]
+    finally:
+        exp_dlg.close()
+
+    # 4. ExportObjectsDialog: добавление расширения при имени с точкой ('points.v2' -> 'points.v2.csv')
+    obj_dlg = ExportObjectsDialog(points=[], selected_ids=set())
+    try:
+        obj_dlg.path_edit.setText(str(tmp_path / "points.v2"))
+        obj_dlg._on_export_clicked()
+        assert obj_dlg._target_path is not None
+        assert obj_dlg._target_path.name == "points.v2.csv"
+    finally:
+        obj_dlg.close()
+
+    # 5. GeoreferenceDialog: NaN / Inf отклоняются ДО записи в ControlPoint
+    raw_img = tmp_path / "raw.png"
+    QImage(32, 32, QImage.Format.Format_RGBA8888).save(str(raw_img))
+    geo_dlg = GeoreferenceDialog(raw_img)
+    try:
+        geo_dlg._control_points.append(ControlPoint(id="1", name="1", pixel_x=5.0, pixel_y=6.0, target_x=100.0, target_y=200.0))
+        geo_dlg._populate_table()
+        item = geo_dlg.points_table.item(0, 1)
+        assert item is not None
+        item.setText("nan")
+        qapp.processEvents()
+        assert geo_dlg._control_points[0].pixel_x == 5.0
+    finally:
+        geo_dlg.close()
+
+    # 6. OpenMapDialog: _extract_clean_crs и валидный GeoTIFF рядом с .tfw не уходит в ручную привязку
+    assert _extract_clean_crs(None, "ESRI:102001 (Canada_Albers_Equal_Area_Conic)") == "ESRI:102001"
+    tif_path = tmp_path / "geotiff.tif"
+    tif_path.write_bytes(b"fake")
+    tif_path.with_suffix(".tfw").write_text("1.0\n0.0\n0.0\n-1.0\n500000.0\n6000000.0\n", encoding="utf-8")
+
+    class _FakeRB:
+        def inspect_raster(self, p):
+            return {"width": 64, "height": 64, "band_count": 3, "crs": "EPSG:32639", "is_valid_georef": True, "extent": [0, 0, 64, 64]}
+
+    monkeypatch.setattr("rme_mapper.backends.BackendFactory.supports_geotiff", classmethod(lambda cls: True))
+    monkeypatch.setattr("rme_mapper.ui.open_map_dialog.get_raster_backend", lambda: _FakeRB())
+    om_dlg = OpenMapDialog()
+    try:
+        launched = []
+        monkeypatch.setattr(om_dlg, "_launch_georeference_dialog", lambda p: launched.append(p))
+        om_dlg._set_file_path(tif_path)
+        assert launched == []
+        assert om_dlg._is_raster is True
+    finally:
+        om_dlg.close()
+
+
+
 
 
 
