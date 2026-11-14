@@ -423,6 +423,32 @@ class ProjectService:
 
 
     @staticmethod
+    def _to_portable_path(
+        raw_path: Path | str,
+        project_dir_resolved: Path | None,
+        root_resolved: Path,
+        fallback_base: Path | None = None,
+    ) -> str:
+        """Преобразование пути к относительному виду (сначала от каталога проекта, затем от корня приложения)."""
+        p = Path(raw_path)
+        if not p.is_absolute():
+            if fallback_base is not None:
+                candidate = (fallback_base / p).resolve()
+                p = candidate
+            elif project_dir_resolved is None:
+                return Path(raw_path).as_posix()
+        resolved = p.resolve()
+        if project_dir_resolved is not None:
+            try:
+                return resolved.relative_to(project_dir_resolved).as_posix()
+            except ValueError:
+                pass
+        try:
+            return resolved.relative_to(root_resolved).as_posix()
+        except ValueError:
+            return resolved.as_posix()
+
+    @staticmethod
     def build_project_data(
         map_path: Path | str | None = None,
         layers: list[MapLayer] | None = None,
@@ -435,6 +461,7 @@ class ProjectService:
         boundary_layer: str | None = None,
         map_profile: Any = None,
         preserve_map_data: ProjectMapData | None = None,
+        project_dir: Path | str | None = None,
     ) -> ProjectData:
         """Сборка модели ProjectData из текущего состояния приложения."""
         if map_profile is not None:
@@ -450,14 +477,33 @@ class ProjectService:
             if source_type != "online_xyz" and not map_path:
                 map_path = map_profile.get_absolute_source_path()
 
+        root_resolved = get_project_root().resolve()
+        project_dir_resolved = Path(project_dir).resolve() if project_dir is not None else None
+        profile_base = getattr(map_profile, "base_dir", None) if map_profile else None
+        profile_base_resolved = Path(profile_base).resolve() if profile_base is not None else None
+
         rel_path = ""
         if map_path and source_type != "online_xyz":
-            root = get_project_root().resolve()
-            resolved = Path(map_path).resolve()
-            try:
-                rel_path = resolved.relative_to(root).as_posix()
-            except ValueError:
-                rel_path = resolved.as_posix()
+            rel_path = ProjectService._to_portable_path(
+                map_path,
+                project_dir_resolved=project_dir_resolved,
+                root_resolved=root_resolved,
+                fallback_base=profile_base_resolved,
+            )
+
+        serialized_overlays: list[dict[str, Any]] = []
+        if map_profile:
+            for item in getattr(map_profile, "raster_overlays", []):
+                ov = dict(item)
+                raw_ov_path = ov.get("path")
+                if raw_ov_path:
+                    ov["path"] = ProjectService._to_portable_path(
+                        raw_ov_path,
+                        project_dir_resolved=project_dir_resolved,
+                        root_resolved=root_resolved,
+                        fallback_base=profile_base_resolved,
+                    )
+                serialized_overlays.append(ov)
 
         profile_layers_meta: list[dict[str, Any]] = []
         if map_profile and getattr(map_profile, "layers", None):
@@ -487,7 +533,7 @@ class ProjectService:
                     cp.to_dict() if hasattr(cp, "to_dict") else dict(cp) for cp in control_points
                 ] if control_points is not None else None,
                 transformation_type=transformation_type,
-                raster_overlays=[dict(item) for item in getattr(map_profile, "raster_overlays", [])] if map_profile else [],
+                raster_overlays=serialized_overlays,
                 annotations=[dict(item) for item in getattr(map_profile,"annotations",[])] if map_profile else [],
             )
 

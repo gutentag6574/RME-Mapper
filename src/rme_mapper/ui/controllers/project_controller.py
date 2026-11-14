@@ -251,6 +251,7 @@ class ProjectController(QObject):
                 map_profile=profile,
                 groups=groups,
                 preserve_map_data=preserve_map,
+                project_dir=path.parent,
             )
             saved_path = self._project_service.save_project(project_data, path)
             self._current_project_path = saved_path

@@ -179,7 +179,12 @@ class WorkspaceLayoutMixin(AuditFeaturesMixin):
             current = getattr(self.project_controller, "_current_project_path", None)
             if current is not None and target.resolve() == Path(current).resolve():
                 raise ValueError(tr("ux.archive_overwrite"))
-            create_project_bundle(data, target, self.map_controller.map_path)
+            base_dir = (
+                Path(current).resolve().parent
+                if current is not None
+                else (profile.base_dir if profile and getattr(profile, "base_dir", None) else None)
+            )
+            create_project_bundle(data, target, self.map_controller.map_path, base_dir=base_dir)
             QMessageBox.information(self, tr("common.success"), tr("ux.bundle_done", path=target))
         except Exception as error:
             QMessageBox.critical(self, tr("dialog.error_title"), str(error))

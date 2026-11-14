@@ -748,5 +748,73 @@ def test_high07_tile_cache_validation_no_os_walk_per_tile_and_single_write(tmp_p
     assert put_calls == []
 
 
+def test_high08_bundle_resolves_relative_and_copies_overlay_sidecars(tmp_path):
+    """HIGH-08: разрешение относительных путей от каталога проекта, копирование sidecar-ов оверлеев и относительные пути при build_project_data."""
+    import zipfile
+    from PySide6.QtGui import QImage, QColor
+    from rme_mapper.models.map_profile import MapProfile
+    from rme_mapper.models.project_data import ProjectData, ProjectMapData
+    from rme_mapper.services.project_bundle_service import create_project_bundle
+    from rme_mapper.services.project_service import ProjectService
+
+    proj_dir = tmp_path / "proj_dir"
+    (proj_dir / "sub_map").mkdir(parents=True)
+    (proj_dir / "sub_ovl").mkdir(parents=True)
+
+    img = QImage(16, 16, QImage.Format.Format_RGBA8888)
+    img.fill(QColor("#334455"))
+
+    map_file = proj_dir / "sub_map" / "base.png"
+    img.save(str(map_file))
+    (proj_dir / "sub_map" / "base.pgw").write_text("1\n0\n0\n-1\n0\n16\n", encoding="utf-8")
+
+    ovl_file = proj_dir / "sub_ovl" / "extra.png"
+    img.save(str(ovl_file))
+    (proj_dir / "sub_ovl" / "extra.pgw").write_text("1\n0\n0\n-1\n10\n26\n", encoding="utf-8")
+    (proj_dir / "sub_ovl" / "extra.prj").write_text("EPSG:32639", encoding="utf-8")
+
+    project = ProjectData(
+        map=ProjectMapData(
+            relative_path="sub_map/base.png",
+            source_type="image",
+            crs="EPSG:32639",
+            raster_overlays=[
+                {
+                    "path": "sub_ovl/extra.png",
+                    "crs": "EPSG:32639",
+                    "affine": [1.0, 0.0, 10.0, 0.0, -1.0, 26.0],
+                    "opacity": 0.8,
+                    "visible": True,
+                }
+            ],
+        )
+    )
+
+    bundle_path = tmp_path / "out.zip"
+    create_project_bundle(project, bundle_path, map_path=None, base_dir=proj_dir)
+
+    with zipfile.ZipFile(bundle_path) as zf:
+        names = set(zf.namelist())
+        assert "maps/base.png" in names
+        assert "maps/base.pgw" in names
+        assert "overlays/0/extra.png" in names
+        assert "overlays/0/extra.pgw" in names
+        assert "overlays/0/extra.prj" in names
+
+    # build_project_data сохраняет относительные пути карты и оверлеев относительно project_dir
+    prof = MapProfile(
+        id="p1",
+        name="Test",
+        crs="EPSG:32639",
+        source_type="image",
+        base_dir=proj_dir,
+        raster_overlays=[{"path": str(ovl_file), "crs": "EPSG:32639", "affine": [1, 0, 0, 0, -1, 1], "opacity": 1.0, "visible": True}],
+    )
+    built = ProjectService.build_project_data(map_path=map_file, map_profile=prof, project_dir=proj_dir)
+    assert built.map.relative_path == "sub_map/base.png"
+    assert built.map.raster_overlays[0]["path"] == "sub_ovl/extra.png"
+
+
+
 
 
