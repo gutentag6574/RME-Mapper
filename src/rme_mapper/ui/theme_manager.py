@@ -91,6 +91,58 @@ def get_light_stylesheet(palette=None) -> str:
     QMenuBar::item:selected {{
         background-color: {c.BG_HOVER};
     }}
+    QWidget#customTitleBar {{
+        background-color: {c.BG_PANEL};
+        border-bottom: 1px solid {c.BORDER};
+    }}
+    QMenuBar#titleBarMenuBar {{
+        background: transparent;
+        color: {c.TEXT_PRIMARY};
+        border: none;
+        padding: 0px 2px;
+    }}
+    QMenuBar#titleBarMenuBar::item {{
+        background: transparent;
+        padding: 4px 8px;
+        margin: 2px 1px;
+        border-radius: 4px;
+    }}
+    QMenuBar#titleBarMenuBar::item:selected {{
+        background-color: {c.BG_HOVER};
+    }}
+    QMenuBar#titleBarMenuBar::item:pressed {{
+        background-color: {c.BG_ACTIVE};
+    }}
+    QLabel#titleBarTitleLabel {{
+        color: {c.TEXT_SECONDARY};
+        font-size: 12px;
+        font-weight: 500;
+        background: transparent;
+    }}
+    QPushButton#btnTitleMinimize, QPushButton#btnTitleMaximize {{
+        background: transparent;
+        border: none;
+        border-radius: 0px;
+        padding: 0px;
+    }}
+    QPushButton#btnTitleMinimize:hover, QPushButton#btnTitleMaximize:hover {{
+        background-color: {c.BG_HOVER};
+    }}
+    QPushButton#btnTitleMinimize:pressed, QPushButton#btnTitleMaximize:pressed {{
+        background-color: {c.BG_ACTIVE};
+    }}
+    QPushButton#btnTitleClose {{
+        background: transparent;
+        border: none;
+        border-radius: 0px;
+        padding: 0px;
+    }}
+    QPushButton#btnTitleClose:hover {{
+        background-color: #E81123;
+    }}
+    QPushButton#btnTitleClose:pressed {{
+        background-color: #B80E1C;
+    }}
     QMenu {{
         background-color: {c.BG_PANEL};
         color: {c.TEXT_PRIMARY};

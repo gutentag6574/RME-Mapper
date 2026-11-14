@@ -109,7 +109,10 @@ class WorkspaceLayoutMixin(AuditFeaturesMixin):
         # QGraphicsView can change scroll offsets as Qt repolishes widgets.
         center = canvas.mapToScene(canvas.viewport().rect().center()) if canvas else None
         view_transform = canvas.transform() if canvas else None
-        get_theme_manager().apply_theme(QApplication.instance(), name)
+        tm = get_theme_manager()
+        tm.apply_theme(QApplication.instance(), name)
+        if hasattr(self, "title_bar"):
+            self.title_bar.update_theme(tm.is_dark_theme(name))
         if canvas and center is not None:
             from PySide6.QtCore import QTimer
             canvas.centerOn(center)

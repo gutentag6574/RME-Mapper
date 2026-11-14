@@ -1223,6 +1223,12 @@ TRANSLATIONS_EN: dict[str, str] = {
     "err.export_obj.target_crs_missing": "Target CRS must be specified to export projected X/Y coordinates.",
     "err.export_obj.target_crs_invalid": "Invalid target CRS: '{crs}'. Error: {error}",
     "err.export_obj.unsupported_format": "Unsupported export format: {fmt}",
+
+    # Custom titlebar window controls
+    "window.minimize": "Minimize",
+    "window.maximize": "Maximize",
+    "window.restore": "Restore",
+    "window.close": "Close",
 }
 
 

@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QRect, QSize, Qt
+from PySide6.QtCore import QEvent, QRect, QSize, Qt
 from PySide6.QtGui import QAction, QActionGroup, QFont, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMenu,
+    QMenuBar,
     QMessageBox,
     QSplitter,
     QStatusBar,
@@ -56,6 +57,7 @@ from rme_mapper.ui.panels.properties_panel import (
     SYMBOL_DISPLAY_NAMES,
     get_symbol_display_name,
 )
+from rme_mapper.ui.custom_title_bar import CustomTitleBar, Win32FramelessHelper
 from rme_mapper.ui.theme_manager import get_theme_manager
 
 logger = logging.getLogger("rme_mapper.ui.main_window")
@@ -142,6 +144,7 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         project_path: Path | str | None = None,
     ) -> None:
         super().__init__(parent)
+        self._frameless_helper = Win32FramelessHelper()
         self._apply_default_geometry()
 
         self._backend: MapDataBackend = backend or get_backend()
@@ -311,10 +314,18 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
 
     def _setup_ui(self) -> None:
         """Инициализация компонентов интерфейса."""
+        self.title_bar = CustomTitleBar(self)
+        self.setMenuWidget(self.title_bar)
         self._create_menu_bar()
         self._create_toolbar()
         self._create_central_layout()
         self._create_status_bar()
+
+    def menuBar(self) -> QMenuBar:
+        """Возвращает полосу меню, встроенную в единую верхнюю панель окна."""
+        if hasattr(self, "title_bar"):
+            return self.title_bar.menu_bar
+        return super().menuBar()
 
     def _create_menu_bar(self) -> None:
         """Создание верхнего меню приложения."""
@@ -1327,6 +1338,8 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
 
     def retranslate_ui(self) -> None:
         """Динамическое обновление всех локализованных строк интерфейса."""
+        if hasattr(self, "title_bar"):
+            self.title_bar.retranslate_ui()
         self.file_menu.setTitle(tr("menu.file"))
         if hasattr(self, "edit_menu"):
             self.edit_menu.setTitle(tr("menu.edit"))
@@ -1518,7 +1531,10 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         proj_path = self.project_controller.current_project_path
         proj_name = proj_path.name if proj_path else tr("project.untitled")
         mod_suffix = " *" if self.project_controller.is_modified else ""
-        self.setWindowTitle(f"{APP_NAME} — {proj_name}{mod_suffix}")
+        full_title = f"{APP_NAME} — {proj_name}{mod_suffix}"
+        self.setWindowTitle(full_title)
+        if hasattr(self, "title_bar"):
+            self.title_bar.set_title(full_title)
 
     def show_about_dialog(self) -> None:
         """Открытие диалогового окна 'О программе'."""
@@ -1759,6 +1775,36 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
                 tr("dialog.drop_title"),
                 tr("msg.drop_unsupported", ext=ext),
             )
+
+    def showEvent(self, event: Any) -> None:
+        """Настройка безрамочного окна Windows и синхронизация иконок при показе."""
+        super().showEvent(event)
+        if hasattr(self, "_frameless_helper"):
+            self._frameless_helper.ensure_native_frame(self)
+        if hasattr(self, "title_bar"):
+            self.title_bar.set_maximized(self.isMaximized())
+            self.title_bar.update_theme()
+
+    def changeEvent(self, event: Any) -> None:
+        """Обновление состояния кнопки развертывания и темы шапки."""
+        super().changeEvent(event)
+        if not hasattr(self, "title_bar"):
+            return
+        etype = event.type()
+        if etype == QEvent.Type.WindowStateChange:
+            self.title_bar.set_maximized(self.isMaximized())
+        elif etype in (QEvent.Type.PaletteChange, QEvent.Type.StyleChange):
+            self.title_bar.update_theme()
+
+    def nativeEvent(self, event_type: Any, message: Any) -> tuple[bool, int]:
+        """Обработка WinAPI-сообщений безрамочной шапки и границ ресайза."""
+        if hasattr(self, "_frameless_helper") and hasattr(self, "title_bar"):
+            res = self._frameless_helper.handle_native_event(
+                self, event_type, message, self.title_bar
+            )
+            if res is not None:
+                return res
+        return False, 0
 
     def closeEvent(self, event: Any) -> None:
         """Обработка события закрытия окна с проверкой несохраненных изменений."""

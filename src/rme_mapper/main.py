@@ -58,7 +58,6 @@ def main() -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
-    app.setApplicationDisplayName(APP_NAME)
 
     def _cleanup_backends() -> None:
         try:

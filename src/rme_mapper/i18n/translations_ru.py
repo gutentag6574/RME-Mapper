@@ -1223,5 +1223,11 @@ TRANSLATIONS_RU: dict[str, str] = {
     "err.export_obj.target_crs_missing": "Целевая система координат (Target CRS) не указана для экспорта координат X/Y.",
     "err.export_obj.target_crs_invalid": "Недопустимая целевая система координат (Target CRS): '{crs}'. Ошибка: {error}",
     "err.export_obj.unsupported_format": "Неподдерживаемый формат экспорта: {fmt}",
+
+    # Custom titlebar window controls
+    "window.minimize": "Свернуть",
+    "window.maximize": "Развернуть",
+    "window.restore": "Восстановить",
+    "window.close": "Закрыть",
 }
 

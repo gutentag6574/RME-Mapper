@@ -1792,6 +1792,47 @@ def test_section5_packaging_tools_and_cleanup(tmp_path):
     assert "dummy_test" not in BackendFactory._raster_instances
 
 
+def test_custom_title_bar_and_no_duplicate_app_name():
+    """Единая верхняя панель (меню + заголовок + кнопки) без двойного названия в main.py."""
+    from pathlib import Path
+    from PySide6.QtWidgets import QApplication
+    from rme_mapper.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    root = Path(__file__).resolve().parent.parent
+    main_text = (root / "src" / "rme_mapper" / "main.py").read_text(encoding="utf-8")
+    assert "setApplicationDisplayName" not in main_text
+
+    win = MainWindow()
+    try:
+        assert hasattr(win, "title_bar")
+        assert win.menuWidget() is win.title_bar
+        assert win.menuBar() is win.title_bar.menu_bar
+        assert len(win.menuBar().actions()) >= 5
+        assert win.title_bar.title_label.text() == win.windowTitle()
+
+        win.set_workspace_theme("dark")
+        assert win.title_bar._icon_color == "#F1F5F9"
+        win.set_workspace_theme("light")
+        assert win.title_bar._icon_color == "#1E293B"
+
+        win.switch_language("en")
+        assert win.title_bar.btn_close.toolTip() == "Close"
+        win.switch_language("ru")
+        assert win.title_bar.btn_close.toolTip() == "Закрыть"
+
+        win.show()
+        app.processEvents()
+        close_center = win.title_bar.btn_close.mapToGlobal(win.title_bar.btn_close.rect().center())
+        title_center = win.title_bar.title_label.mapToGlobal(win.title_bar.title_label.rect().center())
+        assert win.title_bar.is_interactive_at(close_center) is True
+        assert win.title_bar.is_interactive_at(title_center) is False
+    finally:
+        win.close()
+        app.processEvents()
+
+
+
 
 
 
