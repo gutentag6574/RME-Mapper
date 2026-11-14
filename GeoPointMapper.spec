@@ -116,7 +116,7 @@ hiddenimports = [
 ]
 hiddenimports += collect_submodules("rme_mapper")
 hiddenimports += collect_submodules("rasterio")
-hiddenimports += collect_submodules("pyogrio")
+hiddenimports += collect_submodules("pyogrio", filter=lambda name: ".tests" not in name and not name.endswith(".tests"))
 
 icon_ico = str(SRC_PATH / "rme_mapper" / "resources" / "icon.ico")
 version_file = str(SPECPATH / "packaging" / "file_version_info.txt")
@@ -142,6 +142,7 @@ a = Analysis(
         "_pytest",
         "geopandas.tests",
         "pyogrio.tests",
+        "shapely.tests",
         "pyarrow.tests",
         "pandas.tests",
         "numpy.tests",
@@ -155,6 +156,13 @@ a = Analysis(
 # and cause "DLL load failed while importing QtWidgets" on startup.
 if sys.platform == "win32":
     a.binaries = [entry for entry in a.binaries if Path(entry[0]).name.lower() != "icuuc.dll"]
+
+_forbidden_data_parts = {"tests", "scratch", "__pycache__", ".pytest_cache", ".git", ".venv"}
+a.datas = [
+    entry
+    for entry in a.datas
+    if not (_forbidden_data_parts & set(Path(entry[0]).as_posix().split("/")))
+]
 
 pyz = PYZ(a.pure)
 
