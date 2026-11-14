@@ -1043,6 +1043,40 @@ def test_high10_export_and_georef_dialog_fixes(qapp, tmp_path, monkeypatch):
         om_dlg.close()
 
 
+def test_med01_groups_panel_and_validation_search(qapp, monkeypatch):
+    """MED-01: GroupsPanel._total_count до обновления счётчиков и поиск по warnings вместе с errors."""
+    from PySide6.QtWidgets import QMenu
+
+    from rme_mapper.importers.models import ImportRow, ImportRowError, ImportRowWarning
+    from rme_mapper.ui.models.validation_table_model import ValidationTableModel
+    from rme_mapper.ui.panels.groups_panel import GroupsPanel
+
+    panel = GroupsPanel()
+    try:
+        assert panel._total_count == 0
+        # Симулируем контекстное меню на системном узле "Все объекты" до set_counts
+        panel._refresh_tree_items()
+        item_all = panel.groups_tree.topLevelItem(0)
+        assert item_all is not None
+        pos = panel.groups_tree.visualItemRect(item_all).center()
+        monkeypatch.setattr(QMenu, "exec", lambda *a, **kw: None)
+        panel._show_context_menu(pos)
+    finally:
+        panel.close()
+
+    row_both = ImportRow(
+        row_number=1,
+        raw_data={"name": "Alpha"},
+        errors=[ImportRowError(row_number=1, field="latitude", code="import.err.missing_coordinates")],
+        warnings=[ImportRowWarning(row_number=1, field="stroke_width", code="import.warn.invalid_stroke_width", params={"value": "badflag_token"}, raw_value="badflag_token")],
+    )
+    model = ValidationTableModel()
+    model.set_rows([row_both])
+    model.set_search_query("badflag_token")
+    assert model.rowCount() == 1
+
+
+
 
 
 

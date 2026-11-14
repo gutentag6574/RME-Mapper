@@ -56,6 +56,7 @@ class GroupsPanel(QWidget):
 
         self._groups: list[ObjectGroup] = []
         self._counts: dict[str | None, int] = {}
+        self._total_count: int = 0
         self._active_filter: str | None = None
         self._block_signals: bool = False
 

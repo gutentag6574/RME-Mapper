@@ -71,11 +71,12 @@ class ValidationTableModel(QAbstractTableModel):
             if q:
                 row_str = str(row.row_number)
                 name_str = (row.point.name if row.point else str(row.raw_data.get("name", ""))).lower()
-                issue_str = ""
+                issue_parts: list[str] = []
                 if row.errors:
-                    issue_str = " ".join(e.localized_message().lower() for e in row.errors)
-                elif row.warnings:
-                    issue_str = " ".join(w.localized_message().lower() for w in row.warnings)
+                    issue_parts.extend(e.localized_message().lower() for e in row.errors)
+                if row.warnings:
+                    issue_parts.extend(w.localized_message().lower() for w in row.warnings)
+                issue_str = " ".join(issue_parts)
 
                 if q not in row_str and q not in name_str and q not in issue_str:
                     continue
