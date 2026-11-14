@@ -1457,6 +1457,34 @@ def test_med05_models_validation_field_import_and_capabilities(qapp, tmp_path, m
     assert main_src.index("QApplication(sys.argv)") < main_src.index("log_runtime_environment()")
 
 
+def test_section4_1_missing_i18n_keys_and_parity():
+    """Section 4.1: Verify previously missing import.err.* keys, RU/EN parity, placeholders, and export.err_failed formatting."""
+    import re
+    from rme_mapper.i18n import get_translation_service
+    from rme_mapper.i18n.translations_ru import TRANSLATIONS_RU
+    from rme_mapper.i18n.translations_en import TRANSLATIONS_EN
+
+    assert set(TRANSLATIONS_RU.keys()) == set(TRANSLATIONS_EN.keys())
+    placeholder_re = re.compile(r"\{([a-zA-Z0-9_]+)\}")
+    for key in TRANSLATIONS_RU:
+        assert set(placeholder_re.findall(TRANSLATIONS_RU[key])) == set(placeholder_re.findall(TRANSLATIONS_EN[key])), key
+
+    svc = get_translation_service()
+    for code, kwargs in (
+        ("import.err.max_project_points_exceeded", {"current": 99990, "importing": 20, "max": 100000}),
+        ("import.err.missing_lat_deg", {}),
+        ("import.err.missing_lat_dir", {}),
+        ("import.err.missing_lon_deg", {}),
+        ("import.err.missing_lon_dir", {}),
+    ):
+        for lang in ("ru", "en"):
+            text = svc.translate_in_language(lang, code, **kwargs)
+            assert text != code and "{" not in text
+
+    err_msg = svc.translate_in_language("en", "export.err_failed", error="disk full")
+    assert "disk full" in err_msg and "{error}" not in err_msg
+
+
 
 
 
