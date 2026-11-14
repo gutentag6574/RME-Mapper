@@ -108,12 +108,12 @@ class RasterOverlays(QWidget):
         opacity = float(record.get("opacity", 1))
         if not math.isfinite(opacity) or not 0 <= opacity <= 1:
             raise ValueError("Invalid opacity")
-        path = Path(record["path"])
+        raw_path = Path(record["path"])
+        resolved_path = raw_path
         profile = self.window.map_controller.active_profile
-        if not path.is_absolute() and profile and profile.base_dir:
-            path = profile.base_dir / path
-        record["path"] = str(path.resolve())
-        image, (width, height) = GeoreferenceService.load_preview_image(path, 4096)
+        if not raw_path.is_absolute() and profile and profile.base_dir:
+            resolved_path = profile.base_dir / raw_path
+        image, (width, height) = GeoreferenceService.load_preview_image(resolved_path.resolve(), 4096)
         if not same_crs:
             from rme_mapper.services.raster_warp_service import warp_image
             image,warped_affine=warp_image(image,(width,height),affine,record["crs"],canvas.active_crs)

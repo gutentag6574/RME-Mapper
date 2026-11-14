@@ -631,3 +631,72 @@ def test_high05_raster_channel_order_and_alpha_dtype_scale():
     assert 126 <= int(rgba_f[0, 0, 3]) <= 129
 
 
+def test_high06_warp_image_edge_cases_and_overlay_relative_path(tmp_path, qapp):
+    """HIGH-06: warp_image без DeprecationWarning/ZeroDivisionError/TypeError и сохранение относительного path оверлея."""
+    import warnings
+    import pytest
+    from pathlib import Path
+    from PySide6.QtGui import QImage, QColor
+    from rme_mapper.models.map_profile import MapProfile
+    from rme_mapper.services.raster_warp_service import warp_image
+    from rme_mapper.ui.main_window import MainWindow
+
+    # 1. Пустой QImage -> понятный ValueError, не ZeroDivisionError
+    with pytest.raises(ValueError):
+        warp_image(QImage(), (10, 10), [1, 0, 0, 0, -1, 10], "EPSG:4326", "EPSG:3857")
+
+    # 2. extent без output_size и без PendingDeprecationWarning от Affine * ...
+    img = QImage(20, 10, QImage.Format.Format_RGBA8888)
+    img.fill(QColor(255, 0, 0, 255))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        warped, _ = warp_image(
+            img,
+            (20, 10),
+            [0.01, 0.0, 47.0, 0.0, -0.01, 56.0],
+            "EPSG:4326",
+            "EPSG:3857",
+            extent=(5230000.0, 7530000.0, 5260000.0, 7560000.0),
+            output_size=None,
+        )
+    assert not warped.isNull()
+    assert warped.width() == 20 and warped.height() > 0
+    affine_warnings = [w for w in caught if issubclass(w.category, PendingDeprecationWarning) and "matmul" in str(w.message)]
+    assert not affine_warnings
+
+    # 3. RasterOverlays.add_record не затирает относительный путь
+    overlay_dir = tmp_path / "overlays"
+    overlay_dir.mkdir()
+    overlay_file = overlay_dir / "plan.png"
+    img.save(str(overlay_file))
+
+    win = MainWindow()
+    try:
+        profile = MapProfile(
+            id="rel-ovl",
+            name="Rel",
+            crs="EPSG:32639",
+            source_type="geopackage",
+            base_dir=tmp_path,
+        )
+        win.map_controller._active_profile = profile
+        win.map_canvas._active_crs = "EPSG:32639"
+        win.raster_overlays_panel.add_record(
+            {
+                "path": "overlays/plan.png",
+                "crs": "EPSG:32639",
+                "affine": [2.0, 0.0, 500000.0, 0.0, -2.0, 6000000.0],
+                "opacity": 0.7,
+                "visible": True,
+            },
+            modified=False,
+        )
+        assert win.raster_overlays_panel.records[0]["path"] == "overlays/plan.png"
+        assert Path(profile.raster_overlays[0]["path"]).as_posix() == "overlays/plan.png"
+    finally:
+        win.project_controller.set_modified(False)
+        win.map_controller.unload_map()
+        win.close()
+
+
+
