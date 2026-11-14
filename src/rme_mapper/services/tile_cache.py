@@ -52,6 +52,7 @@ class TileDiskCache:
                 self._cache_root = Path.home() / ".cache" / "geopoint_mapper" / "online_tiles"
 
         self._max_size_bytes = max_size_bytes
+        self._estimated_size_bytes: int | None = None
         self._cache_root.mkdir(parents=True, exist_ok=True)
 
     @property
@@ -91,11 +92,17 @@ class TileDiskCache:
             return True
         return False
 
-    def _get_tile_path(self, provider_id: str, z: int, x: int, y: int) -> Path:
-        """Построение безопасного пути к файлу тайла с валидацией входных параметров."""
+    @staticmethod
+    def _validate_provider_id(provider_id: str) -> str:
+        """Валидация идентификатора провайдера на отсутствие path traversal и запрещенных символов."""
         clean_id = (provider_id or "").strip()
         if not SAFE_PROVIDER_ID_RE.match(clean_id):
             raise ValueError(f"Недопустимый идентификатор провайдера для кэша: '{clean_id}'")
+        return clean_id
+
+    def _get_tile_path(self, provider_id: str, z: int, x: int, y: int) -> Path:
+        """Построение безопасного пути к файлу тайла с валидацией входных параметров."""
+        clean_id = self._validate_provider_id(provider_id)
 
         if z < 0 or x < 0 or y < 0:
             raise ValueError(f"Отрицательные координаты тайла недопустимы: z={z}, x={x}, y={y}")
@@ -254,12 +261,20 @@ class TileDiskCache:
 
         path = self._get_tile_path(provider_id, z, x, y)
         try:
+            if self._estimated_size_bytes is None:
+                self._estimated_size_bytes = self.get_total_size_bytes()
+
             path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                old_tile_size = path.stat().st_size if path.is_file() else 0
+            except OSError:
+                old_tile_size = 0
 
             # Атомарная запись через временный файл
             tmp_path = path.with_name(f"{path.name}.tmp_{os.getpid()}")
             tmp_path.write_bytes(data)
             tmp_path.replace(path)
+            size_delta = len(data) - old_tile_size
 
             # Запись метаданных (ETag, Last-Modified, Cache-Control, stored_at)
             if metadata is not None:
@@ -267,12 +282,21 @@ class TileDiskCache:
                 if "stored_at" not in meta:
                     meta["stored_at"] = time.time()
                 meta_path = self._get_meta_path(provider_id, z, x, y)
+                try:
+                    old_meta_size = meta_path.stat().st_size if meta_path.is_file() else 0
+                except OSError:
+                    old_meta_size = 0
+                meta_bytes = json.dumps(meta, ensure_ascii=False).encode("utf-8")
                 tmp_meta = meta_path.with_name(f"{meta_path.name}.tmp_{os.getpid()}")
-                tmp_meta.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+                tmp_meta.write_bytes(meta_bytes)
                 tmp_meta.replace(meta_path)
+                size_delta += len(meta_bytes) - old_meta_size
 
-            # Проверка лимита размера кэша
-            self._maybe_evict()
+            self._estimated_size_bytes = max(0, self._estimated_size_bytes + size_delta)
+
+            # Вытеснение запускаем только при реальном превышении лимита, без os.walk на каждый тайл
+            if self._estimated_size_bytes > self._max_size_bytes:
+                self._maybe_evict()
             return True
         except Exception as e:
             logger.warning("Ошибка записи тайла в кэш: %s", e)
@@ -282,7 +306,11 @@ class TileDiskCache:
 
     def get_total_size_bytes(self, provider_id: str | None = None) -> int:
         """Подсчет суммарного объема кэша в байтах."""
-        target_dir = self._cache_root / provider_id if provider_id else self._cache_root
+        if provider_id is not None:
+            clean_id = self._validate_provider_id(provider_id)
+            target_dir = self._cache_root / clean_id
+        else:
+            target_dir = self._cache_root
         if not target_dir.exists():
             return 0
 
@@ -303,13 +331,20 @@ class TileDiskCache:
         """Очистка кэша (для конкретного провайдера или всего кэша онлайн-карт)."""
         import shutil
 
-        target_dir = self._cache_root / provider_id if provider_id else self._cache_root
+        if provider_id is not None:
+            clean_id = self._validate_provider_id(provider_id)
+            target_dir = self._cache_root / clean_id
+        else:
+            target_dir = self._cache_root
         if not target_dir.exists():
+            if provider_id is None:
+                self._estimated_size_bytes = 0
             return
 
         try:
-            if provider_id:
+            if provider_id is not None:
                 shutil.rmtree(target_dir, ignore_errors=True)
+                self._estimated_size_bytes = None
             else:
                 for item in self._cache_root.iterdir():
                     if item.is_dir():
@@ -319,6 +354,7 @@ class TileDiskCache:
                             item.unlink()
                         except OSError:
                             pass
+                self._estimated_size_bytes = 0
             logger.info("Кэш онлайн-карт успешно очищен: %s", target_dir)
         except Exception as e:
             logger.warning("Ошибка при очистке кэша %s: %s", target_dir, e)
@@ -326,6 +362,7 @@ class TileDiskCache:
     def _maybe_evict(self) -> None:
         """Вытеснение старых файлов по принципу LRU (по mtime) при превышении лимита размера."""
         current_size = self.get_total_size_bytes()
+        self._estimated_size_bytes = current_size
         if current_size <= self._max_size_bytes:
             return
 
@@ -366,6 +403,7 @@ class TileDiskCache:
                 pass
 
         logger.info("LRU-очистка завершена: удалено %d байт", removed_bytes)
+        self._estimated_size_bytes = max(0, current_size - removed_bytes)
 
     @staticmethod
     def format_size(size_bytes: int, lang: str = "ru") -> str:

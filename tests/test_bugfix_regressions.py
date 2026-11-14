@@ -699,4 +699,54 @@ def test_high06_warp_image_edge_cases_and_overlay_relative_path(tmp_path, qapp):
         win.close()
 
 
+def test_high07_tile_cache_validation_no_os_walk_per_tile_and_single_write(tmp_path, qapp, monkeypatch):
+    """HIGH-07: проверка provider_id в get_total_size_bytes/clear_cache, отсутствие os.walk на каждый тайл и двойной записи."""
+    import os
+    import pytest
+    from PySide6.QtCore import QBuffer, QIODevice
+    from PySide6.QtGui import QImage, QColor
+    from PySide6.QtWidgets import QGraphicsScene
+    from rme_mapper.maps.online_tile_manager import OnlineTileManager
+    from rme_mapper.services.tile_cache import TileDiskCache
+
+    cache = TileDiskCache(base_dir=tmp_path / "h7_cache", max_size_bytes=5 * 1024 * 1024)
+
+    for bad_id in ("../escape", "a/b", "bad id", ""):
+        with pytest.raises(ValueError):
+            cache.get_total_size_bytes(bad_id)
+        with pytest.raises(ValueError):
+            cache.clear_cache(bad_id)
+
+    img = QImage(16, 16, QImage.Format.Format_RGBA8888)
+    img.fill(QColor("#112233"))
+    buf = QBuffer()
+    buf.open(QIODevice.OpenModeFlag.WriteOnly)
+    img.save(buf, "PNG")
+    png_bytes = bytes(buf.data())
+
+    walk_calls = 0
+    orig_walk = os.walk
+
+    def counting_walk(*args, **kwargs):
+        nonlocal walk_calls
+        walk_calls += 1
+        return orig_walk(*args, **kwargs)
+
+    monkeypatch.setattr(os, "walk", counting_walk)
+    for x in range(10):
+        assert cache.save_tile("osm_standard", 5, x, 0, png_bytes) is True
+    # Первоначальный подсчет допустим 1 раз, но не 10 синхронных os.walk на каждый тайл!
+    assert walk_calls <= 1
+
+    # OnlineTileManager не должен повторно записывать тайл, если TileLoader делит тот же cache
+    scene = QGraphicsScene()
+    mgr = OnlineTileManager(scene=scene, tile_cache=cache)
+    put_calls: list[tuple[str, int, int, int]] = []
+    orig_put = cache.put_tile
+    monkeypatch.setattr(cache, "put_tile", lambda pid, z, x, y, data, **kw: put_calls.append((pid, z, x, y)) or orig_put(pid, z, x, y, data, **kw))
+    mgr._on_tile_loaded("osm_standard", 5, 0, 0, png_bytes)
+    assert put_calls == []
+
+
+
 

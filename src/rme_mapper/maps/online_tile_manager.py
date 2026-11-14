@@ -305,8 +305,9 @@ class OnlineTileManager(QObject):
         data: bytes,
     ) -> None:
         """Обработка успешной загрузки тайла по сети."""
-        # 1. Сохранение в дисковый кэш
-        self._cache.put_tile(provider_id, z, x, y, data)
+        # 1. Сохранение в дисковый кэш (только если загрузчик не использует тот же кэш сам)
+        if getattr(self._loader, "_cache", None) is not self._cache:
+            self._cache.put_tile(provider_id, z, x, y, data)
 
         # 2. Декодирование в QPixmap
         pixmap = QPixmap()
