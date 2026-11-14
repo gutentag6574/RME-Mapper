@@ -815,6 +815,85 @@ def test_high08_bundle_resolves_relative_and_copies_overlay_sidecars(tmp_path):
     assert built.map.raster_overlays[0]["path"] == "sub_ovl/extra.png"
 
 
+def test_high09_importer_and_wizard_fixes(tmp_path, qapp):
+    """HIGH-09: унификация Column_{i+1}, >50 строк заголовка, исключения конфликтов, TSV/дубликаты, предупреждения стилей, bool/NaN."""
+    import pytest
+    from rme_mapper.importers.delimited_importer import DelimitedImporter
+    from rme_mapper.importers.import_service import ImportService
+    from rme_mapper.importers.models import CoordinateFormat, ImportOptions
+    from rme_mapper.services.project_service import MAX_PROJECT_POINTS
+    from rme_mapper.ui.import_wizard import ImportWizard
+
+    # 1. TSV с ведущей табуляцией (пустая 1-я колонка -> Column_1) и дубликатом заголовка
+    tsv_lines = ["\tName\tName\tlat\tlon"] + [f"row{i}\tPtA\tPtB\t56.{i}\t47.{i}" for i in range(65)]
+    # Строка 60 с заголовками
+    lines_60 = [f"skip_{i};x;y" for i in range(59)] + ["\tName\tName\tlat\tlon", "id1\tP1\tP2\t56.1\t47.2"]
+    tsv_file = tmp_path / "data_60.tsv"
+    tsv_file.write_text("\n".join(lines_60), encoding="utf-8")
+
+    # DelimitedImporter на обычном TSV (header_row=1)
+    tsv1 = tmp_path / "hdr1.tsv"
+    tsv1.write_text("\n".join(tsv_lines[:5]), encoding="utf-8")
+    imp = DelimitedImporter()
+    rows, _, delim, _ = imp.read_rows(tsv1, ImportOptions(header_row=1))
+    assert delim == "\t"
+    assert rows[0][1]["Column_1"] == "row0"
+    assert rows[0][1]["Name"] == "PtA"
+    assert rows[0][1]["Name (2)"] == "PtB"
+
+    # ImportWizard: header_row > 50 (например 60) и Column_{i+1}
+    tsv2 = tmp_path / "hdr60.tsv"
+    tsv2.write_text("\n".join([f"skip_{i}\ta\tb\tc\td" for i in range(59)] + ["\tName\tName\tlat\tlon", "r1\tP1\tP2\t56.1\t47.2"]), encoding="utf-8")
+    wizard = ImportWizard(file_path=tsv2)
+    try:
+        wizard.next()
+        wizard.page_structure.header_row_spin.setValue(60)
+        qapp.processEvents()
+        headers = wizard.get_detected_headers()
+        assert headers == ["Column_1", "Name", "Name (2)", "lat", "lon"]
+        assert wizard.page_structure.isComplete() is True
+
+        # Новые необязательные поля не вызывают конфликт маппинга при совпадении колонок
+        wizard.page_mapping._headers = headers
+        wizard.page_mapping._populate_combos()
+        wizard.page_mapping.radio_dd.setChecked(True)
+        for fk, col in (("latitude", "lat"), ("longitude", "lon"), ("object_number", "Name"), ("stroke_width", "Name"), ("zone_border_style", "Name")):
+            combo = wizard.page_mapping._combos[fk]
+            combo.setCurrentIndex(combo.findData(col))
+        wizard.page_mapping._validate_mapping()
+        assert wizard.page_mapping.isComplete() is True
+    finally:
+        wizard.close()
+
+    # ImportService: предупреждения для невалидных visible/stroke_width/marker_opacity/zone_border_style + bool/NaN + лимит
+    csv_warn = tmp_path / "warn.csv"
+    csv_warn.write_text(
+        "name;lat;lon;visible;stroke_width;marker_opacity;zone_border_style\n"
+        "P1;56.1;47.2;maybe;notnum;999;wavy\n",
+        encoding="utf-8",
+    )
+    svc = ImportService()
+    res = svc.validate_file(csv_warn, ImportOptions(coordinate_format=CoordinateFormat.DD))
+    assert res.valid_rows == 1
+    assert len(res.warnings) >= 4
+    warn_fields = {w.field for w in res.warnings}
+    assert {"visible", "stroke_width", "marker_opacity", "zone_border_style"}.issubset(warn_fields)
+
+    with pytest.raises(ValueError):
+        ImportService._parse_dd_number(True)
+    with pytest.raises(ValueError):
+        ImportService._parse_dd_number("nan")
+    with pytest.raises(ValueError):
+        ImportService._parse_int_component(False, "lat_deg")
+    with pytest.raises(ValueError):
+        ImportService._parse_float_component(float("inf"), "lat_sec")
+
+    res_limit = svc.validate_file(csv_warn, ImportOptions(coordinate_format=CoordinateFormat.DD), current_project_points_count=MAX_PROJECT_POINTS)
+    assert any(e.code == "import.err.max_project_points_exceeded" for e in res_limit.errors)
+    assert res_limit.points == []
+
+
+
 
 
 

@@ -533,6 +533,8 @@ class ImportService:
         auto_point_counter = current_project_points_count + 1
         dynamic_group_map: dict[str, str] = {}
         new_group_names_map: dict[str, str] = {}
+        importing_count = 0
+        limit_exceeded = False
 
         for row_num, raw_dict in raw_rows:
             # Создаем словарь по каноническим ключам
@@ -889,6 +891,16 @@ class ImportService:
                     visible = True
                 elif v_clean in BOOL_FALSE_VALUES:
                     visible = False
+                else:
+                    row_warnings.append(
+                        ImportRowWarning(
+                            row_number=row_num,
+                            field="visible",
+                            code="import.err.invalid_boolean",
+                            params={"value": raw_vis},
+                            raw_value=raw_vis,
+                        )
+                    )
 
             stroke_red = 255
             stroke_green = 255
@@ -897,11 +909,18 @@ class ImportService:
             raw_sg = c_dict.get("stroke_green")
             raw_sb = c_dict.get("stroke_blue")
             has_stroke_color = any(c is not None and str(c).strip() != "" for c in (raw_sr, raw_sg, raw_sb))
-            if has_stroke_color and all(c is not None and str(c).strip() != "" for c in (raw_sr, raw_sg, raw_sb)):
-                try:
-                    stroke_red, stroke_green, stroke_blue = StyleValidator.validate_rgb(raw_sr, raw_sg, raw_sb)
-                except Exception:
-                    pass
+            if has_stroke_color:
+                if not all(c is not None and str(c).strip() != "" for c in (raw_sr, raw_sg, raw_sb)):
+                    row_warnings.append(
+                        ImportRowWarning(row_number=row_num, field="stroke_rgb", code="import.err.incomplete_rgb")
+                    )
+                else:
+                    try:
+                        stroke_red, stroke_green, stroke_blue = StyleValidator.validate_rgb(raw_sr, raw_sg, raw_sb)
+                    except Exception:
+                        row_warnings.append(
+                            ImportRowWarning(row_number=row_num, field="stroke_rgb", code="import.err.invalid_rgb")
+                        )
 
             stroke_width = 1
             raw_sw = c_dict.get("stroke_width")
@@ -909,7 +928,15 @@ class ImportService:
                 try:
                     stroke_width = StyleValidator.validate_stroke_width(raw_sw)
                 except Exception:
-                    pass
+                    row_warnings.append(
+                        ImportRowWarning(
+                            row_number=row_num,
+                            field="stroke_width",
+                            code="import.warn.invalid_stroke_width",
+                            params={"value": raw_sw},
+                            raw_value=raw_sw,
+                        )
+                    )
 
             marker_opacity = 100
             raw_mop = c_dict.get("marker_opacity")
@@ -917,18 +944,33 @@ class ImportService:
                 try:
                     marker_opacity = StyleValidator.validate_opacity(raw_mop)
                 except Exception:
-                    pass
+                    row_warnings.append(
+                        ImportRowWarning(
+                            row_number=row_num,
+                            field="marker_opacity",
+                            code="import.err.invalid_opacity",
+                            params={"value": raw_mop},
+                            raw_value=raw_mop,
+                        )
+                    )
 
             zone_border_red, zone_border_green, zone_border_blue = z_r, z_g, z_b
             raw_zbr = c_dict.get("zone_border_red")
             raw_zbg = c_dict.get("zone_border_green")
             raw_zbb = c_dict.get("zone_border_blue")
             has_zborder_color = any(c is not None and str(c).strip() != "" for c in (raw_zbr, raw_zbg, raw_zbb))
-            if has_zborder_color and all(c is not None and str(c).strip() != "" for c in (raw_zbr, raw_zbg, raw_zbb)):
-                try:
-                    zone_border_red, zone_border_green, zone_border_blue = StyleValidator.validate_rgb(raw_zbr, raw_zbg, raw_zbb)
-                except Exception:
-                    pass
+            if has_zborder_color:
+                if not all(c is not None and str(c).strip() != "" for c in (raw_zbr, raw_zbg, raw_zbb)):
+                    row_warnings.append(
+                        ImportRowWarning(row_number=row_num, field="zone_border_rgb", code="import.err.incomplete_zone_rgb")
+                    )
+                else:
+                    try:
+                        zone_border_red, zone_border_green, zone_border_blue = StyleValidator.validate_rgb(raw_zbr, raw_zbg, raw_zbb)
+                    except Exception:
+                        row_warnings.append(
+                            ImportRowWarning(row_number=row_num, field="zone_border_rgb", code="import.err.invalid_zone_rgb")
+                        )
 
             zone_border_width = 2
             raw_zbw = c_dict.get("zone_border_width")
@@ -936,7 +978,15 @@ class ImportService:
                 try:
                     zone_border_width = StyleValidator.validate_border_width(raw_zbw)
                 except Exception:
-                    pass
+                    row_warnings.append(
+                        ImportRowWarning(
+                            row_number=row_num,
+                            field="zone_border_width",
+                            code="import.warn.invalid_border_width",
+                            params={"value": raw_zbw},
+                            raw_value=raw_zbw,
+                        )
+                    )
 
             zone_border_style = "solid"
             raw_zbs = c_dict.get("zone_border_style")
@@ -944,7 +994,15 @@ class ImportService:
                 try:
                     zone_border_style = StyleValidator.validate_border_style(raw_zbs)
                 except Exception:
-                    pass
+                    row_warnings.append(
+                        ImportRowWarning(
+                            row_number=row_num,
+                            field="zone_border_style",
+                            code="import.warn.invalid_border_style",
+                            params={"value": raw_zbs},
+                            raw_value=raw_zbs,
+                        )
+                    )
 
             # Д. Предупреждения (дубликаты координат и границы карты)
             is_duplicate = False
@@ -1063,13 +1121,19 @@ class ImportService:
                     status = "warning"
 
                 if not is_excluded:
-                    result.points.append(pt)
+                    importing_count += 1
+                    if current_project_points_count + importing_count > MAX_PROJECT_POINTS:
+                        limit_exceeded = True
+                        result.points.clear()
+                        pt = None
+                    elif not limit_exceeded:
+                        result.points.append(pt)
 
                 coords_str = f"{lat:.6f}, {lon:.6f}" if coords_valid else ""
                 row_item = ImportRow(
                     row_number=row_num,
                     raw_data=raw_dict,
-                    point=pt if not is_excluded else None,
+                    point=pt if (not is_excluded and not limit_exceeded) else None,
                     is_valid=True,
                     is_excluded=is_excluded,
                     status=status,
@@ -1080,14 +1144,14 @@ class ImportService:
                 result.rows.append(row_item)
 
         # 5. Проверка глобального лимита точек проекта
-        total_after_import = current_project_points_count + len(result.points)
-        if total_after_import > MAX_PROJECT_POINTS:
+        if limit_exceeded or (current_project_points_count + len(result.points) > MAX_PROJECT_POINTS):
+            result.points.clear()
             result.errors.append(
                 ImportRowError(
                     row_number=0,
                     field="project",
                     code="import.err.max_project_points_exceeded",
-                    params={"current": current_project_points_count, "importing": len(result.points), "max": MAX_PROJECT_POINTS},
+                    params={"current": current_project_points_count, "importing": importing_count or len(result.points), "max": MAX_PROJECT_POINTS},
                 )
             )
 
@@ -1101,10 +1165,16 @@ class ImportService:
     @staticmethod
     def _parse_dd_number(val: Any) -> float:
         """Парсинг вещественного числа с поддержкой точки и запятой."""
+        if isinstance(val, bool):
+            raise ValueError(f"Булево значение недопустимо: {val}")
         if isinstance(val, (int, float)):
-            return float(val)
-        s = str(val).strip().replace(",", ".")
-        return float(s)
+            num = float(val)
+        else:
+            s = str(val).strip().replace(",", ".")
+            num = float(s)
+        if not math.isfinite(num):
+            raise ValueError(f"Неконечное числовое значение: {val}")
+        return num
 
     def _validate_dms_row(
         self,
@@ -1216,22 +1286,30 @@ class ImportService:
     @staticmethod
     def _parse_int_component(val: Any, name: str) -> int:
         """Парсинг целого компонента DMS."""
+        if isinstance(val, bool):
+            raise ValueError(f"Компонент {name} обязан быть целым числом: {val}")
         if isinstance(val, int):
             return val
         if isinstance(val, float):
-            if val.is_integer():
+            if math.isfinite(val) and val.is_integer():
                 return int(val)
             raise ValueError(f"Компонент {name} обязан быть целым числом: {val}")
         s = str(val).strip().replace(",", ".")
         f = float(s)
-        if not f.is_integer():
+        if not (math.isfinite(f) and f.is_integer()):
             raise ValueError(f"Компонент {name} обязан быть целым числом: {val}")
         return int(f)
 
     @staticmethod
     def _parse_float_component(val: Any, name: str) -> float:
         """Парсинг вещественного компонента секунд DMS."""
+        if isinstance(val, bool):
+            raise ValueError(f"Компонент {name} обязан быть числом: {val}")
         if isinstance(val, (int, float)):
-            return float(val)
-        s = str(val).strip().replace(",", ".")
-        return float(s)
+            num = float(val)
+        else:
+            s = str(val).strip().replace(",", ".")
+            num = float(s)
+        if not math.isfinite(num):
+            raise ValueError(f"Компонент {name} обязан быть конечным числом: {val}")
+        return num

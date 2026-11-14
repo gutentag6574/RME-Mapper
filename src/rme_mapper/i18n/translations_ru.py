@@ -559,6 +559,9 @@ TRANSLATIONS_RU: dict[str, str] = {
     "import.warn.name_truncated": "Имя точки превышает лимит и было обрезано до {max} символов",
     "import.warn.duplicate_coordinates": "Дубликат координат: ({lat}, {lon})",
     "import.warn.outside_working_area": "Точка ({lat}, {lon}) находится за пределами рабочей области карты",
+    "import.warn.invalid_stroke_width": "Некорректная толщина обводки '{value}' (применено значение по умолчанию)",
+    "import.warn.invalid_border_width": "Некорректная толщина границы геозоны '{value}' (применено значение по умолчанию)",
+    "import.warn.invalid_border_style": "Некорректный стиль границы геозоны '{value}' (применено значение по умолчанию)",
 
     # Этап 14: Полноценный мастер импорта (Import Wizard)
     "wizard.import_title": "Мастер импорта точек",

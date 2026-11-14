@@ -46,6 +46,7 @@ from PySide6.QtWidgets import (
 )
 
 from rme_mapper.i18n import tr
+from rme_mapper.importers.base import normalize_headers
 from rme_mapper.importers.import_service import (
     CANONICAL_HEADERS,
     ImportService,
@@ -291,15 +292,19 @@ class FileStructurePage(QWizardPage):
         self._refresh_preview()
 
     def _on_header_row_changed(self, val: int) -> None:
-        self.preview_model.set_header_row(val)
-        self._extract_headers()
+        if val > len(self.preview_model._rows):
+            self._refresh_preview()
+        else:
+            self.preview_model.set_header_row(val)
+            self._extract_headers()
 
     def _refresh_preview(self) -> None:
         if not self._current_path or not self._current_path.exists():
             return
 
         opts = self.get_options()
-        rows, total_lines, enc, delim = self._service.read_preview_rows(self._current_path, opts, max_rows=50)
+        max_rows = max(100, self.header_row_spin.value())
+        rows, total_lines, enc, delim = self._service.read_preview_rows(self._current_path, opts, max_rows=max_rows)
         self.preview_model.set_data(rows, self.header_row_spin.value())
         self._extract_headers()
 
@@ -307,10 +312,7 @@ class FileStructurePage(QWizardPage):
         h_row = self.header_row_spin.value()
         if 0 <= (h_row - 1) < len(self.preview_model._rows):
             raw_h = self.preview_model._rows[h_row - 1]
-            self._detected_headers = [
-                h.strip() if h.strip() else f"Col_{i+1}"
-                for i, h in enumerate(raw_h)
-            ]
+            self._detected_headers = normalize_headers(raw_h)
         else:
             self._detected_headers = []
         self.completeChanged.emit()
@@ -604,9 +606,39 @@ class ColumnMappingPage(QWizardPage):
                     break
 
         # 3. Проверка конфликтов (одна колонка назначена несовместимым полям)
+        _NON_CONFLICTING_FIELDS = frozenset({
+            "name",
+            "object_number",
+            "group",
+            "category",
+            "description",
+            "visible",
+            "symbol",
+            "size",
+            "red",
+            "green",
+            "blue",
+            "stroke_red",
+            "stroke_green",
+            "stroke_blue",
+            "stroke_width",
+            "marker_opacity",
+            "zone_enabled",
+            "radius",
+            "radius_unit",
+            "zone_red",
+            "zone_green",
+            "zone_blue",
+            "zone_opacity",
+            "zone_border_red",
+            "zone_border_green",
+            "zone_border_blue",
+            "zone_border_width",
+            "zone_border_style",
+        })
         used_cols: dict[str, str] = {}
         for f_key, col in mapping.items():
-            if f_key in ("name", "symbol", "size", "red", "green", "blue", "zone_enabled", "radius", "radius_unit", "zone_red", "zone_green", "zone_blue", "zone_opacity"):
+            if f_key in _NON_CONFLICTING_FIELDS:
                 continue
             if col in used_cols:
                 errors.append(tr("wizard.conflict_mapping_warning", col=col))

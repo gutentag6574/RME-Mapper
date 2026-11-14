@@ -559,6 +559,9 @@ TRANSLATIONS_EN: dict[str, str] = {
     "import.warn.name_truncated": "Point name exceeds limit and was truncated to {max} chars",
     "import.warn.duplicate_coordinates": "Duplicate coordinates: ({lat}, {lon})",
     "import.warn.outside_working_area": "Point ({lat}, {lon}) is outside the map working area",
+    "import.warn.invalid_stroke_width": "Invalid stroke width '{value}' (using default)",
+    "import.warn.invalid_border_width": "Invalid zone border width '{value}' (using default)",
+    "import.warn.invalid_border_style": "Invalid zone border style '{value}' (using default)",
 
     # Stage 14: Point Import Wizard
     "wizard.import_title": "Point Import Wizard",

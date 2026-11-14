@@ -9,6 +9,23 @@ from typing import Any
 from rme_mapper.importers.models import ImportOptions
 
 
+def normalize_headers(raw_headers: list[Any]) -> list[str]:
+    """Нормализация заголовков: замена пустых на Column_{i+1} и дедупликация повторов."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for idx, cell in enumerate(raw_headers):
+        text = str(cell).strip() if cell is not None else ""
+        base = text if text else f"Column_{idx + 1}"
+        candidate = base
+        suffix = 2
+        while candidate in seen:
+            candidate = f"{base} ({suffix})"
+            suffix += 1
+        seen.add(candidate)
+        result.append(candidate)
+    return result
+
+
 class BaseImporter(ABC):
     """Абстрактный базовый класс парсера табличных файлов с координатами."""
 

@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from rme_mapper.importers.base import BaseImporter
+from rme_mapper.importers.base import BaseImporter, normalize_headers
 from rme_mapper.importers.models import ImportOptions
 
 logger = logging.getLogger("rme_mapper.importers.delimited")
@@ -21,10 +21,10 @@ logger = logging.getLogger("rme_mapper.importers.delimited")
 class DelimitedImporter(BaseImporter):
     """Импортер текстовых файлов табличного формата с разделителями."""
 
-    SUPPORTED_EXTENSIONS = {".csv", ".txt"}
+    SUPPORTED_EXTENSIONS = {".csv", ".txt", ".tsv"}
 
     def can_handle(self, file_path: Path) -> bool:
-        """Проверка поддерживаемых расширений (.csv, .txt)."""
+        """Проверка поддерживаемых расширений (.csv, .txt, .tsv)."""
         return file_path.suffix.lower() in self.SUPPORTED_EXTENSIONS
 
     @staticmethod
@@ -76,7 +76,7 @@ class DelimitedImporter(BaseImporter):
         if semi_count > 0:
             return ";"
 
-        return "\t" if file_ext.lower() == ".txt" else ";"
+        return "\t" if file_ext.lower() in (".txt", ".tsv") else ";"
 
     def read_preview_rows(
         self,
@@ -104,7 +104,7 @@ class DelimitedImporter(BaseImporter):
         first_non_empty = ""
         for line in lines:
             if line.strip():
-                first_non_empty = line.strip()
+                first_non_empty = line.rstrip("\r\n")
                 break
 
         delimiter = options.delimiter or self.detect_delimiter(first_non_empty, file_path.suffix)
@@ -150,7 +150,7 @@ class DelimitedImporter(BaseImporter):
         if header_line_idx >= len(lines):
             return [], encoding, None, None
 
-        header_line_content = lines[header_line_idx].strip()
+        header_line_content = lines[header_line_idx].rstrip("\r\n")
         delimiter = options.delimiter or self.detect_delimiter(header_line_content, file_path.suffix)
 
         # Читаем строки через csv.reader начиная со строки заголовка
@@ -161,10 +161,9 @@ class DelimitedImporter(BaseImporter):
         except StopIteration:
             return [], encoding, delimiter, None
 
-        headers = [
-            h.strip() if h.strip() else f"Column_{i+1}"
-            for i, h in enumerate(raw_headers)
-        ]
+        if not raw_headers:
+            return [], encoding, delimiter, None
+        headers = normalize_headers(raw_headers)
         if not any(headers):
             return [], encoding, delimiter, None
 

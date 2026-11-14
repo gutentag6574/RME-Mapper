@@ -11,7 +11,7 @@ from typing import Any
 import logging
 import openpyxl
 
-from rme_mapper.importers.base import BaseImporter
+from rme_mapper.importers.base import BaseImporter, normalize_headers
 from rme_mapper.importers.models import ImportOptions
 
 logger = logging.getLogger("rme_mapper.importers.xlsx")
@@ -120,10 +120,7 @@ class XlsxImporter(BaseImporter):
                 if row_idx == target_header_row:
                     # Это строка заголовков
                     if row:
-                        headers = [
-                            str(c).strip() if (c is not None and str(c).strip() != "") else f"Column_{col_i+1}"
-                            for col_i, c in enumerate(row)
-                        ]
+                        headers = normalize_headers(list(row))
                     continue
 
                 # Строки данных (row_idx > target_header_row)
