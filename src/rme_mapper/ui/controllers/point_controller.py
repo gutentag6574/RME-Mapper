@@ -83,6 +83,7 @@ class PointController(QObject):
 
         # Маппинг индекса строки таблицы на ID точки: row_index -> point_id
         self._table_point_ids: list[str] = []
+        self._settings_service: Any = None
 
         self._connect_signals()
 
@@ -702,7 +703,7 @@ class PointController(QObject):
     # Буфер обмена
     # -------------------------------------------------------------------------
 
-    def copy_selected_coordinates(self) -> None:
+    def copy_selected_coordinates(self) -> str:
         """Копирование координат всех выделенных точек в буфер обмена в формате TSV."""
         selected_ids = self._get_selected_point_ids()
         if not selected_ids:
@@ -721,10 +722,12 @@ class PointController(QObject):
 
     def copy_coordinates_dd(self, point: MapPoint) -> str:
         """Форматирование координат точки в формате DD."""
-        from rme_mapper.services.app_settings_service import AppSettingsService
-        settings=AppSettingsService()
-        precision=settings.get_integer("coordinates/precision",6,0,10)
-        separator=settings._get_str("coordinates/separator",", ")
+        if self._settings_service is None:
+            from rme_mapper.services.app_settings_service import AppSettingsService
+            self._settings_service = AppSettingsService()
+        settings = self._settings_service
+        precision = settings.get_integer("coordinates/precision", 6, 0, 10)
+        separator = settings._get_str("coordinates/separator", ", ")
         text = f"{point.latitude:.{precision}f}{separator}{point.longitude:.{precision}f}"
         QApplication.clipboard().setText(text)
         self._set_status(tr("status.coords_copied"), 2000)
@@ -958,6 +961,11 @@ class PointController(QObject):
             self._points_panel.update_points_group_ids(mapping)
             if self._group_controller:
                 self._group_controller.refresh_groups_ui()
+            sel_ids = self._get_selected_point_ids()
+            if len(sel_ids) == 1 and sel_ids[0] in mapping:
+                sel_pt = self._point_service.get_point(sel_ids[0])
+                if sel_pt:
+                    self._properties_panel.update_properties(sel_pt)
 
         grp_name = tr("groups.ungrouped")
         if target_group_id and self._group_service:
@@ -999,6 +1007,11 @@ class PointController(QObject):
                     if pt:
                         pt.category = cat
                 self._points_panel.update_points_categories(mapping)
+                sel_ids = self._get_selected_point_ids()
+                if len(sel_ids) == 1 and sel_ids[0] in mapping:
+                    sel_pt = self._point_service.get_point(sel_ids[0])
+                    if sel_pt:
+                        self._properties_panel.update_properties(sel_pt)
 
             cmd = BulkChangeCategoryCommand(
                 previous_categories=prev_cats,
@@ -1054,22 +1067,33 @@ class PointController(QObject):
         is_multi = len(selected_ids) > 1
         has_map = self._get_active_profile() is not None or self._get_map_path() is not None
 
+        row = table.row(item)
+        clicked_point: MapPoint | None = None
+        if 0 <= row < len(self._table_point_ids):
+            clicked_point = self._point_service.get_point(self._table_point_ids[row])
+
+        if not is_multi and clicked_point is not None and selected_ids != [clicked_point.id]:
+            table.selectRow(row)
+            selected_ids = [clicked_point.id]
+
+        target_ids = selected_ids if is_multi else ([clicked_point.id] if clicked_point else selected_ids)
+
         menu = QMenu(self._parent)
 
         # Подменю: Переместить в группу
         menu_move = menu.addMenu(tr("action.move_to_group"))
         act_move_ungrouped = menu_move.addAction(tr("groups.ungrouped"))
-        act_move_ungrouped.triggered.connect(lambda: self.move_points_to_group_workflow(None, selected_ids))
+        act_move_ungrouped.triggered.connect(lambda: self.move_points_to_group_workflow(None, target_ids))
         menu_move.addSeparator()
 
         groups = self._group_service.list_groups() if self._group_service else []
         for grp in groups:
             act_grp = menu_move.addAction(grp.name)
             gid = grp.id
-            act_grp.triggered.connect(lambda checked=False, target_id=gid: self.move_points_to_group_workflow(target_id, selected_ids))
+            act_grp.triggered.connect(lambda checked=False, target_id=gid: self.move_points_to_group_workflow(target_id, target_ids))
 
         act_change_cat = menu.addAction(tr("action.change_category"))
-        act_change_cat.triggered.connect(lambda: self.bulk_change_category_workflow(selected_ids))
+        act_change_cat.triggered.connect(lambda: self.bulk_change_category_workflow(target_ids))
 
         menu.addSeparator()
 
@@ -1079,7 +1103,9 @@ class PointController(QObject):
             act_zoom_sel.setEnabled(has_map)
             act_copy_sel = menu.addAction(tr("action.copy_selected_coords"))
             menu.addSeparator()
-            act_toggle_vis = menu.addAction(tr("action.hide_object"))
+            sel_pts = [self._point_service.get_point(pid) for pid in target_ids]
+            any_visible = any(p.visible for p in sel_pts if p is not None)
+            act_toggle_vis = menu.addAction(tr("action.hide_object") if any_visible else tr("action.show_object"))
             menu.addSeparator()
             act_delete = menu.addAction(tr("action.delete_selected"))
 
@@ -1097,10 +1123,7 @@ class PointController(QObject):
             return
 
         # Одиночное выделение
-        row = table.row(item)
-        point = None
-        if 0 <= row < len(self._table_point_ids):
-            point = self._point_service.get_point(self._table_point_ids[row])
+        point = clicked_point
 
         act_edit = menu.addAction(tr("action.edit_point"))
         act_move = menu.addAction(tr("action.move_point_context"))
@@ -1153,7 +1176,6 @@ class PointController(QObject):
         elif action == act_move:
             self.start_move_point_mode()
         elif action == act_center:
-            r = table.currentRow()
-            self.on_table_row_double_clicked(r, 0)
+            self.on_table_row_double_clicked(row, 0)
         elif action == act_delete:
             self.delete_point_workflow(confirm=True)

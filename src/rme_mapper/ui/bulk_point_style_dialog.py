@@ -3,6 +3,7 @@ from __future__ import annotations
 
 
 import logging
+import math
 from typing import Any
 
 from PySide6.QtCore import Qt
@@ -47,7 +48,7 @@ class BulkPointStyleDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self._points = points or []
-        count = point_count if point_count is not None else len(self._points)
+        self._point_count = point_count if point_count is not None else len(self._points)
         self._marker_color = QColor(220, 30, 30)
         self._stroke_color = QColor(255, 255, 255)
         self._zone_color = QColor(220, 30, 30)
@@ -55,7 +56,7 @@ class BulkPointStyleDialog(QDialog):
 
         self.setModal(True)
         self.resize(480, 580)
-        self.setWindowTitle(tr("dialog.bulk_style.title", count=count))
+        self.setWindowTitle(tr("dialog.bulk_style.title", count=self._point_count))
 
         self._setup_ui()
         self._connect_signals()
@@ -67,7 +68,7 @@ class BulkPointStyleDialog(QDialog):
 
         # Информационная плашка
         self.info_label = QLabel(
-            tr("dialog.bulk_style.title", count=len(self._points)), self
+            tr("dialog.bulk_style.title", count=self._point_count), self
         )
         self.info_label.setStyleSheet("font-weight: bold; font-size: 13px; color: #202124;")
         main_layout.addWidget(self.info_label)
@@ -334,7 +335,7 @@ class BulkPointStyleDialog(QDialog):
             raw = self.edit_radius.text().strip().replace(",", ".")
             try:
                 val = float(raw)
-                if val <= 0:
+                if not math.isfinite(val) or val <= 0:
                     raise ValueError
             except ValueError:
                 QMessageBox.warning(
@@ -421,8 +422,8 @@ class BulkPointStyleDialog(QDialog):
 
     def retranslate_ui(self) -> None:
         """Локализация элементов управления диалога."""
-        self.setWindowTitle(tr("dialog.bulk_style.title", count=len(self._points)))
-        self.info_label.setText(tr("dialog.bulk_style.title", count=len(self._points)))
+        self.setWindowTitle(tr("dialog.bulk_style.title", count=self._point_count))
+        self.info_label.setText(tr("dialog.bulk_style.title", count=self._point_count))
 
         self.marker_group.setTitle(tr("properties.section_marker"))
         self.chk_symbol.setText(tr("dialog.bulk_style.change_symbol"))

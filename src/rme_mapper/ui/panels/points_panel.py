@@ -713,18 +713,13 @@ class PointsPanel(QWidget):
         finally:
             self.points_table.blockSignals(False)
             self.points_table.setUpdatesEnabled(True)
+            for r in range(self.points_table.rowCount()):
+                item = self.points_table.item(r, 0)
+                if item:
+                    custom_num = item.data(Qt.ItemDataRole.UserRole + 1)
+                    item.setText(str(custom_num) if custom_num else str(r + 1))
             self._update_counter()
             self._update_category_combo_items()
-
-    def update_point_group_id(self, point_id: str, group_id: str | None) -> None:
-        """Обновление group_id для строки с указанным point_id."""
-        for r in range(self.points_table.rowCount()):
-            num_item = self.points_table.item(r, 0)
-            if num_item and str(num_item.data(Qt.ItemDataRole.UserRole)) == str(point_id):
-                num_item.setData(Qt.ItemDataRole.UserRole + 5, group_id)
-                self._apply_filter_to_row(r)
-                break
-        self._update_counter()
 
     def update_points_group_ids(self, points_group_map: dict[str, str | None]) -> None:
         """Массовое обновление group_id для списка точек."""
@@ -796,7 +791,11 @@ class PointsPanel(QWidget):
         start_row = None
         for r in range(self.points_table.rowCount()):
             item = self.points_table.item(r, 0)
-            is_target = item is not None and str(item.data(Qt.ItemDataRole.UserRole)) in target_ids
+            is_target = (
+                item is not None
+                and not self.points_table.isRowHidden(r)
+                and str(item.data(Qt.ItemDataRole.UserRole)) in target_ids
+            )
             if is_target:
                 if start_row is None:
                     start_row = r

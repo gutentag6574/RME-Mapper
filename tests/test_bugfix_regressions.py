@@ -1076,6 +1076,92 @@ def test_med01_groups_panel_and_validation_search(qapp, monkeypatch):
     assert model.rowCount() == 1
 
 
+def test_med02_points_panel_controller_and_bulk_style(qapp, monkeypatch):
+    """MED-02: Перенумерация remove_rows_by_point_ids, select_point_ids без скрытых, меню PointController и BulkPointStyleDialog."""
+    from PySide6.QtWidgets import QMenu, QMessageBox
+
+    from rme_mapper.i18n import tr
+    from rme_mapper.ui.bulk_point_style_dialog import BulkPointStyleDialog
+    from rme_mapper.ui.panels.points_panel import PointsPanel
+
+    # 1. PointsPanel: remove_rows_by_point_ids перенумеровывает столбец 0; select_point_ids пропускает скрытые
+    panel = PointsPanel()
+    try:
+        p1 = MapPoint(id="id1", name="One", latitude=1.0, longitude=1.0)
+        p2 = MapPoint(id="id2", name="Two", latitude=2.0, longitude=2.0)
+        p3 = MapPoint(id="id3", name="Three", latitude=3.0, longitude=3.0)
+        panel.populate_points_batch([p1, p2, p3])
+        panel.remove_rows_by_point_ids(["id1"])
+        assert panel.points_table.rowCount() == 2
+        assert panel.points_table.item(0, 0).text() == "1"
+        assert panel.points_table.item(1, 0).text() == "2"
+
+        panel.points_table.setRowHidden(0, True)
+        panel.select_point_ids(["id2", "id3"])
+        assert panel.selected_point_ids() == ["id3"]
+    finally:
+        panel.close()
+
+    # 2. BulkPointStyleDialog: point_count=7 отображается без списка точек и NaN радиус отклоняется
+    dlg = BulkPointStyleDialog(parent=None, points=None, point_count=7)
+    try:
+        assert "7" in dlg.windowTitle()
+        assert "7" in dlg.info_label.text()
+        dlg.chk_radius.setChecked(True)
+        dlg.edit_radius.setText("nan")
+        warns = []
+        monkeypatch.setattr(QMessageBox, "warning", lambda *a, **kw: warns.append(a[2] if len(a) > 2 else ""))
+        dlg._validate_and_accept()
+        assert len(warns) == 1
+    finally:
+        dlg.close()
+
+    # 3. PointController: скрытое групповое меню показывает show_object, одиночное синхронизирует кликнутую строку, workflows обновляют properties_panel
+    win = MainWindow()
+    win.resize(900, 700)
+    win.show()
+    qapp.processEvents()
+    try:
+        pa = MapPoint(id="pa", name="PA", latitude=55.0, longitude=37.0, visible=False, group_id=None, category="")
+        pb = MapPoint(id="pb", name="PB", latitude=55.1, longitude=37.1, visible=False, group_id=None, category="")
+        win.point_controller._cmd_add_point(pa)
+        win.point_controller._cmd_add_point(pb)
+
+        win.points_panel.select_point_ids(["pa", "pb"])
+        seen_actions: list[str] = []
+
+        class _FakeMenu(QMenu):
+            def exec(self, *args, **kwargs):
+                seen_actions.extend(a.text() for a in self.actions() if a.text())
+                return None
+
+        monkeypatch.setattr("rme_mapper.ui.controllers.point_controller.QMenu", _FakeMenu)
+        from PySide6.QtCore import QPoint
+        monkeypatch.setattr(
+            win.points_panel.points_table,
+            "itemAt",
+            lambda pos: win.points_panel.points_table.item(0 if pos.y() < 10 else 1, 1),
+        )
+        win.point_controller.show_context_menu(QPoint(5, 5))
+        assert tr("action.show_object") in seen_actions
+        assert tr("action.hide_object") not in seen_actions
+
+        # Клик правой кнопкой на невыделенную строку 1 при одиночном выделении строки 0 выделяет строку 1
+        win.points_panel.points_table.selectRow(0)
+        win.point_controller.show_context_menu(QPoint(5, 20))
+        assert win.points_panel.selected_point_ids() == ["pb"]
+
+        # move_points_to_group_workflow и bulk_change_category_workflow вызывают properties_panel.update_properties
+        updated = []
+        monkeypatch.setattr(win.properties_panel, "update_properties", lambda p: updated.append((p.id, p.category)))
+        win.point_controller.move_points_to_group_workflow(None, ["pb"])
+        assert updated and updated[-1][0] == "pb"
+    finally:
+        win.project_controller.set_modified(False)
+        win.close()
+
+
+
 
 
 
