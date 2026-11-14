@@ -1292,10 +1292,29 @@ class MapCanvas(QGraphicsView):
         elif isinstance(image_or_array, QImage):
             pixmap = QPixmap.fromImage(image_or_array)
         elif isinstance(image_or_array, np.ndarray):
+            if image_or_array.ndim < 2 or image_or_array.shape[0] <= 0 or image_or_array.shape[1] <= 0:
+                raise ValueError("Пустой или некорректный массив растрового изображения")
             h, w = image_or_array.shape[:2]
             c = image_or_array.shape[2] if image_or_array.ndim >= 3 else 1
-            arr_contiguous = np.ascontiguousarray(image_or_array)
-            qimg = QImage(arr_contiguous.data, w, h, w * 4, QImage.Format.Format_RGBA8888)
+            arr_u8 = image_or_array if image_or_array.dtype == np.uint8 else np.clip(image_or_array, 0, 255).astype(np.uint8)
+            if c == 4:
+                arr_contiguous = np.ascontiguousarray(arr_u8)
+                qimg = QImage(arr_contiguous.data, w, h, w * 4, QImage.Format.Format_RGBA8888)
+            elif c == 3:
+                arr_contiguous = np.ascontiguousarray(arr_u8)
+                qimg = QImage(arr_contiguous.data, w, h, w * 3, QImage.Format.Format_RGB888)
+            elif c == 1:
+                arr_2d = arr_u8[:, :, 0] if arr_u8.ndim >= 3 else arr_u8
+                arr_contiguous = np.ascontiguousarray(arr_2d)
+                qimg = QImage(arr_contiguous.data, w, h, w, QImage.Format.Format_Grayscale8)
+            elif c == 2:
+                rgba = np.empty((h, w, 4), dtype=np.uint8)
+                rgba[:, :, :3] = arr_u8[:, :, 0:1]
+                rgba[:, :, 3] = arr_u8[:, :, 1]
+                arr_contiguous = np.ascontiguousarray(rgba)
+                qimg = QImage(arr_contiguous.data, w, h, w * 4, QImage.Format.Format_RGBA8888)
+            else:
+                raise ValueError(f"Неподдерживаемое число каналов растра: {c}")
             pixmap = QPixmap.fromImage(qimg.copy())
         else:
             raise ValueError(f"Неподдерживаемый тип растрового изображения: {type(image_or_array)}")

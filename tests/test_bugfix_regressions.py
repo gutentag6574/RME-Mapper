@@ -1161,6 +1161,44 @@ def test_med02_points_panel_controller_and_bulk_style(qapp, monkeypatch):
         win.close()
 
 
+def test_med03_ndarray_channels_and_scale_overlay(qapp):
+    """MED-03: Поддержка c=1/2/3/4 в MapCanvas.add_raster_item и геометрия/ratio ScaleOverlayWidget."""
+    import numpy as np
+    from PySide6.QtGui import QFont, QFontMetrics
+    from rme_mapper.maps.map_canvas import MapCanvas
+    from rme_mapper.maps.scale_overlay import ScaleOverlayWidget
+    from rme_mapper.models.map_layer import MapLayer
+
+    canvas = MapCanvas()
+    try:
+        layer = MapLayer(id="r1", source_name="r", display_name="R", geometry_type="raster", crs="EPSG:3857")
+        for arr in (
+            np.full((8, 10), 128, dtype=np.uint8),
+            np.full((8, 10, 2), 200, dtype=np.uint8),
+            np.full((8, 10, 3), 180, dtype=np.uint8),
+            np.full((8, 10, 4), 220, dtype=np.uint8),
+        ):
+            canvas.add_raster_item(layer, arr, (1.0, 0.0, 0.0, 0.0, -1.0, 8.0), (10, 8))
+            assert canvas._raster_item is not None
+            assert canvas._raster_item.pixmap().width() == 10
+            assert canvas._raster_item.pixmap().height() == 8
+    finally:
+        canvas.close()
+
+    overlay = ScaleOverlayWidget()
+    try:
+        overlay.update_scale("50 м", 100.0, 0.0)
+        assert overlay._ratio_text == ""
+
+        overlay.update_scale("10 м", 50.0, 10_000_000.0)
+        assert overlay._ratio_text.startswith("≈1:")
+        fm = QFontMetrics(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        assert overlay.width() >= fm.horizontalAdvance(overlay._ratio_text) + 20
+    finally:
+        overlay.close()
+
+
+
 
 
 
