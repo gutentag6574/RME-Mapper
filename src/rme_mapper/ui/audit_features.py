@@ -216,10 +216,22 @@ class AuditFeaturesMixin:
         text=self.navigate_edit.text().strip()
         if not text:
             return
+        has_map=(
+            getattr(self.map_controller,"active_profile",None) is not None
+            or getattr(self.map_controller,"map_path",None) is not None
+            or bool(getattr(self.map_canvas,"active_crs","")) and self.map_canvas.is_online_map_active()
+        )
+        if not has_map or not getattr(self.map_canvas,"active_crs",""):
+            QMessageBox.information(self,tr("dialog.no_map_title"),tr("dialog.no_map_text"))
+            return
         for point in self._point_service.get_points():
             if point.name.casefold()==text.casefold() or (point.object_number and point.object_number.casefold()==text.casefold()):
-                self.points_panel.select_point_ids([point.id])
-                self.map_canvas.center_on_coordinates(point.longitude, point.latitude, source_crs=point.source_crs)
+                try:
+                    self.points_panel.select_point_ids([point.id])
+                    self.map_canvas.center_on_coordinates(point.longitude, point.latitude, source_crs=point.source_crs)
+                    self.statusBar().showMessage(tr("audit.centered"),2500)
+                except (ValueError,pyproj.exceptions.ProjError):
+                    self.statusBar().showMessage(tr("audit.search_invalid"),5000)
                 return
         try:
             values=[float(value) for value in re.split(r"[;,\s]+",text) if value]
@@ -232,6 +244,8 @@ class AuditFeaturesMixin:
                 x,y=pyproj.Transformer.from_crs("EPSG:4326",self.map_canvas.active_crs,always_xy=True).transform(lon,lat,errcheck=True)
             else:
                 x,y=values
+            if not (math.isfinite(x) and math.isfinite(y)):
+                raise ValueError()
             self.map_canvas.center_on_map_coordinates(x,y)
             self.statusBar().showMessage(tr("audit.centered"),2500)
         except (ValueError,pyproj.exceptions.ProjError):

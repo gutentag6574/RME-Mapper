@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 import geopandas as gpd
+from pyproj.exceptions import ProjError
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal, QTimer
 from PySide6.QtGui import (
     QBrush,
@@ -498,9 +499,21 @@ class MapCanvas(QGraphicsView):
         for i in range(len(pts) - 1):
             x1, y1 = pts[i][0], -pts[i][1]
             x2, y2 = pts[i + 1][0], -pts[i + 1][1]
-            lon1, lat1 = CoordinateService.transform_xy(x1, y1, active_crs, "OGC:CRS84")
-            lon2, lat2 = CoordinateService.transform_xy(x2, y2, active_crs, "OGC:CRS84")
-            total_m += GeodesicService.calculate_distance(lon1, lat1, lon2, lat2)
+            try:
+                lon1, lat1 = CoordinateService.transform_xy(x1, y1, active_crs, "OGC:CRS84")
+                lon2, lat2 = CoordinateService.transform_xy(x2, y2, active_crs, "OGC:CRS84")
+                if not (
+                    math.isfinite(lon1)
+                    and math.isfinite(lat1)
+                    and math.isfinite(lon2)
+                    and math.isfinite(lat2)
+                ):
+                    continue
+                dist = GeodesicService.calculate_distance(lon1, lat1, lon2, lat2)
+                if math.isfinite(dist):
+                    total_m += dist
+            except (ProjError, ValueError, RuntimeError):
+                continue
         return total_m
 
     def _calculate_measurement_area_perimeter(self, pts: list[tuple[float, float]]) -> tuple[float, float]:
@@ -512,10 +525,21 @@ class MapCanvas(QGraphicsView):
         lats: list[float] = []
         for p in pts:
             mx, my = p[0], -p[1]
-            lon, lat = CoordinateService.transform_xy(mx, my, active_crs, "OGC:CRS84")
+            try:
+                lon, lat = CoordinateService.transform_xy(mx, my, active_crs, "OGC:CRS84")
+            except (ProjError, ValueError, RuntimeError):
+                return 0.0, 0.0
+            if not (math.isfinite(lon) and math.isfinite(lat)):
+                return 0.0, 0.0
             lons.append(lon)
             lats.append(lat)
-        return GeodesicService.calculate_area_perimeter(lons, lats)
+        try:
+            area_m2, perim_m = GeodesicService.calculate_area_perimeter(lons, lats)
+            if not (math.isfinite(area_m2) and math.isfinite(perim_m)):
+                return 0.0, 0.0
+            return area_m2, perim_m
+        except (ProjError, ValueError, RuntimeError):
+            return 0.0, 0.0
 
     def _update_measure_preview(self) -> None:
         """Обновление графических элементов текущего незавершенного измерения."""
@@ -635,10 +659,28 @@ class MapCanvas(QGraphicsView):
 
         self._measure_temp_pos = None
         pts = list(self._measure_points)
-        import pyproj
-        transform=pyproj.Transformer.from_crs(self.active_crs,"EPSG:4326",always_xy=True)
-        geometry=dict(kind="polygon" if self._interaction_mode=="measure_area" else "line",
-            coordinates=[list(transform.transform(x,-y,errcheck=True)) for x,y in pts],name=tr("audit.measurement"))
+        geometry: dict[str, Any] | None = None
+        try:
+            coords = [
+                list(
+                    CoordinateService.transform_xy(
+                        x,
+                        -y,
+                        source_crs=self.active_crs,
+                        target_crs="EPSG:4326",
+                    )
+                )
+                for x, y in pts
+            ]
+            if coords and all(math.isfinite(c[0]) and math.isfinite(c[1]) for c in coords):
+                geometry = {
+                    "kind": "polygon" if self._interaction_mode == "measure_area" else "line",
+                    "coordinates": coords,
+                    "name": tr("audit.measurement"),
+                }
+        except Exception as err:
+            logger.warning("Не удалось преобразовать геометрию измерения в WGS84: %s", err)
+            geometry = None
 
         for item in self._measure_active_items:
             if item.scene() == self._scene:
@@ -712,8 +754,9 @@ class MapCanvas(QGraphicsView):
         self._measure_temp_pos = None
 
         self.set_interaction_mode("navigation")
-        geometry["name"]=final_text
-        self.measurement_geometry_finished.emit(geometry)
+        if geometry is not None:
+            geometry["name"] = final_text
+            self.measurement_geometry_finished.emit(geometry)
         self.measurement_finished.emit(final_text)
 
     def cancel_measurement(self) -> None:

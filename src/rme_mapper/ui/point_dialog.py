@@ -3,9 +3,11 @@ from __future__ import annotations
 
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import Any
 
+from pyproj.exceptions import ProjError
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPen
 from PySide6.QtWidgets import (
@@ -1294,15 +1296,22 @@ class PointDialog(QDialog):
 
         # 5. Проверка выхода центра точки за пределы рабочей области карты
         is_inside = True
-        if self._boundary_geometry is not None:
-            is_inside = CoordinateService.is_point_inside_boundary(
-                longitude=lon,
-                latitude=lat,
-                boundary_geometry=self._boundary_geometry,
-            )
-        elif self._map_extent is not None:
-            mx, my = CoordinateService.transform_xy(lon, lat, "EPSG:4326", self._map_crs)
-            is_inside = CoordinateService.is_point_inside_extent(mx, my, self._map_extent)
+        try:
+            if self._boundary_geometry is not None:
+                is_inside = CoordinateService.is_point_inside_boundary(
+                    longitude=lon,
+                    latitude=lat,
+                    boundary_geometry=self._boundary_geometry,
+                )
+            elif self._map_extent is not None:
+                mx, my = CoordinateService.transform_xy(lon, lat, "EPSG:4326", self._map_crs)
+                if math.isfinite(mx) and math.isfinite(my):
+                    is_inside = CoordinateService.is_point_inside_extent(mx, my, self._map_extent)
+                else:
+                    is_inside = False
+        except (ProjError, ValueError) as err:
+            logger.warning("Не удалось проверить попадание точки в область карты (%s): %s", self._map_crs, err)
+            is_inside = False
 
         if not is_inside:
             logger.info("Точка (%s, %s) вне рабочей области карты", lon, lat)

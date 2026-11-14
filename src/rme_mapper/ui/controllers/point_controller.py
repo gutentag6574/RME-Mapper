@@ -5,8 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 import copy
 import logging
+import math
 from typing import Any
 
+from pyproj.exceptions import ProjError
 from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QWidget
 
@@ -674,13 +676,11 @@ class PointController(QObject):
         active_crs = self._get_active_crs()
         coords: list[tuple[float, float]] = []
         for pt in points:
-            mx, my = CoordinateService.transform_xy(
-                pt.longitude, pt.latitude,
-                source_crs=pt.source_crs,
-                target_crs=active_crs,
-            )
-            coords.append((mx, my))
-        self._map_canvas.zoom_to_points(coords)
+            xy = self._safe_transform_point(pt, active_crs)
+            if xy is not None:
+                coords.append(xy)
+        if coords:
+            self._map_canvas.zoom_to_points(coords)
 
     def zoom_to_selected(self) -> None:
         """Масштабирование карты по охвату всех выделенных точек."""
@@ -692,12 +692,9 @@ class PointController(QObject):
         for pid in selected_ids:
             pt = self._point_service.get_point(pid)
             if pt:
-                mx, my = CoordinateService.transform_xy(
-                    pt.longitude, pt.latitude,
-                    source_crs=pt.source_crs,
-                    target_crs=active_crs,
-                )
-                coords.append((mx, my))
+                xy = self._safe_transform_point(pt, active_crs)
+                if xy is not None:
+                    coords.append(xy)
         if coords:
             self._map_canvas.zoom_to_points(coords)
 
@@ -753,11 +750,11 @@ class PointController(QObject):
         if self._get_active_profile() is None and self._get_map_path() is None:
             return None
         active_crs = self._get_active_crs()
-        mx, my = CoordinateService.transform_xy(
-            point.longitude, point.latitude,
-            source_crs=point.source_crs or "EPSG:4326",
-            target_crs=active_crs,
-        )
+        xy = self._safe_transform_point(point, active_crs)
+        if xy is None:
+            self._set_status(tr("audit.search_invalid"), 3000)
+            return None
+        mx, my = xy
         text = f"{mx:.2f}, {my:.2f}"
         QApplication.clipboard().setText(text)
         self._set_status(tr("status.coords_copied"), 2000)
@@ -843,34 +840,63 @@ class PointController(QObject):
         )
 
     @staticmethod
+    def _safe_transform_point(point: MapPoint, target_crs: str) -> tuple[float, float] | None:
+        """Безопасное перепроецирование координат точки с обработкой ProjError и non-finite."""
+        try:
+            mx, my = CoordinateService.transform_xy(
+                point.longitude,
+                point.latitude,
+                source_crs=point.source_crs or "EPSG:4326",
+                target_crs=target_crs,
+            )
+            if not (math.isfinite(mx) and math.isfinite(my)):
+                logger.warning(
+                    "Неконечный результат перепроецирования точки '%s' (%s, %s) в %s",
+                    point.name, point.longitude, point.latitude, target_crs,
+                )
+                return None
+            return mx, my
+        except (ProjError, ValueError, RuntimeError) as err:
+            logger.warning(
+                "Ошибка перепроецирования точки '%s' из %s в %s: %s",
+                point.name, point.source_crs, target_crs, err,
+            )
+            return None
+
+    @staticmethod
     def _build_zone_polygon_for_crs(point: MapPoint, target_crs: str):
         """Построение полигона геодезической зоны точки в целевой CRS."""
         if not point.zone_enabled or point.radius_m <= 0:
             return None
-        src_crs = (point.source_crs or "EPSG:4326").strip()
-        lon_wgs, lat_wgs = point.longitude, point.latitude
-        if src_crs.upper() not in ("EPSG:4326", "OGC:CRS84"):
-            lon_wgs, lat_wgs = CoordinateService.transform_xy(
-                point.longitude,
-                point.latitude,
-                source_crs=src_crs,
-                target_crs="EPSG:4326",
+        try:
+            src_crs = (point.source_crs or "EPSG:4326").strip()
+            lon_wgs, lat_wgs = point.longitude, point.latitude
+            if src_crs.upper() not in ("EPSG:4326", "OGC:CRS84"):
+                lon_wgs, lat_wgs = CoordinateService.transform_xy(
+                    point.longitude,
+                    point.latitude,
+                    source_crs=src_crs,
+                    target_crs="EPSG:4326",
+                )
+            geo_c = GeodesicService.create_geodesic_circle(lon_wgs, lat_wgs, point.radius_m)
+            return CoordinateService.transform_polygon(
+                geo_c,
+                source_crs="EPSG:4326",
+                target_crs=target_crs,
             )
-        geo_c = GeodesicService.create_geodesic_circle(lon_wgs, lat_wgs, point.radius_m)
-        return CoordinateService.transform_polygon(
-            geo_c,
-            source_crs="EPSG:4326",
-            target_crs=target_crs,
-        )
+        except (ProjError, ValueError, RuntimeError) as err:
+            logger.warning("Ошибка построения зоны для точки '%s' в %s: %s", point.name, target_crs, err)
+            return None
 
     def _render_point_on_canvas(self, point: MapPoint, is_update: bool = False) -> None:
         """Проецирование координат и отрисовка маркера/зоны на MapCanvas."""
         active_crs = self._get_active_crs()
-        mx, my = CoordinateService.transform_xy(
-            point.longitude, point.latitude,
-            source_crs=point.source_crs or "EPSG:4326",
-            target_crs=active_crs,
-        )
+        xy = self._safe_transform_point(point, active_crs)
+        if xy is None:
+            if is_update:
+                self._map_canvas.remove_user_point(point.id)
+            return
+        mx, my = xy
         zone_poly = self._build_zone_polygon_for_crs(point, active_crs)
 
         if is_update:
@@ -885,15 +911,15 @@ class PointController(QObject):
         active_crs = self._get_active_crs()
         batch_data = []
         for point in points:
-            mx, my = CoordinateService.transform_xy(
-                point.longitude, point.latitude,
-                source_crs=point.source_crs or "EPSG:4326",
-                target_crs=active_crs,
-            )
+            xy = self._safe_transform_point(point, active_crs)
+            if xy is None:
+                continue
+            mx, my = xy
             zone_poly = self._build_zone_polygon_for_crs(point, active_crs)
             batch_data.append((point, mx, my, zone_poly))
 
-        self._map_canvas.add_user_points_batch(batch_data)
+        if batch_data:
+            self._map_canvas.add_user_points_batch(batch_data)
 
     def populate_points_table_batch(self, points: list[MapPoint]) -> None:
         """Пакетное заполнение таблицы точек."""
@@ -905,11 +931,11 @@ class PointController(QObject):
         """Пересчет экранных координат всех точек и зон под новую CRS карты."""
         with self._map_canvas.defer_labels_layout():
             for pt in self._point_service.get_points():
-                mx, my = CoordinateService.transform_xy(
-                    pt.longitude, pt.latitude,
-                    source_crs=pt.source_crs or "EPSG:4326",
-                    target_crs=target_crs,
-                )
+                xy = self._safe_transform_point(pt, target_crs)
+                if xy is None:
+                    self._map_canvas.remove_user_point(pt.id)
+                    continue
+                mx, my = xy
                 zone_poly = self._build_zone_polygon_for_crs(pt, target_crs)
                 self._map_canvas.add_user_point(pt, map_x=mx, map_y=my, zone_polygon=zone_poly)
 
@@ -990,11 +1016,11 @@ class PointController(QObject):
             point = self._point_service.get_point(point_id)
             if point:
                 active_crs = self._get_active_crs()
-                mx, my = CoordinateService.transform_xy(
-                    point.longitude, point.latitude,
-                    source_crs=point.source_crs,
-                    target_crs=active_crs,
-                )
+                xy = self._safe_transform_point(point, active_crs)
+                if xy is None:
+                    self._set_status(tr("audit.search_invalid"), 3000)
+                    return
+                mx, my = xy
                 self._map_canvas.center_on_map_coordinates(mx, my)
                 self._set_status(tr("status.focus_point", name=point.name), 2000)
 

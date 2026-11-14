@@ -484,3 +484,111 @@ def test_high03_reprojection_in_center_zone_and_point_controller(qapp, monkeypat
         win.map_controller.unload_map()
         win.close()
 
+
+def test_high04_projerror_handling_and_tile_render_bounds(qapp, tmp_path, monkeypatch):
+    """HIGH-04: Безопасная обработка ProjError, граничных широт и нулевых размеров при рендере тайлов."""
+    import pytest
+    from pyproj.exceptions import ProjError
+    from PySide6.QtGui import QColor, QImage, QPainter
+    from PySide6.QtWidgets import QGraphicsScene
+
+    from rme_mapper.maps.online_tile_manager import OnlineTileManager
+    from rme_mapper.models.online_provider import ProviderRegistry
+    from rme_mapper.services.annotation_service import annotation_path
+    from rme_mapper.services.coordinate_service import CoordinateService
+    from rme_mapper.services.tile_cache import TileDiskCache
+    from rme_mapper.services.tile_render_service import render_cached_tiles
+
+    # 1. annotation_path не пропускает необработанный ProjError наружу
+    with pytest.raises(ValueError):
+        annotation_path({"kind": "line", "coordinates": [[47.8, 56.6], [47.9, 56.7]]}, "INVALID:CRS")
+
+    # 2. TileRenderService: нулевой охват, полярные границы EPSG:4326 и fallback на zoom - 1
+    cache = TileDiskCache(cache_dir=tmp_path / "tiles_h4", max_size_bytes=5 * 1024 * 1024)
+    manager = OnlineTileManager(QGraphicsScene(), tile_cache=cache)
+    provider = ProviderRegistry.get_provider("osm_standard")
+    manager.set_provider(provider)
+
+    img = QImage(256, 256, QImage.Format.Format_RGBA8888)
+    img.fill(QColor(255, 0, 0, 255))
+    painter = QPainter(img)
+    try:
+        render_cached_tiles(painter, manager, (10.0, 10.0, 10.0, 20.0), 256, 256, active_crs="EPSG:3857")
+        render_cached_tiles(painter, manager, (-10.0, -90.0, 10.0, 90.0), 256, 256, active_crs="EPSG:4326")
+
+        # Кладём родительский тайл (zoom=0, tx=0, ty=0) и рендерим для zoom=1
+        from PySide6.QtCore import QBuffer, QIODevice
+
+        tile_img = QImage(256, 256, QImage.Format.Format_RGBA8888)
+        tile_img.fill(QColor(0, 180, 90, 255))
+        buf = QBuffer()
+        buf.open(QIODevice.OpenModeFlag.WriteOnly)
+        tile_img.save(buf, "PNG")
+        cache.put_tile(provider.id, 0, 0, 0, bytes(buf.data()))
+
+        out = QImage(256, 256, QImage.Format.Format_RGBA8888)
+        out.fill(QColor(0, 0, 0, 0))
+        p_out = QPainter(out)
+        try:
+            render_cached_tiles(
+                p_out,
+                manager,
+                (-20037508.34, -20037508.34, 20037508.34, 20037508.34),
+                256,
+                256,
+                active_crs="EPSG:3857",
+            )
+        finally:
+            p_out.end()
+        assert out.pixelColor(64, 64).green() > 100
+    finally:
+        painter.end()
+
+    # 3. PointController, navigate_to_input (без карты) и _finish_measurement при ProjError
+    monkeypatch.setattr(OnlineTileManager, "update_viewport", lambda *args, **kwargs: None)
+    info_calls = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: info_calls.append(args) or QMessageBox.StandardButton.Ok)
+
+    win = MainWindow()
+    try:
+        win.map_controller.unload_map()
+        win.navigate_edit.setText("100, 200")
+        win.navigate_to_input()
+        assert len(info_calls) == 1
+
+        assert win.map_controller.load_online_map(provider=provider) is True
+
+        p_ok = MapPoint(id="pt-ok", name="Ок", latitude=56.6, longitude=47.8)
+        p_bad = MapPoint(id="pt-bad", name="Полюс", latitude=90.0, longitude=0.0)
+        win.point_controller._cmd_add_point(p_ok)
+
+        orig_transform = CoordinateService.transform_xy
+
+        def flaky_transform(x, y, source_crs="EPSG:4326", target_crs="EPSG:4326"):
+            if abs(float(y) - 90.0) < 1e-9 or abs(float(y) + 90.0) < 1e-9:
+                raise ProjError("Simulated pole ProjError")
+            return orig_transform(x, y, source_crs=source_crs, target_crs=target_crs)
+
+        monkeypatch.setattr(CoordinateService, "transform_xy", staticmethod(flaky_transform))
+
+        # Ни один из методов PointController не должен падать с ProjError
+        win._point_service.insert_point(p_bad)
+        win.point_controller._render_point_on_canvas(p_bad)
+        win.point_controller.render_points_batch([p_ok, p_bad])
+        win.point_controller.reproject_all_points("EPSG:3857")
+        win.point_controller.show_all_points()
+        win.points_panel.select_point_ids([p_bad.id])
+        win.point_controller.zoom_to_selected()
+        assert win.point_controller.copy_coordinates_map_xy(p_bad) is None
+        win.point_controller._table_point_ids.append(p_bad.id)
+        win.point_controller.on_table_row_double_clicked(len(win.point_controller._table_point_ids) - 1, 0)
+
+        # _finish_measurement тоже не должен падать при ProjError
+        win.map_canvas.start_measurement("measure_distance")
+        win.map_canvas._measure_points = [(0.0, 90.0), (100.0, 90.0)]
+        win.map_canvas._finish_measurement()
+    finally:
+        win.project_controller.set_modified(False)
+        win.map_controller.unload_map()
+        win.close()
+
