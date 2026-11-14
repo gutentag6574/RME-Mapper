@@ -275,20 +275,47 @@ class ModernGeoTiffBackend(RasterDataBackend):
             return np.dstack([r_norm, g_norm, b_norm, alpha])
 
         else:
-            # 4 или более каналов
+            # 4 или более каналов (или редкий 2-канальный растр)
             # Проверяем наличие явного альфа-канала
             has_explicit_alpha = False
             alpha_idx = -1
-            if colorinterp and len(colorinterp) >= 4:
+            if colorinterp and len(colorinterp) >= count:
                 for idx, ci in enumerate(colorinterp):
                     if ci == ColorInterp.alpha:
                         has_explicit_alpha = True
                         alpha_idx = idx
                         break
 
-            r = data[0]
-            g = data[1]
-            b = data[2]
+            non_alpha_indices = [idx for idx in range(count) if idx != alpha_idx]
+            if len(non_alpha_indices) < 3:
+                # На случай 2-канального растра не допускаем IndexError
+                base_idx = non_alpha_indices[0] if non_alpha_indices else 0
+                r_idx = g_idx = b_idx = base_idx
+            else:
+                r_idx, g_idx, b_idx = non_alpha_indices[0], non_alpha_indices[1], non_alpha_indices[2]
+                if colorinterp:
+                    ci_list = list(colorinterp)
+                    remaining = list(non_alpha_indices)
+                    picked: list[int] = []
+                    for target_ci in (ColorInterp.red, ColorInterp.green, ColorInterp.blue):
+                        match_idx = next(
+                            (idx for idx in remaining if idx < len(ci_list) and ci_list[idx] == target_ci),
+                            None,
+                        )
+                        if match_idx is not None:
+                            picked.append(match_idx)
+                            remaining.remove(match_idx)
+                        else:
+                            picked.append(-1)
+                    for pos in range(3):
+                        if picked[pos] < 0 and remaining:
+                            picked[pos] = remaining.pop(0)
+                    if all(p >= 0 for p in picked):
+                        r_idx, g_idx, b_idx = picked[0], picked[1], picked[2]
+
+            r = data[r_idx]
+            g = data[g_idx]
+            b = data[b_idx]
 
             nodata_mask = np.zeros((h, w), dtype=bool)
             if nodata is not None:
@@ -326,8 +353,14 @@ class ModernGeoTiffBackend(RasterDataBackend):
                 raw_a = data[alpha_idx]
                 if raw_a.dtype == np.uint8:
                     alpha = raw_a.copy()
+                elif np.issubdtype(raw_a.dtype, np.integer):
+                    dtype_max = float(np.iinfo(raw_a.dtype).max) or 1.0
+                    alpha = np.clip(raw_a.astype(np.float32) / dtype_max * 255.0, 0, 255).astype(np.uint8)
                 else:
-                    alpha = np.clip(raw_a.astype(np.float32) / (raw_a.max() or 1.0) * 255.0, 0, 255).astype(np.uint8)
+                    raw_f = np.nan_to_num(raw_a.astype(np.float32), nan=0.0, posinf=1.0, neginf=0.0)
+                    max_val = float(np.max(raw_f)) if raw_f.size > 0 else 1.0
+                    scale = 255.0 if max_val <= 1.0 else 1.0
+                    alpha = np.clip(raw_f * scale, 0, 255).astype(np.uint8)
                 alpha = np.where(valid, alpha, 0).astype(np.uint8)
             else:
                 alpha = np.where(valid, 255, 0).astype(np.uint8)

@@ -592,3 +592,42 @@ def test_high04_projerror_handling_and_tile_render_bounds(qapp, tmp_path, monkey
         win.map_controller.unload_map()
         win.close()
 
+
+def test_high05_raster_channel_order_and_alpha_dtype_scale():
+    """HIGH-05: исключение alpha_idx из R/G/B (ARGB) и нормировка альфы по максимуму dtype."""
+    import numpy as np
+    from rasterio.enums import ColorInterp
+    from rme_mapper.backends.modern_raster import ModernGeoTiffBackend
+
+    # 1. Канал alpha на индексе 0 ([alpha, red, green, blue]), uint16 полупрозрачный (32768 ~= 50%)
+    a = np.full((2, 2), 32768, dtype=np.uint16)
+    r = np.array([[0, 65535], [0, 65535]], dtype=np.uint16)
+    g = np.array([[0, 0], [65535, 65535]], dtype=np.uint16)
+    b = np.full((2, 2), 10000, dtype=np.uint16)
+    data = np.stack([a, r, g, b], axis=0)
+    ci = [ColorInterp.alpha, ColorInterp.red, ColorInterp.green, ColorInterp.blue]
+
+    rgba = ModernGeoTiffBackend._normalize_to_rgba(data, ci, nodata=None, mask=None)
+    assert rgba.shape == (2, 2, 4)
+    # R должен соответствовать массиву r (0 в (0,0), 255 в (0,1)), а не alpha (32768)!
+    assert rgba[0, 0, 0] == 0
+    assert rgba[0, 1, 0] == 255
+    assert rgba[1, 0, 1] == 255
+    # Альфа 32768 из 65535 должна стать ~127..128, а не 255!
+    assert 125 <= int(rgba[0, 0, 3]) <= 130
+
+    # 2. BGR + Alpha ([blue, green, red, alpha]) с float32 в [0.0, 0.5]
+    b_f = np.full((2, 2), 10.0, dtype=np.float32)
+    g_f = np.full((2, 2), 20.0, dtype=np.float32)
+    r_f = np.array([[0.0, 100.0], [0.0, 100.0]], dtype=np.float32)
+    a_f = np.full((2, 2), 0.5, dtype=np.float32)
+    rgba_f = ModernGeoTiffBackend._normalize_to_rgba(
+        np.stack([b_f, g_f, r_f, a_f], axis=0),
+        [ColorInterp.blue, ColorInterp.green, ColorInterp.red, ColorInterp.alpha],
+        nodata=None,
+        mask=None,
+    )
+    assert rgba_f[0, 0, 0] == 0 and rgba_f[0, 1, 0] == 255
+    assert 126 <= int(rgba_f[0, 0, 3]) <= 129
+
+
