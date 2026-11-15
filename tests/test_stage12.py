@@ -275,7 +275,7 @@ def test_19_language_switch_preserves_current_project_path(qapp):
 # =============================================================================
 
 def test_20_main_window_menu_titles_ru(qapp):
-    """20. Заголовки верхнего меню на русском языке."""
+    """20. Заголовки верхнего меню на русском языке (Язык и Справка перенесены в Настройки)."""
     win = MainWindow()
     win.switch_language("ru")
 
@@ -285,13 +285,15 @@ def test_20_main_window_menu_titles_ru(qapp):
     assert win.import_menu.title() == "Импорт"
     assert win.export_menu.title() == "Экспорт"
     assert win.settings_menu.title() == "Настройки"
-    assert win.language_menu.title() == "Язык"
-    assert win.help_menu.title() == "Справка"
+    menubar_titles = [a.text() for a in win.menuBar().actions()]
+    assert "Язык" not in menubar_titles
+    assert "Справка" not in menubar_titles
+    assert not hasattr(win, "help_menu")
     win.close()
 
 
 def test_21_main_window_menu_titles_en(qapp):
-    """21. Заголовки верхнего меню на английском языке."""
+    """21. Заголовки верхнего меню на английском языке (Language и Help перенесены в Settings)."""
     win = MainWindow()
     win.switch_language("en")
 
@@ -301,8 +303,10 @@ def test_21_main_window_menu_titles_en(qapp):
     assert win.import_menu.title() == "Import"
     assert win.export_menu.title() == "Export"
     assert win.settings_menu.title() == "Settings"
-    assert win.language_menu.title() == "Language"
-    assert win.help_menu.title() == "Help"
+    menubar_titles = [a.text() for a in win.menuBar().actions()]
+    assert "Language" not in menubar_titles
+    assert "Help" not in menubar_titles
+    assert not hasattr(win, "help_menu")
     win.close()
 
 

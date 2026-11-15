@@ -69,6 +69,8 @@ class GroupController(QObject):
         self._groups_panel.select_group_points_requested.connect(self.select_group_points_workflow)
         self._groups_panel.zoom_to_group_requested.connect(self.zoom_to_group_workflow)
         self._groups_panel.bulk_style_group_requested.connect(self.bulk_style_group_workflow)
+        if hasattr(self._points_panel, "group_filter_changed"):
+            self._points_panel.group_filter_changed.connect(self._groups_panel.select_filter)
 
     def _set_status(self, msg: str, timeout: int = 3000) -> None:
         if self._status_bar_fn:
@@ -83,6 +85,8 @@ class GroupController(QObject):
 
         total_pts = len(self._point_service)
         self._groups_panel.set_groups_and_counts(groups, counts, total_pts)
+        if hasattr(self._points_panel, "update_group_combo_items"):
+            self._points_panel.update_group_combo_items(groups)
         self._map_canvas.set_groups(groups)
 
     def clear_all_groups(self) -> None:

@@ -194,9 +194,9 @@ class AuditFeaturesMixin:
                     window.project_controller.set_modified(True)
         self.point_controller.undo_manager.push(FieldImportCommand(tr("audit.import_field")),execute=True)
 
-    def open_preferences(self):
+    def open_preferences(self, _checked: bool = False, section: str = "general"):
         from rme_mapper.ui.settings_dialog import SettingsDialog
-        dialog=SettingsDialog(self._settings_service,self)
+        dialog=SettingsDialog(self._settings_service,self,initial_section=section)
         if dialog.exec()==QDialog.DialogCode.Accepted:
             self.apply_preferences()
 

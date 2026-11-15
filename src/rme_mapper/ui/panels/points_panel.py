@@ -43,6 +43,7 @@ class PointsPanel(QWidget):
     selection_changed = Signal()
     custom_context_menu_requested = Signal(object)
     count_changed = Signal(int, int)
+    group_filter_changed = Signal(object)  # group_id | None | "__ungrouped__"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -95,8 +96,25 @@ class PointsPanel(QWidget):
         self.category_combo.setObjectName("categoryFilterCombo")
         self.category_combo.setMinimumWidth(115)
         self.category_combo.setMaximumWidth(220)
+        self.category_combo.addItem(tr("category.all"), None)
         self.category_combo.currentIndexChanged.connect(self._on_category_filter_changed)
         filter_layout.addWidget(self.category_combo, stretch=1)
+
+        self.group_combo = QComboBox(self)
+        self.group_combo.setObjectName("groupFilterCombo")
+        self.group_combo.setMinimumWidth(110)
+        self.group_combo.setMaximumWidth(200)
+        self.group_combo.addItem(tr("filter.all_groups"), None)
+        self.group_combo.addItem(tr("filter.no_group"), "__ungrouped__")
+        self.group_combo.currentIndexChanged.connect(self._on_group_filter_changed)
+        filter_layout.addWidget(self.group_combo, stretch=1)
+
+        self.btn_reset_filters = QPushButton(tr("filter.reset"), self)
+        self.btn_reset_filters.setObjectName("btnResetFilters")
+        self.btn_reset_filters.setToolTip(tr("filter.reset_tooltip"))
+        self.btn_reset_filters.setEnabled(False)
+        self.btn_reset_filters.clicked.connect(self.reset_filters)
+        filter_layout.addWidget(self.btn_reset_filters)
 
         filter_layout.addStretch()
         layout.addLayout(filter_layout)
@@ -203,7 +221,74 @@ class PointsPanel(QWidget):
     def set_group_filter(self, group_id: str | None) -> None:
         """Установка фильтра по группе (None = все, '__ungrouped__', или group_id)."""
         self._active_group_filter = group_id
+        if hasattr(self, "group_combo"):
+            self.group_combo.blockSignals(True)
+            idx = self.group_combo.findData(group_id)
+            self.group_combo.setCurrentIndex(idx if idx != -1 else 0)
+            self.group_combo.setToolTip(self.group_combo.currentText())
+            self.group_combo.blockSignals(False)
         self._reapply_all_filters()
+
+    def _on_group_filter_changed(self, _index: int) -> None:
+        if not hasattr(self, "group_combo"):
+            return
+        group_id = self.group_combo.currentData()
+        self._active_group_filter = group_id
+        self.group_combo.setToolTip(self.group_combo.currentText())
+        self.group_filter_changed.emit(group_id)
+        self._reapply_all_filters()
+
+    def update_group_combo_items(self, groups: list[Any]) -> None:
+        """Обновить список групп в фильтре таблицы, сохраняя выбранный фильтр."""
+        if not hasattr(self, "group_combo"):
+            return
+        current_data = self._active_group_filter
+        self.group_combo.blockSignals(True)
+        self.group_combo.clear()
+        self.group_combo.addItem(tr("filter.all_groups"), None)
+        self.group_combo.addItem(tr("filter.no_group"), "__ungrouped__")
+        for g in groups or []:
+            gid = getattr(g, "id", None)
+            gname = getattr(g, "name", None)
+            if gid and gname:
+                self.group_combo.addItem(str(gname), str(gid))
+        idx = self.group_combo.findData(current_data)
+        self.group_combo.setCurrentIndex(idx if idx != -1 else 0)
+        self.group_combo.blockSignals(False)
+        self.group_combo.setToolTip(self.group_combo.currentText())
+        self._update_reset_button_state()
+
+    def reset_filters(self) -> None:
+        """Сбросить все UI-фильтры таблицы (поиск, категория, группа)."""
+        if hasattr(self, "search_input"):
+            self.search_input.blockSignals(True)
+            self.search_input.clear()
+            self.search_input.blockSignals(False)
+        if hasattr(self, "category_combo"):
+            self.category_combo.blockSignals(True)
+            self.category_combo.setCurrentIndex(0)
+            self.category_combo.setToolTip(self.category_combo.currentText())
+            self.category_combo.blockSignals(False)
+        if hasattr(self, "group_combo"):
+            self.group_combo.blockSignals(True)
+            self.group_combo.setCurrentIndex(0)
+            self.group_combo.setToolTip(self.group_combo.currentText())
+            self.group_combo.blockSignals(False)
+        old_grp = self._active_group_filter
+        self._active_group_filter = None
+        if old_grp is not None:
+            self.group_filter_changed.emit(None)
+        if hasattr(self, "_search_debounce_timer"):
+            self._search_debounce_timer.stop()
+        self._reapply_all_filters()
+
+    def _update_reset_button_state(self) -> None:
+        if not hasattr(self, "btn_reset_filters"):
+            return
+        has_search = bool(self.search_input.text().strip()) if hasattr(self, "search_input") else False
+        has_cat = bool(self.category_combo.currentData()) if hasattr(self, "category_combo") else False
+        has_grp = self._active_group_filter is not None
+        self.btn_reset_filters.setEnabled(has_search or has_cat or has_grp)
 
     def _on_category_filter_changed(self, index: int) -> None:
         if hasattr(self, "category_combo"):
@@ -266,6 +351,7 @@ class PointsPanel(QWidget):
             else:
                 self.count_label.setText(tr("points.count_total", count=total))
         self.count_changed.emit(total, shown)
+        self._update_reset_button_state()
 
     def _on_search_text_changed(self, text: str) -> None:
         """Мгновенная пакетная фильтрация строк таблицы без лагов."""
@@ -360,6 +446,7 @@ class PointsPanel(QWidget):
             else:
                 self.count_label.setText(tr("points.count_total", count=total))
         self.count_changed.emit(total, shown)
+        self._update_reset_button_state()
 
     @property
     def total_count(self) -> int:
@@ -381,6 +468,13 @@ class PointsPanel(QWidget):
         if hasattr(self, "category_combo") and self.category_combo.count() > 0:
             self.category_combo.setItemText(0, tr("category.all"))
             self.category_combo.setToolTip(self.category_combo.currentText())
+        if hasattr(self, "group_combo") and self.group_combo.count() >= 2:
+            self.group_combo.setItemText(0, tr("filter.all_groups"))
+            self.group_combo.setItemText(1, tr("filter.no_group"))
+            self.group_combo.setToolTip(self.group_combo.currentText())
+        if hasattr(self, "btn_reset_filters"):
+            self.btn_reset_filters.setText(tr("filter.reset"))
+            self.btn_reset_filters.setToolTip(tr("filter.reset_tooltip"))
         self.points_table.setHorizontalHeaderLabels([
             tr("table.col_index"),
             tr("table.col_name"),

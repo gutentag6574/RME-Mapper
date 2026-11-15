@@ -404,16 +404,18 @@ def test_about_dialog_creation_and_contents(qapp):
 
 
 def test_main_window_contains_help_menu(qapp):
-    """20. MainWindow содержит 'Справка -> О программе...'."""
+    """20. Верхнее меню 'Справка' убрано (перенесено в единые Настройки), но about_action и show_about_dialog доступны."""
     from rme_mapper.ui.main_window import MainWindow
 
     window = MainWindow()
     assert window is not None
-    assert hasattr(window, "help_menu")
-    assert window.help_menu.title() == "Справка"
+    assert not hasattr(window, "help_menu")
+    assert hasattr(window, "settings_menu")
     assert hasattr(window, "about_action")
     assert window.about_action.text() == "О программе..."
     assert hasattr(window, "show_about_dialog")
+    assert hasattr(window, "preferences_action")
+    window.close()
 
 
 # ==============================================================================

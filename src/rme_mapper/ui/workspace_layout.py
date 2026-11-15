@@ -17,17 +17,14 @@ class WorkspaceLayoutMixin(AuditFeaturesMixin):
         self.bottom_points_action.setCheckable(True)
         self.bottom_points_action.setChecked(self._settings_service._get_bool("ui/points_bottom", True))
         self.bottom_points_action.toggled.connect(self.set_points_bottom)
-        self.view_menu.addAction(self.bottom_points_action)
         self.auto_properties_action = QAction(tr("ux.auto_properties"), self)
         self.auto_properties_action.setCheckable(True)
         self.auto_properties_action.setChecked(self._settings_service._get_bool("ui/auto_properties", True))
         self.auto_properties_action.toggled.connect(self.set_auto_properties)
-        self.view_menu.addAction(self.auto_properties_action)
-        self.theme_menu = self.settings_menu.addMenu(tr("ux.theme"))
         self.theme_actions = {}
         self.theme_group = QActionGroup(self)
         for key in ("light", "dark", "system"):
-            action = self.theme_menu.addAction(tr(f"ux.theme_{key}"))
+            action = QAction(tr(f"ux.theme_{key}"), self)
             action.setCheckable(True)
             self.theme_group.addAction(action)
             action.triggered.connect(lambda checked=False, name=key: self.set_workspace_theme(name))
@@ -113,6 +110,8 @@ class WorkspaceLayoutMixin(AuditFeaturesMixin):
         tm.apply_theme(QApplication.instance(), name)
         if hasattr(self, "title_bar"):
             self.title_bar.update_theme(tm.is_dark_theme(name))
+        if hasattr(self, "_refresh_toolbar_icons"):
+            self._refresh_toolbar_icons()
         if canvas and center is not None:
             from PySide6.QtCore import QTimer
             canvas.centerOn(center)

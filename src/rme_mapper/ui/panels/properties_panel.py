@@ -335,7 +335,7 @@ class PropertiesPanel(QWidget):
             self.prop_zone_opacity_val.setText(f"{point.zone_opacity}%")
             b_style_name = tr(f"border_style.{point.zone_border_style}") if get_translation_service().has_translation(f"border_style.{point.zone_border_style}") else point.zone_border_style
             self.prop_zone_border_val.setText(
-                f"RGB({point.zone_border_red}, {point.zone_border_green}, {point.zone_border_blue}), "
+                f"RGB({point.zone_border_red}, {point.zone_border_green}, {point.zone_border_blue})\n"
                 f"{point.zone_border_width:.1f} {px_unit}, {b_style_name}"
             )
             self.prop_zone_border_swatch.setStyleSheet(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import logging
 import math
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -28,6 +29,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QFrame,
+    QHBoxLayout,
     QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsItemGroup,
@@ -108,6 +110,8 @@ class MapCanvas(QGraphicsView):
     measurement_cancelled = Signal()
     online_tiles_progress = Signal(int)
     online_tiles_auth_error = Signal(str)
+    open_project_requested = Signal()
+    recent_file_requested = Signal(str, str)  # kind ("project" | "map"), path
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -1042,7 +1046,7 @@ class MapCanvas(QGraphicsView):
         # Оверлей пустого состояния холста
         self.empty_overlay = QWidget(self.viewport())
         self.empty_overlay.setObjectName("mapCanvasEmptyOverlay")
-        self.empty_overlay.setStyleSheet("background-color: transparent;")
+        self.empty_overlay.setStyleSheet("QWidget#mapCanvasEmptyOverlay { background-color: transparent; }")
 
         overlay_layout = QVBoxLayout(self.empty_overlay)
         overlay_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1050,62 +1054,97 @@ class MapCanvas(QGraphicsView):
 
         card = QFrame(self.empty_overlay)
         card.setObjectName("emptyStateCard")
-        card.setStyleSheet(
-            """
-            QFrame#emptyStateCard {
-                background-color: #FFFFFF;
-                border: 1px solid #D9DDE3;
-                border-radius: 8px;
-                padding: 24px 32px;
-            }
-            """
-        )
+        card.setMaximumWidth(520)
         card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(28, 24, 28, 24)
         card_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         card_layout.setSpacing(10)
 
         self.empty_title_lbl = QLabel("GeoPoint Mapper", card)
-        self.empty_title_lbl.setStyleSheet("font-size: 20px; font-weight: bold; color: #202124;")
+        self.empty_title_lbl.setObjectName("emptyTitleLabel")
         self.empty_title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         card_layout.addWidget(self.empty_title_lbl)
 
         self.empty_status_lbl = QLabel("Карта не загружена", card)
-        self.empty_status_lbl.setStyleSheet("font-size: 14px; font-weight: 600; color: #475569;")
+        self.empty_status_lbl.setObjectName("emptyStatusLabel")
         self.empty_status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         card_layout.addWidget(self.empty_status_lbl)
 
         self.empty_hint_lbl = QLabel("Откройте географически привязанную карту,\nчтобы начать работу.", card)
-        self.empty_hint_lbl.setStyleSheet("font-size: 12px; color: #6B7280;")
+        self.empty_hint_lbl.setObjectName("emptyHintLabel")
+        self.empty_hint_lbl.setWordWrap(True)
         self.empty_hint_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         card_layout.addWidget(self.empty_hint_lbl)
+
+        buttons_row = QHBoxLayout()
+        buttons_row.setSpacing(8)
+        buttons_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.btn_open_map = QPushButton("📂  Открыть карту...", card)
         self.btn_open_map.setObjectName("btnOpenMapCanvas")
         self.btn_open_map.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_open_map.setStyleSheet(
-            """
-            QPushButton#btnOpenMapCanvas {
-                background-color: #2563EB;
-                color: #FFFFFF;
-                border: none;
-                border-radius: 4px;
-                padding: 8px 18px;
-                font-size: 13px;
-                font-weight: 600;
-            }
-            QPushButton#btnOpenMapCanvas:hover {
-                background-color: #1D4ED8;
-            }
-            QPushButton#btnOpenMapCanvas:pressed {
-                background-color: #1E40AF;
-            }
-            """
-        )
-        card_layout.addWidget(self.btn_open_map, alignment=Qt.AlignmentFlag.AlignCenter)
+        buttons_row.addWidget(self.btn_open_map)
+
+        self.btn_open_project = QPushButton("📁  Открыть проект...", card)
+        self.btn_open_project.setObjectName("btnOpenProjectEmpty")
+        self.btn_open_project.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_open_project.clicked.connect(self.open_project_requested.emit)
+        buttons_row.addWidget(self.btn_open_project)
+
+        card_layout.addLayout(buttons_row)
+
+        self.empty_dnd_lbl = QLabel("", card)
+        self.empty_dnd_lbl.setObjectName("emptyHintLabel")
+        self.empty_dnd_lbl.setWordWrap(True)
+        self.empty_dnd_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(self.empty_dnd_lbl)
+
+        self.recent_files_box = QFrame(card)
+        self.recent_files_box.setObjectName("emptyRecentBox")
+        self._recent_layout = QVBoxLayout(self.recent_files_box)
+        self._recent_layout.setContentsMargins(0, 8, 0, 0)
+        self._recent_layout.setSpacing(4)
+        self.empty_recent_title_lbl = QLabel("", self.recent_files_box)
+        self.empty_recent_title_lbl.setObjectName("emptySectionLabel")
+        self._recent_layout.addWidget(self.empty_recent_title_lbl)
+        self._recent_items_layout = QVBoxLayout()
+        self._recent_items_layout.setSpacing(2)
+        self._recent_layout.addLayout(self._recent_items_layout)
+        self.recent_files_box.setVisible(False)
+        card_layout.addWidget(self.recent_files_box)
 
         overlay_layout.addWidget(card, alignment=Qt.AlignmentFlag.AlignCenter)
         self.retranslate_ui()
         self.show_empty_state()
+
+    def set_recent_files(self, entries: list[dict[str, str]]) -> None:
+        """Обновить список недавних файлов на экране пустого состояния."""
+        if not hasattr(self, "_recent_items_layout"):
+            return
+        while self._recent_items_layout.count():
+            item = self._recent_items_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        valid_entries = [e for e in (entries or []) if isinstance(e, dict) and e.get("path")][:5]
+        if not valid_entries:
+            self.recent_files_box.setVisible(False)
+            return
+
+        for entry in valid_entries:
+            kind = str(entry.get("kind") or "project")
+            path_str = str(entry.get("path") or "")
+            label = str(entry.get("label") or Path(path_str).name)
+            prefix = "📁" if kind == "project" else "🗺"
+            btn = QPushButton(f"{prefix}  {label}", self.recent_files_box)
+            btn.setObjectName("recentFileLink")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setToolTip(path_str)
+            btn.clicked.connect(lambda _checked=False, k=kind, p=path_str: self.recent_file_requested.emit(k, p))
+            self._recent_items_layout.addWidget(btn)
+
+        self.recent_files_box.setVisible(True)
 
     def retranslate_ui(self) -> None:
         """Обновление локализованных текстов элементов холста."""
@@ -1122,6 +1161,12 @@ class MapCanvas(QGraphicsView):
             self.empty_hint_lbl.setText(tr("startup.instruction"))
         if hasattr(self, "btn_open_map"):
             self.btn_open_map.setText(tr("startup.open_map_btn"))
+        if hasattr(self, "btn_open_project"):
+            self.btn_open_project.setText(tr("startup.open_project_btn"))
+        if hasattr(self, "empty_dnd_lbl"):
+            self.empty_dnd_lbl.setText(tr("startup.drag_drop_hint"))
+        if hasattr(self, "empty_recent_title_lbl"):
+            self.empty_recent_title_lbl.setText(tr("startup.recent_files"))
 
         if hasattr(self, "_scale_overlay") and self._scale_overlay.is_indicator_visible():
             self.update_scale_indicator()

@@ -69,6 +69,12 @@ class AppSettingsService:
     KEY_OBJECT_EXPORT_PROJECTED_PRECISION = "object_export/projected_precision"
     KEY_OBJECT_EXPORT_DELIMITER = "object_export/delimiter"
     KEY_OBJECT_EXPORT_BOM = "object_export/bom"
+    KEY_STARTUP_BEHAVIOR = "general/startup_behavior"
+    KEY_DISTANCE_UNIT = "coordinates/distance_unit"
+    KEY_NETWORK_TIMEOUT_SEC = "network/timeout_sec"
+    KEY_UPDATES_AUTO_CHECK = "updates/auto_check"
+    KEY_UPDATES_LAST_CHECK_UTC = "updates/last_check_utc"
+    KEY_UPDATES_LAST_SUCCESS_UTC = "updates/last_success_utc"
     MAX_RECENT_ITEMS = 10
 
     def get_integer(self,key: str,default: int,minimum: int,maximum: int) -> int:
@@ -827,3 +833,63 @@ class AppSettingsService:
     def set_object_export_bom(self, enabled: bool) -> None:
         """Сохранить флаг включения UTF-8 BOM."""
         self._set_bool(self.KEY_OBJECT_EXPORT_BOM, enabled)
+
+    # --- Общие, сеть и автообновления ---
+    def get_startup_behavior(self, default: str = "empty") -> str:
+        """Получить поведение при запуске ('empty' | 'restore_last_project')."""
+        val = self._get_str(self.KEY_STARTUP_BEHAVIOR, default).lower()
+        return val if val in ("empty", "restore_last_project") else default
+
+    def set_startup_behavior(self, mode: str) -> None:
+        """Сохранить поведение при запуске."""
+        clean = mode.strip().lower()
+        if clean in ("empty", "restore_last_project"):
+            self._set_str(self.KEY_STARTUP_BEHAVIOR, clean)
+
+    def get_distance_unit(self, default: str = "auto") -> str:
+        """Получить единицы измерения расстояний ('auto' | 'm' | 'km')."""
+        val = self._get_str(self.KEY_DISTANCE_UNIT, default).lower()
+        return val if val in ("auto", "m", "km") else default
+
+    def set_distance_unit(self, unit: str) -> None:
+        """Сохранить единицы измерения расстояний."""
+        clean = unit.strip().lower()
+        if clean in ("auto", "m", "km"):
+            self._set_str(self.KEY_DISTANCE_UNIT, clean)
+
+    def get_network_timeout_sec(self, default: int = 15) -> int:
+        """Получить таймаут сетевых запросов (5-120 сек)."""
+        raw = self._get_str(self.KEY_NETWORK_TIMEOUT_SEC, str(default))
+        try:
+            val = int(raw)
+            return val if 5 <= val <= 120 else default
+        except (ValueError, TypeError):
+            return default
+
+    def set_network_timeout_sec(self, timeout_sec: int) -> None:
+        """Сохранить таймаут сетевых запросов."""
+        self._set_str(self.KEY_NETWORK_TIMEOUT_SEC, str(max(5, min(120, int(timeout_sec)))))
+
+    def get_auto_check_updates(self, default: bool = True) -> bool:
+        """Получить флаг автоматической проверки обновлений при запуске."""
+        return self._get_bool(self.KEY_UPDATES_AUTO_CHECK, default=default)
+
+    def set_auto_check_updates(self, enabled: bool) -> None:
+        """Сохранить флаг автоматической проверки обновлений."""
+        self._set_bool(self.KEY_UPDATES_AUTO_CHECK, enabled)
+
+    def get_last_update_check_utc(self) -> str:
+        """Получить ISO UTC отметку последней попытки проверки обновлений."""
+        return self._get_str(self.KEY_UPDATES_LAST_CHECK_UTC, "")
+
+    def set_last_update_check_utc(self, iso_utc: str) -> None:
+        """Сохранить ISO UTC отметку последней попытки проверки обновлений."""
+        self._set_str(self.KEY_UPDATES_LAST_CHECK_UTC, str(iso_utc).strip())
+
+    def get_last_update_success_utc(self) -> str:
+        """Получить ISO UTC отметку последней успешной проверки обновлений."""
+        return self._get_str(self.KEY_UPDATES_LAST_SUCCESS_UTC, "")
+
+    def set_last_update_success_utc(self, iso_utc: str) -> None:
+        """Сохранить ISO UTC отметку последней успешной проверки обновлений."""
+        self._set_str(self.KEY_UPDATES_LAST_SUCCESS_UTC, str(iso_utc).strip())

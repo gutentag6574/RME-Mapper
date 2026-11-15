@@ -28,6 +28,8 @@ class LightPalette:
     TEXT_DISABLED = "#A0AEC0"
     ACCENT = "#2563EB"
     ACCENT_HOVER = "#1D4ED8"
+    PRIMARY_BTN_BG = "#2563EB"
+    PRIMARY_BTN_HOVER = "#1D4ED8"
     ACCENT_PRESSED = "#1E40AF"
     ACCENT_LIGHT = "#EFF6FF"
     DANGER = "#DC2626"
@@ -232,12 +234,12 @@ def get_light_stylesheet(palette=None) -> str:
         border-color: {c.BORDER};
     }}
     QPushButton:default {{
-        background-color: {c.ACCENT};
+        background-color: {c.PRIMARY_BTN_BG};
         color: #FFFFFF;
-        border-color: {c.ACCENT};
+        border-color: {c.PRIMARY_BTN_BG};
         font-weight: 600;
     }}
-    QPushButton:default:hover {{ background-color: {c.ACCENT_HOVER}; }}
+    QPushButton:default:hover {{ background-color: {c.PRIMARY_BTN_HOVER}; border-color: {c.PRIMARY_BTN_HOVER}; }}
 
     QGroupBox {{
         color: {c.TEXT_PRIMARY};
@@ -507,6 +509,8 @@ class DarkPalette(LightPalette):
     TEXT_MUTED = "#94A3B8"
     TEXT_DISABLED = "#94A3B8"
     ACCENT = "#93C5FD"
+    PRIMARY_BTN_BG = "#2563EB"
+    PRIMARY_BTN_HOVER = "#3B82F6"
     ACCENT_LIGHT = "#1E3A5F"
     SELECTION_BG = "#1E40AF"
     SELECTION_TEXT = "#FFFFFF"
@@ -531,14 +535,211 @@ def get_shared_widget_stylesheet(c):
     QWidget {{ color: {c.TEXT_PRIMARY}; }}
     QDialog, QWizard, QTabWidget::pane {{ background: {c.BG_APP}; }}
     QTabWidget::pane {{ border: 1px solid {c.BORDER}; border-radius: 6px; }}
-    QTabBar::tab {{ background: {c.BG_PANEL}; padding: 8px 14px; border-bottom: 2px solid transparent; }}
+    QTabBar::tab {{ background: {c.BG_PANEL}; padding: 6px 8px; border-bottom: 2px solid transparent; }}
     QTabBar::tab:selected {{ background: {c.BG_HOVER}; border-bottom-color: {c.ACCENT}; }}
     QPlainTextEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QTreeWidget, QListWidget {{
         background: {c.BG_PANEL}; color: {c.TEXT_PRIMARY}; border: 1px solid {c.BORDER}; border-radius: 4px;
     }}
     QGroupBox {{ border: 1px solid {c.BORDER}; border-radius: 6px; margin-top: 10px; padding: 12px; }}
     QGroupBox::title {{ subcontrol-origin: margin; left: 10px; }}
+
+    /* --- Hydrogen Visual System Tokens --- */
+    QWidget {{
+        font-family: "Segoe UI", "Inter", Arial, sans-serif;
+        font-size: 13px;
+    }}
+    QLabel {{
+        font-size: 13px;
+    }}
+    QStatusBar QLabel {{
+        font-size: 12px;
+        padding: 2px 6px;
+    }}
+    QPushButton {{
+        min-height: 24px;
+        padding: 4px 12px;
+        border-radius: 5px;
+    }}
+    QPushButton:focus, QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QListWidget:focus {{
+        border: 1px solid {c.BORDER_FOCUS};
+        outline: none;
+    }}
+    QPushButton#primaryAccentBtn {{
+        background-color: {c.PRIMARY_BTN_BG};
+        color: #FFFFFF;
+        border: 1px solid {c.PRIMARY_BTN_BG};
+        font-weight: 600;
+    }}
+    QPushButton#primaryAccentBtn:hover {{
+        background-color: {c.PRIMARY_BTN_HOVER};
+        border-color: {c.PRIMARY_BTN_HOVER};
+    }}
+    QPushButton#primaryAccentBtn:disabled {{
+        background-color: {c.BORDER};
+        border-color: {c.BORDER};
+        color: {c.TEXT_MUTED};
+    }}
+    QToolBar#mainToolBar {{
+        background-color: {c.BG_PANEL};
+        border-bottom: 1px solid {c.BORDER};
+        padding: 4px 8px;
+        spacing: 4px;
+    }}
+    QToolBar#mainToolBar QToolButton {{
+        min-height: 24px;
+        padding: 4px 8px;
+        border-radius: 5px;
+        color: {c.TEXT_PRIMARY};
+        background-color: transparent;
+        border: 1px solid transparent;
+        font-size: 12px;
+    }}
+    QToolBar#mainToolBar QToolButton:hover {{
+        background-color: {c.BG_HOVER};
+        border-color: {c.BORDER};
+    }}
+    QToolBar#mainToolBar QToolButton:checked {{
+        background-color: {c.ACCENT_LIGHT};
+        border: 1px solid {c.ACCENT};
+        color: {c.ACCENT};
+        font-weight: 600;
+    }}
+    QToolBar#mainToolBar QToolButton:disabled {{
+        color: {c.TEXT_MUTED};
+    }}
+    QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
+        background-color: {c.BG_PANEL};
+        color: {c.TEXT_PRIMARY};
+        border: 1px solid {c.BORDER};
+        border-radius: 5px;
+        padding: 4px 8px;
+        min-height: 24px;
+    }}
+    QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {{
+        color: {c.TEXT_MUTED};
+        background-color: {c.BG_APP};
+    }}
+    QCheckBox, QRadioButton {{
+        color: {c.TEXT_PRIMARY};
+        spacing: 6px;
+        font-size: 13px;
+    }}
+    QCheckBox:disabled, QRadioButton:disabled {{
+        color: {c.TEXT_MUTED};
+    }}
+
+    /* --- Empty State Card (Theme-aware) --- */
+    QFrame#emptyStateCard {{
+        background-color: {c.BG_PANEL};
+        border: 1px solid {c.BORDER};
+        border-radius: 8px;
+    }}
+    QLabel#emptyTitleLabel {{
+        font-size: 18px;
+        font-weight: 700;
+        color: {c.TEXT_PRIMARY};
+    }}
+    QLabel#emptyStatusLabel {{
+        font-size: 14px;
+        font-weight: 600;
+        color: {c.TEXT_SECONDARY};
+    }}
+    QLabel#emptyHintLabel {{
+        font-size: 12px;
+        color: {c.TEXT_MUTED};
+    }}
+    QLabel#emptySectionLabel {{
+        font-size: 12px;
+        font-weight: 600;
+        color: {c.TEXT_SECONDARY};
+    }}
+    QPushButton#btnOpenMapCanvas {{
+        background-color: {c.PRIMARY_BTN_BG};
+        color: #FFFFFF;
+        border: 1px solid {c.PRIMARY_BTN_BG};
+        border-radius: 5px;
+        padding: 6px 16px;
+        min-height: 24px;
+        font-size: 13px;
+        font-weight: 600;
+    }}
+    QPushButton#btnOpenMapCanvas:hover {{
+        background-color: {c.PRIMARY_BTN_HOVER};
+        border-color: {c.PRIMARY_BTN_HOVER};
+    }}
+    QPushButton#btnOpenProjectEmpty {{
+        background-color: {c.BG_APP};
+        color: {c.TEXT_PRIMARY};
+        border: 1px solid {c.BORDER};
+        border-radius: 5px;
+        padding: 6px 16px;
+        min-height: 24px;
+        font-size: 13px;
+        font-weight: 600;
+    }}
+    QPushButton#btnOpenProjectEmpty:hover {{
+        background-color: {c.BG_HOVER};
+        border-color: {c.ACCENT};
+        color: {c.ACCENT};
+    }}
+    QPushButton#recentFileLink {{
+        background-color: transparent;
+        color: {c.TEXT_PRIMARY};
+        border: 1px solid transparent;
+        border-radius: 4px;
+        padding: 4px 8px;
+        min-height: 20px;
+        text-align: left;
+        font-size: 12px;
+    }}
+    QPushButton#recentFileLink:hover {{
+        background-color: {c.ACCENT_LIGHT};
+        color: {c.ACCENT};
+    }}
+
+    /* --- Settings Dialog Sidebar --- */
+    QListWidget#settingsNavList {{
+        background-color: {c.BG_PANEL};
+        border: 1px solid {c.BORDER};
+        border-radius: 6px;
+        padding: 4px;
+        outline: none;
+    }}
+    QListWidget#settingsNavList::item {{
+        padding: 8px 10px;
+        border-radius: 4px;
+        color: {c.TEXT_PRIMARY};
+    }}
+    QListWidget#settingsNavList::item:hover {{
+        background-color: {c.BG_HOVER};
+    }}
+    QListWidget#settingsNavList::item:selected {{
+        background-color: {c.ACCENT_LIGHT};
+        color: {c.ACCENT};
+        font-weight: 600;
+    }}
+
+    /* --- Update Notification Banner --- */
+    QFrame#updateNotificationBanner {{
+        background-color: {c.ACCENT_LIGHT};
+        border-bottom: 1px solid {c.ACCENT_BORDER};
+        padding: 4px 12px;
+    }}
+    QLabel#updateBannerLabel {{
+        color: {c.TEXT_PRIMARY};
+        font-size: 13px;
+        font-weight: 500;
+    }}
+    QLabel#activeToolPill {{
+        background-color: {c.ACCENT_LIGHT};
+        color: {c.ACCENT};
+        border: 1px solid {c.ACCENT_BORDER};
+        border-radius: 4px;
+        padding: 2px 8px;
+        font-size: 12px;
+        font-weight: 600;
+    }}
     QToolTip {{ background: {c.BG_PANEL}; color: {c.TEXT_PRIMARY}; border: 1px solid {c.BORDER}; }}
-    QScrollArea {{ background: {c.BG_APP}; }}
+    QScrollArea, QWidget#settingsScrollViewport, QWidget#settingsPage {{ background: {c.BG_APP}; }}
     QComboBox QAbstractItemView {{ background: {c.BG_PANEL}; color: {c.TEXT_PRIMARY}; selection-background-color: {c.SELECTION_BG}; }}
     """

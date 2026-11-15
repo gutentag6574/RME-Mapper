@@ -1059,7 +1059,14 @@ def test_med01_groups_panel_and_validation_search(qapp, monkeypatch):
         item_all = panel.groups_tree.topLevelItem(0)
         assert item_all is not None
         pos = panel.groups_tree.visualItemRect(item_all).center()
-        monkeypatch.setattr(QMenu, "exec", lambda *a, **kw: None)
+
+        class _NoopMenu(QMenu):
+            def exec(self, *args, **kwargs):
+                return None
+
+        import rme_mapper.ui.panels.groups_panel as groups_panel_mod
+
+        monkeypatch.setattr(groups_panel_mod, "QMenu", _NoopMenu)
         panel._show_context_menu(pos)
     finally:
         panel.close()

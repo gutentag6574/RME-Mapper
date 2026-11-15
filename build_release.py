@@ -165,11 +165,17 @@ def clean_build_artifacts() -> None:
 def build_standalone(spec_file: Path) -> Path:
     """Запуск сборки Standalone onedir через PyInstaller."""
     log(f"Запуск сборки PyInstaller по спецификации {spec_file.name}...")
+    pyinstaller_cmd: list[str]
     pyinstaller_exe = find_pyinstaller_executable()
-    if not pyinstaller_exe:
-        raise FileNotFoundError("PyInstaller не найден в PATH или .venv/Scripts")
+    if pyinstaller_exe:
+        pyinstaller_cmd = [pyinstaller_exe]
+    else:
+        import importlib.util
+        if importlib.util.find_spec("PyInstaller") is None:
+            raise FileNotFoundError("PyInstaller не найден в PATH, .venv/Scripts или sys.executable -m PyInstaller")
+        pyinstaller_cmd = [sys.executable, "-m", "PyInstaller"]
 
-    cmd = [pyinstaller_exe, "--noconfirm", "--clean", str(spec_file)]
+    cmd = [*pyinstaller_cmd, "--noconfirm", "--clean", str(spec_file)]
     subprocess.run(cmd, cwd=PROJECT_ROOT, check=True)
 
     dist_dir = PROJECT_ROOT / "dist" / "GeoPointMapper"
@@ -394,6 +400,11 @@ def main() -> int:
         log("Синхронизация версий успешно выполнена (--sync-only).")
         return 0
 
+    if "--verify-only" in sys.argv:
+        if not check_version_consistency(app_version):
+            return 1
+        return 0 if verify_release_bundle(PROJECT_ROOT / "release", app_version) else 1
+
     skip_pyinstaller = "--skip-pyinstaller" in sys.argv
 
     # 1. Проверка окружения
@@ -489,9 +500,62 @@ def main() -> int:
         for art in artifacts:
             f.write(f"{art['sha256']}  {art['path']}\n")
 
+    if not verify_release_bundle(PROJECT_ROOT / "release", app_version):
+        return 1
+
     elapsed = datetime.datetime.now() - start_time
     log(f"=== СБОРКА РЕЛИЗА УСПЕШНО ЗАВЕРШЕНА ЗА {elapsed.total_seconds():.1f} с ===")
     return 0
+
+
+def verify_release_bundle(release_dir: Path, expected_version: str) -> bool:
+    """Проверка согласованности release_manifest.json, SHA256SUMS.txt и артефактов релиза."""
+    manifest_file = release_dir / "release_manifest.json"
+    if not manifest_file.exists():
+        error(f"Не найден файл манифеста: {manifest_file}")
+        return False
+
+    try:
+        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    except Exception as e:
+        error(f"Ошибка чтения release_manifest.json: {e}")
+        return False
+
+    if str(manifest.get("version", "")).strip() != expected_version:
+        error(
+            f"Версия в release_manifest.json ({manifest.get('version')}) != {expected_version}"
+        )
+        return False
+
+    required_names = {
+        f"GeoPointMapper-{expected_version}-Setup-x64.exe",
+        f"GeoPointMapper-{expected_version}-portable.zip",
+    }
+    found_names: set[str] = set()
+    for art in manifest.get("artifacts", []):
+        name = art.get("name", "")
+        rel_path = art.get("path", "")
+        art_file = release_dir / rel_path
+        if not art_file.exists():
+            error(f"Артефакт из манифеста отсутствует: {art_file}")
+            return False
+        actual_size = art_file.stat().st_size
+        actual_sha256 = compute_sha256(art_file).lower()
+        if actual_size != art.get("size_bytes"):
+            error(f"Размер {name} не совпадает с манифестом: {actual_size} != {art.get('size_bytes')}")
+            return False
+        if actual_sha256 != str(art.get("sha256", "")).lower():
+            error(f"SHA-256 для {name} не совпадает с манифестом!")
+            return False
+        found_names.add(name)
+
+    missing = required_names - found_names
+    if missing:
+        error(f"В release_manifest.json отсутствуют обязательные артефакты: {sorted(missing)}")
+        return False
+
+    log("[+] Проверка целостности release_manifest.json и артефактов пройдена успешно.")
+    return True
 
 if __name__ == "__main__":
     sys.exit(main())

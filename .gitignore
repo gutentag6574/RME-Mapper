@@ -47,6 +47,14 @@ htmlcov/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+# Documentation (excluded from GitHub repository)
+docs/
+AUDIT_BUGS_AND_DEAD_TOOLS.md
+BUGS_REPORT_1_1_0.md
+README.md
+RECOMMENDATIONS_AND_ROADMAP.md
+maps/test_map/*.md
+
 # Temporary scratch files
 scratch/
 tools/innosetup/

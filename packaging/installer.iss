@@ -24,6 +24,9 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 ; Per-user installation does not require administrator privileges
 PrivilegesRequired=lowest
+CloseApplications=yes
+CloseApplicationsFilter=*.exe,*.dll,*.pyd
+RestartApplications=no
 OutputDir=..\release\installer
 OutputBaseFilename=GeoPointMapper-{#MyAppVersion}-Setup-x64
 SetupIconFile=..\src\rme_mapper\resources\icon.ico

@@ -3,10 +3,12 @@ from __future__ import annotations
 
 
 import logging
+import os
+import sys
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QEvent, QRect, QSize, Qt
+from PySide6.QtCore import QEvent, QRect, QSize, QStringListModel, QTimer, Qt
 from PySide6.QtGui import QAction, QActionGroup, QFont, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -18,6 +20,8 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMenuBar,
+    QSizePolicy,
+    QCompleter,
     QMessageBox,
     QSplitter,
     QStatusBar,
@@ -58,7 +62,10 @@ from rme_mapper.ui.panels.properties_panel import (
     get_symbol_display_name,
 )
 from rme_mapper.ui.custom_title_bar import CustomTitleBar, Win32FramelessHelper
+from rme_mapper.ui.icon_factory import render_toolbar_icon
 from rme_mapper.ui.theme_manager import get_theme_manager
+from rme_mapper.ui.update_controller import UpdateController, UpdateNotificationBanner
+from rme_mapper.services.update_service import should_run_auto_check
 
 logger = logging.getLogger("rme_mapper.ui.main_window")
 
@@ -269,6 +276,13 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         self.point_controller.undo_manager.add_on_state_changed(self._update_undo_redo_actions)
         self.map_canvas.add_point_mode_cancelled.connect(lambda: self.add_pt_map_action.setChecked(False))
         self.map_canvas.map_point_clicked.connect(lambda mx, my: self.add_pt_map_action.setChecked(False))
+        self.add_pt_map_action.toggled.connect(lambda *_: self._update_active_mode_indicator())
+        if hasattr(self, "move_pt_action"):
+            self.move_pt_action.toggled.connect(lambda *_: self._update_active_mode_indicator())
+        self.measure_distance_action.toggled.connect(lambda *_: self._update_active_mode_indicator())
+        self.measure_area_action.toggled.connect(lambda *_: self._update_active_mode_indicator())
+        self.map_canvas.measurement_cancelled.connect(lambda *_: self._update_active_mode_indicator())
+        self.map_canvas.move_point_mode_cancelled.connect(lambda *_: self._update_active_mode_indicator())
         self.points_panel.selection_changed.connect(self._on_selection_changed_for_actions)
 
         # Сигналы измерений
@@ -291,7 +305,19 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
 
         # Восстановление сохраненного состояния интерфейса
         self.restore_ui_state()
-
+        self._focus_map_active = False
+        self._focus_saved_state = None
+        self._update_check_scheduled = False
+        if hasattr(self, "_finalize_toolbar_right_controls"):
+            self._finalize_toolbar_right_controls()
+        if hasattr(self, "_refresh_toolbar_icons"):
+            self._refresh_toolbar_icons()
+        if hasattr(self, "_apply_compact_toolbar_labels"):
+            self._apply_compact_toolbar_labels()
+        if hasattr(self, "_refresh_empty_state_recent_files"):
+            self._refresh_empty_state_recent_files()
+        if hasattr(self, "_setup_point_search_enhancement"):
+            self._setup_point_search_enhancement()
         self.retranslate_ui()
         self._update_window_title()
 
@@ -558,8 +584,14 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
 
         self.view_menu.addSeparator()
 
-        # Подменю: Подписи точек
-        self.point_labels_menu = self.view_menu.addMenu("")
+        self.focus_map_action = QAction(self)
+        self.focus_map_action.setCheckable(True)
+        self.focus_map_action.setShortcut(QKeySequence("F11"))
+        self.focus_map_action.toggled.connect(self.toggle_focus_map_mode)
+        self.view_menu.addAction(self.focus_map_action)
+
+        # Синхронизированные глобальные параметры карты (настройка в едином окне Настройки)
+        self.point_labels_menu = QMenu(self)
         self.labels_group = QActionGroup(self)
         self.labels_group.setExclusive(True)
 
@@ -611,13 +643,11 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         self.show_points_action.setCheckable(True)
         self.show_points_action.setChecked(True)
         self.show_points_action.triggered.connect(self._toggle_show_points)
-        self.view_menu.addAction(self.show_points_action)
 
         self.show_zones_action = QAction(self)
         self.show_zones_action.setCheckable(True)
         self.show_zones_action.setChecked(True)
         self.show_zones_action.triggered.connect(self._toggle_show_zones)
-        self.view_menu.addAction(self.show_zones_action)
 
         self.view_menu.addSeparator()
 
@@ -625,19 +655,17 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         self.toggle_scale_action.setCheckable(True)
         self.toggle_scale_action.setChecked(self._settings_service.get_show_scale_indicator())
         self.toggle_scale_action.toggled.connect(self._toggle_scale_indicator)
-        self.view_menu.addAction(self.toggle_scale_action)
 
         self.toggle_grid_action = QAction(self)
         self.toggle_grid_action.setCheckable(True)
         self.toggle_grid_action.setChecked(self._settings_service.get_show_coordinate_grid())
         self.toggle_grid_action.toggled.connect(self._toggle_coordinate_grid)
-        self.view_menu.addAction(self.toggle_grid_action)
 
         # Меню: Настройки
         self.settings_menu = menu_bar.addMenu("")
 
-        # Подменю: Язык (Language) внутри меню Настройки
-        self.language_menu = self.settings_menu.addMenu("")
+        # Языковые QAction сохранены для программной синхронизации; интерфейс переключения — в SettingsDialog
+        self.language_menu = QMenu(self)
         self.lang_group = QActionGroup(self)
         self.lang_group.setExclusive(True)
 
@@ -659,20 +687,23 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         else:
             self.lang_ru_action.setChecked(True)
 
-        self.settings_menu.addSeparator()
         self.clear_tile_cache_action = QAction(self)
         self.clear_tile_cache_action.triggered.connect(self.clear_online_tile_cache)
-        self.settings_menu.addAction(self.clear_tile_cache_action)
 
-        # Меню: Справка
-        self.help_menu = menu_bar.addMenu("")
+        self.check_updates_action = QAction(self)
+        self.check_updates_action.triggered.connect(self._open_updates_in_settings)
+        self.settings_menu.addAction(self.check_updates_action)
+        self.settings_menu.addSeparator()
+
+        self.help_about_action = QAction(self)
+        self.help_about_action.triggered.connect(lambda: self.open_preferences(section="help_about"))
+        self.settings_menu.addAction(self.help_about_action)
+
         self.quick_start_action = QAction(self)
         self.quick_start_action.triggered.connect(self.show_quick_start)
-        self.help_menu.addAction(self.quick_start_action)
-        self.help_menu.addSeparator()
         self.about_action = QAction(self)
         self.about_action.triggered.connect(self.show_about_dialog)
-        self.help_menu.addAction(self.about_action)
+        self.settings_menu.addAction(self.about_action)
 
     def _create_toolbar(self) -> None:
         """Создание компактной верхней панели инструментов."""
@@ -775,6 +806,8 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         self.btn_open_map = self.map_canvas.btn_open_map
         self.btn_open_map_center = self.map_canvas.btn_open_map
         self.map_canvas.btn_open_map.clicked.connect(lambda: self.open_map())
+        self.map_canvas.open_project_requested.connect(lambda: self.open_project())
+        self.map_canvas.recent_file_requested.connect(self._on_empty_recent_clicked)
         center_layout.addWidget(self.map_canvas, stretch=1)
         self.splitter.addWidget(self.center_panel)
 
@@ -795,6 +828,13 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         self.workspace_splitter.addWidget(self.points_panel)
         self.workspace_splitter.setStretchFactor(0, 1)
         self.workspace_splitter.setStretchFactor(1, 0)
+
+        self.update_controller = UpdateController(self._settings_service, parent=self)
+        self.update_controller.check_finished.connect(self._on_update_check_finished_main)
+        self.update_banner = UpdateNotificationBanner(self.update_controller, self, self)
+        if self.center_panel.layout() is not None:
+            self.center_panel.layout().insertWidget(0, self.update_banner)
+
         self.setCentralWidget(self.workspace_splitter)
 
         # Ссылки обратной совместимости с существующими тестами
@@ -900,6 +940,11 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         self.map_title_label.setText(title)
         if self.map_controller.active_crs and hasattr(self, "map_crs_label"):
             self.map_crs_label.setText(self.map_controller.active_crs)
+
+        self._refresh_empty_state_recent_files()
+        if hasattr(self, "_refresh_point_search_completer"):
+            self._refresh_point_search_completer()
+        self._update_active_mode_indicator()
 
     def _on_points_count_changed(self, total: int, shown: int) -> None:
         """Обновление счетчика точек в строке состояния."""
@@ -1008,19 +1053,23 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
             if can_undo:
                 desc = self.point_controller.undo_manager.undo_description
                 self.undo_action.setText(f"{tr('action.undo')}: {desc}" if desc else tr("action.undo"))
-                self.undo_action.setToolTip(f"{tr('tooltip.undo')}: {desc}" if desc else tr("tooltip.undo"))
+                self.undo_action.setToolTip(
+                    f"{tr('tooltip.undo')}: {desc} (Ctrl+Z)" if desc else f"{tr('tooltip.undo')} (Ctrl+Z)"
+                )
             else:
                 self.undo_action.setText(tr("action.undo"))
-                self.undo_action.setToolTip(tr("tooltip.undo"))
+                self.undo_action.setToolTip(f"{tr('tooltip.undo')} (Ctrl+Z)")
         if hasattr(self, "redo_action"):
             self.redo_action.setEnabled(can_redo)
             if can_redo:
                 desc = self.point_controller.undo_manager.redo_description
                 self.redo_action.setText(f"{tr('action.redo')}: {desc}" if desc else tr("action.redo"))
-                self.redo_action.setToolTip(f"{tr('tooltip.redo')}: {desc}" if desc else tr("tooltip.redo"))
+                self.redo_action.setToolTip(
+                    f"{tr('tooltip.redo')}: {desc} (Ctrl+Y)" if desc else f"{tr('tooltip.redo')} (Ctrl+Y)"
+                )
             else:
                 self.redo_action.setText(tr("action.redo"))
-                self.redo_action.setToolTip(tr("tooltip.redo"))
+                self.redo_action.setToolTip(f"{tr('tooltip.redo')} (Ctrl+Y)")
 
     def _toggle_add_point_on_map(self, checked: bool) -> None:
         """Переключение режима интерактивного создания точки кликом по карте."""
@@ -1360,9 +1409,14 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
             self.export_objects_action.setStatusTip(tr("action.export_objects_tip"))
         if hasattr(self, "view_menu"):
             self.view_menu.setTitle(tr("menu.view"))
+        if hasattr(self, "focus_map_action"):
+            self.focus_map_action.setText(tr("action.focus_map"))
+            self.focus_map_action.setToolTip(tr("tooltip.focus_map"))
         self.settings_menu.setTitle(tr("menu.settings"))
-        self.language_menu.setTitle(tr("menu.language"))
-        self.help_menu.setTitle(tr("menu.help"))
+        if hasattr(self, "check_updates_action"):
+            self.check_updates_action.setText(tr("settings.btn_check_updates"))
+        if hasattr(self, "help_about_action"):
+            self.help_about_action.setText(tr("settings.help_and_about"))
 
         self.new_action.setText(tr("action.new_project"))
         self.open_action.setText(tr("action.open_project"))
@@ -1462,11 +1516,11 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
             self.tools_menu.setTitle(tr("menu.tools"))
         if hasattr(self, "measure_distance_action"):
             self.measure_distance_action.setText(tr("action.measure_distance"))
-            self.measure_distance_action.setToolTip(tr("tooltip.measure_distance"))
+            self.measure_distance_action.setToolTip(f"{tr('tooltip.measure_distance')} (Ctrl+Shift+M)")
             self.measure_distance_action.setStatusTip(tr("action.measure_distance_tip"))
         if hasattr(self, "measure_area_action"):
             self.measure_area_action.setText(tr("action.measure_area"))
-            self.measure_area_action.setToolTip(tr("tooltip.measure_area"))
+            self.measure_area_action.setToolTip(f"{tr('tooltip.measure_area')} (Ctrl+Shift+G)")
             self.measure_area_action.setStatusTip(tr("action.measure_area_tip"))
         if hasattr(self, "clear_measurements_action"):
             self.clear_measurements_action.setText(tr("action.clear_measurements"))
@@ -1486,6 +1540,15 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         self.map_canvas.retranslate_ui()
         if hasattr(self, "point_controller"):
             self.point_controller.retranslate_ui()
+
+        if hasattr(self, "preferences_action"):
+            self.preferences_action.setToolTip(f"{tr('audit.preferences')} (Ctrl+,)")
+        if hasattr(self, "update_banner"):
+            self.update_banner.retranslate_ui()
+        if hasattr(self, "_apply_compact_toolbar_labels"):
+            self._apply_compact_toolbar_labels()
+        if hasattr(self, "_update_active_mode_indicator"):
+            self._update_active_mode_indicator()
 
         self._apply_runtime_capabilities()
 
@@ -1520,6 +1583,8 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
                 self.status_points_label.setVisible(False)
             self.statusBar().showMessage(tr("status.no_map"))
             self._update_map_dependent_actions(False)
+        self._refresh_empty_state_recent_files()
+        self._update_active_mode_indicator()
 
         if hasattr(self, "points_panel"):
             self._on_points_count_changed(self.points_panel.total_count, self.points_panel.shown_count)
@@ -1645,6 +1710,8 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         if hasattr(self, "map_crs_label"):
             self.map_crs_label.setText("")
         self._update_map_dependent_actions(False)
+        self._refresh_empty_state_recent_files()
+        self._update_active_mode_indicator()
 
     def _update_recent_projects_menu(self) -> None:
         """Динамическое заполнение подменю 'Недавние проекты'."""
@@ -1677,6 +1744,7 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
 
     def _clear_recent_projects(self) -> None:
         self._settings_service.clear_recent_projects()
+        self._refresh_empty_state_recent_files()
 
     def _update_recent_maps_menu(self) -> None:
         """Динамическое заполнение подменю 'Недавние карты'."""
@@ -1709,6 +1777,7 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
 
     def _clear_recent_maps(self) -> None:
         self._settings_service.clear_recent_maps()
+        self._refresh_empty_state_recent_files()
 
     def dragEnterEvent(self, event: Any) -> None:
         """Обработка события входа курсора при перетаскивании файлов."""
@@ -1784,6 +1853,7 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         if hasattr(self, "title_bar"):
             self.title_bar.set_maximized(self.isMaximized())
             self.title_bar.update_theme()
+        self._maybe_schedule_startup_tasks()
 
     def changeEvent(self, event: Any) -> None:
         """Обновление состояния кнопки развертывания и темы шапки."""
@@ -1809,6 +1879,8 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
     def closeEvent(self, event: Any) -> None:
         """Обработка события закрытия окна с проверкой несохраненных изменений."""
         if self.project_controller.maybe_save_prompt(tr("dialog.unsaved_action_exit")):
+            if getattr(self, "_focus_map_active", False):
+                self.toggle_focus_map_mode(False)
             self.save_ui_state()
             self.project_controller.cleanup_on_exit()
             try:
@@ -2201,3 +2273,335 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
     @property
     def group_service(self) -> GroupService:
         return self._group_service
+
+    # -------------------------------------------------------------------------
+    # Hydrogen UI: панель инструментов, режим фокуса, недавние файлы, поиск и автообновления
+    # -------------------------------------------------------------------------
+
+    def _finalize_toolbar_right_controls(self) -> None:
+        """Разместить справа индикатор режима, кнопку фокуса и шестерёнку настроек."""
+        if not hasattr(self, "main_toolbar") or hasattr(self, "_toolbar_right_ready"):
+            return
+        self._toolbar_right_ready = True
+
+        spacer = QWidget(self.main_toolbar)
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.main_toolbar.addWidget(spacer)
+
+        self.active_mode_label = QLabel("", self.main_toolbar)
+        self.active_mode_label.setObjectName("activeToolPill")
+        self.active_mode_label.setVisible(False)
+        self._active_mode_action = self.main_toolbar.addWidget(self.active_mode_label)
+        self._active_mode_action.setVisible(False)
+
+        if hasattr(self, "focus_map_action"):
+            self.main_toolbar.addAction(self.focus_map_action)
+            focus_btn = self.main_toolbar.widgetForAction(self.focus_map_action)
+            if focus_btn is not None:
+                focus_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+
+        if hasattr(self, "preferences_action"):
+            self.main_toolbar.addAction(self.preferences_action)
+            gear_btn = self.main_toolbar.widgetForAction(self.preferences_action)
+            if gear_btn is not None:
+                gear_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+
+    def _refresh_toolbar_icons(self) -> None:
+        """Обновить все иконки верхней панели в едином стиле под активную тему."""
+        try:
+            tm = get_theme_manager()
+            pal = tm.get_palette()
+            fg = pal.TEXT_PRIMARY
+            accent = pal.ACCENT
+        except Exception:
+            fg = "#1E293B"
+            accent = "#2563EB"
+
+        mapping = (
+            ("open_map_action", "open_map"),
+            ("open_action", "open_project"),
+            ("save_action", "save"),
+            ("undo_action", "undo"),
+            ("redo_action", "redo"),
+            ("add_pt_action", "add_point"),
+            ("fit_map_action", "fit_map"),
+            ("measure_distance_action", "measure_distance"),
+            ("measure_area_action", "measure_area"),
+            ("export_map_image_action", "export"),
+            ("focus_map_action", "focus_map"),
+            ("preferences_action", "settings"),
+        )
+        for attr, icon_kind in mapping:
+            act = getattr(self, attr, None)
+            if act is not None:
+                act.setIcon(render_toolbar_icon(icon_kind, fg, accent))
+
+    def _apply_compact_toolbar_labels(self) -> None:
+        """Установить лаконичные подписи кнопок тулбара без изменения текста в меню."""
+        mapping = (
+            ("open_map_action", "toolbar.open_map"),
+            ("open_action", "toolbar.open_project"),
+            ("save_action", "action.save"),
+            ("add_pt_action", "toolbar.group_point"),
+            ("export_map_image_action", "toolbar.group_export"),
+        )
+        for attr, key in mapping:
+            act = getattr(self, attr, None)
+            if act is not None:
+                act.setIconText(tr(key))
+
+    def _update_active_mode_indicator(self) -> None:
+        """Отобразить активный режим взаимодействия с картой."""
+        if not hasattr(self, "active_mode_label"):
+            return
+        has_map = (
+            self.map_controller.active_profile is not None
+            or self.map_controller.map_path is not None
+            or (bool(getattr(self.map_canvas, "active_crs", "")) and self.map_canvas.is_online_map_active())
+        )
+        if hasattr(self, "_active_mode_action"):
+            self._active_mode_action.setVisible(has_map)
+        self.active_mode_label.setVisible(has_map)
+        if not has_map:
+            return
+        if getattr(self, "add_pt_map_action", None) and self.add_pt_map_action.isChecked():
+            self.active_mode_label.setText(tr("toolbar.mode_add_point"))
+        elif getattr(self, "move_pt_action", None) and self.move_pt_action.isChecked():
+            self.active_mode_label.setText(tr("toolbar.mode_move_point"))
+        elif getattr(self, "measure_distance_action", None) and self.measure_distance_action.isChecked():
+            self.active_mode_label.setText(tr("toolbar.mode_measure_distance"))
+        elif getattr(self, "measure_area_action", None) and self.measure_area_action.isChecked():
+            self.active_mode_label.setText(tr("toolbar.mode_measure_area"))
+        else:
+            self.active_mode_label.setText(tr("toolbar.mode_pan"))
+
+    def toggle_focus_map_mode(self, enabled: bool) -> None:
+        """Временно скрыть боковые панели и таблицу точек (режим 'Фокус на карте')."""
+        enabled = bool(enabled)
+        if enabled == getattr(self, "_focus_map_active", False):
+            return
+
+        if enabled:
+            self._focus_saved_state = {
+                "left_visible": self.left_panel.isVisible(),
+                "right_visible": self.right_panel.isVisible(),
+                "points_visible": self.points_panel.isVisible(),
+                "splitter_sizes": self.splitter.sizes(),
+                "workspace_sizes": self.workspace_splitter.sizes(),
+            }
+            self._focus_map_active = True
+            self.left_panel.setVisible(False)
+            self.right_panel.setVisible(False)
+            self.points_panel.setVisible(False)
+        else:
+            saved = getattr(self, "_focus_saved_state", None) or {}
+            self._focus_map_active = False
+            self.left_panel.setVisible(bool(saved.get("left_visible", True)))
+            self.right_panel.setVisible(bool(saved.get("right_visible", False)))
+            self.points_panel.setVisible(bool(saved.get("points_visible", True)))
+            sp_sizes = saved.get("splitter_sizes")
+            if isinstance(sp_sizes, list) and len(sp_sizes) == 3:
+                self.splitter.setSizes(sp_sizes)
+            ws_sizes = saved.get("workspace_sizes")
+            if isinstance(ws_sizes, list) and len(ws_sizes) == 2:
+                self.workspace_splitter.setSizes(ws_sizes)
+            self._focus_saved_state = None
+
+        if hasattr(self, "focus_map_action"):
+            self.focus_map_action.blockSignals(True)
+            self.focus_map_action.setChecked(self._focus_map_active)
+            self.focus_map_action.blockSignals(False)
+
+    def _refresh_empty_state_recent_files(self) -> None:
+        """Обновить список недавних проектов и карт на пустом экране."""
+        if not hasattr(self, "map_canvas") or not hasattr(self.map_canvas, "set_recent_files"):
+            return
+        entries: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for path_str in self._settings_service.get_recent_projects():
+            p = Path(path_str)
+            if p.exists() and path_str not in seen:
+                seen.add(path_str)
+                entries.append({"kind": "project", "path": path_str, "label": p.name})
+        for path_str in self._settings_service.get_recent_maps():
+            p = Path(path_str)
+            if p.exists() and path_str not in seen:
+                seen.add(path_str)
+                entries.append({"kind": "map", "path": path_str, "label": p.name})
+        self.map_canvas.set_recent_files(entries[:5])
+
+    def _on_empty_recent_clicked(self, kind: str, path_str: str) -> None:
+        if kind == "project":
+            self._open_recent_project(path_str)
+        else:
+            self._open_recent_map(path_str)
+
+    def _open_updates_in_settings(self) -> None:
+        self.open_preferences(section="updates")
+        if hasattr(self, "update_controller") and not self.update_controller.is_checking:
+            self.update_controller.start_check(manual=True)
+
+    def _on_update_check_finished_main(self, result: Any, manual: bool) -> None:
+        """Обработка результата проверки обновлений на уровне главного окна."""
+        if not manual:
+            return
+        if getattr(result, "status", "") == "error":
+            # Если открыт SettingsDialog, он сам покажет ошибку с кнопкой 'Повторить'
+            active_modal = QApplication.activeModalWidget()
+            if active_modal is not None:
+                return
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setWindowTitle(tr("updates.retry_dialog_title"))
+            box.setText(tr("updates.error_prefix", message=result.error_message))
+            retry_btn = box.addButton(tr("updates.btn_retry"), QMessageBox.ButtonRole.AcceptRole)
+            box.addButton(QMessageBox.StandardButton.Close)
+            box.exec()
+            if box.clickedButton() == retry_btn:
+                self.update_controller.start_check(manual=True)
+
+    def _maybe_schedule_startup_tasks(self) -> None:
+        """Выполнить стартовые фоновые задачи один раз при первом показе окна."""
+        if getattr(self, "_startup_tasks_ran", False):
+            return
+        self._startup_tasks_ran = True
+
+        # Автозапуск последнего проекта (если включён и окно без загруженного проекта/карты)
+        if not os.environ.get("PYTEST_CURRENT_TEST") and "--smoke-test" not in sys.argv:
+            startup = self._settings_service.get_startup_behavior("empty")
+            if (
+                startup == "restore_last_project"
+                and self.project_controller.current_project_path is None
+                and self.map_controller.active_profile is None
+            ):
+                recent = self._settings_service.get_recent_projects()
+                if recent and Path(recent[0]).exists():
+                    QTimer.singleShot(150, lambda p=recent[0]: self.open_project(Path(p)))
+
+        if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("RME_DISABLE_AUTO_UPDATE_CHECK") or "--smoke-test" in sys.argv:
+            return
+        if should_run_auto_check(self._settings_service):
+            QTimer.singleShot(1800, lambda: self.update_controller.start_check(manual=False))
+
+    def sync_from_settings_dialog(self, dlg: Any) -> None:
+        """Двусторонняя синхронизация всех изменений из единого SettingsDialog в MainWindow."""
+        new_lang = str(dlg.language.currentData() or "ru")
+        if new_lang != get_language():
+            self.switch_language(new_lang)
+
+        new_theme = str(dlg.theme.currentData() or "light")
+        if hasattr(self, "set_workspace_theme"):
+            self.set_workspace_theme(new_theme)
+
+        self.set_toolbar_visible(dlg.show_toolbar.isChecked())
+        self.set_left_panel_visible(dlg.show_left_panel.isChecked())
+        self.set_right_panel_visible(dlg.show_right_panel.isChecked())
+        self.set_statusbar_visible(dlg.show_statusbar.isChecked())
+        if hasattr(self, "set_points_bottom"):
+            self.set_points_bottom(dlg.points_bottom.isChecked())
+        if hasattr(self, "set_auto_properties"):
+            self.set_auto_properties(dlg.auto_properties.isChecked())
+
+        if hasattr(self, "toggle_grid_action") and self.toggle_grid_action.isChecked() != dlg.show_grid.isChecked():
+            self.toggle_grid_action.setChecked(dlg.show_grid.isChecked())
+        if hasattr(self, "toggle_scale_action") and self.toggle_scale_action.isChecked() != dlg.show_scale.isChecked():
+            self.toggle_scale_action.setChecked(dlg.show_scale.isChecked())
+        if hasattr(self, "show_points_action") and self.show_points_action.isChecked() != dlg.show_points.isChecked():
+            self.show_points_action.setChecked(dlg.show_points.isChecked())
+            self._toggle_show_points(dlg.show_points.isChecked())
+        if hasattr(self, "show_zones_action") and self.show_zones_action.isChecked() != dlg.show_zones.isChecked():
+            self.show_zones_action.setChecked(dlg.show_zones.isChecked())
+            self._toggle_show_zones(dlg.show_zones.isChecked())
+
+        if hasattr(self, "_set_labels_mode"):
+            self._set_labels_mode(str(dlg.labels_mode.currentData() or "selected"))
+        if hasattr(self, "_set_label_content_mode"):
+            self._set_label_content_mode(str(dlg.label_content.currentData() or "number_name"))
+
+        self.apply_preferences()
+
+    def _setup_point_search_enhancement(self) -> None:
+        """Добавить автодополнение с ведущими нулями для поиска точек на карте."""
+        if not hasattr(self, "navigate_edit"):
+            return
+        self._point_completer_model = QStringListModel(self)
+        self._point_completer = QCompleter(self._point_completer_model, self)
+        self._point_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._point_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self._point_completer.activated.connect(self._on_completer_activated)
+        self.navigate_edit.setCompleter(self._point_completer)
+        if hasattr(self, "points_panel"):
+            self.points_panel.count_changed.connect(lambda *_: self._refresh_point_search_completer())
+        self._refresh_point_search_completer()
+
+    def _refresh_point_search_completer(self) -> None:
+        if not hasattr(self, "_point_completer_model"):
+            return
+        items: list[str] = []
+        for idx, pt in enumerate(self._point_service.get_points(), start=1):
+            num_str = str(pt.object_number).strip() if pt.object_number else str(idx)
+            items.append(f"{num_str} — {pt.name}")
+        self._point_completer_model.setStringList(items)
+
+    def _on_completer_activated(self, selected_text: str) -> None:
+        """Выбор результата из выпадающего списка сразу выделяет точку и центрирует карту."""
+        if " — " in selected_text:
+            num_part, name_part = selected_text.split(" — ", 1)
+            for pt in self._point_service.get_points():
+                if (pt.object_number == num_part or not pt.object_number) and pt.name == name_part:
+                    self._select_and_center_found_point(pt)
+                    return
+        self.navigate_to_input()
+
+    def _select_and_center_found_point(self, point: Any) -> None:
+        """Выделить найденную точку в таблице/на карте и центрировать вид."""
+        self.points_panel.select_point_ids([point.id])
+        if hasattr(self.map_canvas, "set_selected_point_ids"):
+            self.map_canvas.set_selected_point_ids([point.id])
+        if hasattr(self, "sync_properties_visibility"):
+            self.sync_properties_visibility()
+        self.map_canvas.center_on_coordinates(point.longitude, point.latitude, source_crs=point.source_crs)
+
+    def navigate_to_input(self) -> None:
+        """Поиск точки по имени/номеру (с сохранением ведущих нулей) или переход по координатам."""
+        text = self.navigate_edit.text().strip()
+        if not text:
+            return
+        has_map = (
+            self.map_controller.active_profile is not None
+            or self.map_controller.map_path is not None
+            or (bool(getattr(self.map_canvas, "active_crs", "")) and self.map_canvas.is_online_map_active())
+        )
+        if not has_map or not getattr(self.map_canvas, "active_crs", ""):
+            super().navigate_to_input()
+            return
+
+        query_text = text
+        if " — " in query_text:
+            num_part, name_part = query_text.split(" — ", 1)
+            for pt in self._point_service.get_points():
+                if pt.name == name_part and (pt.object_number == num_part or not pt.object_number):
+                    self._select_and_center_found_point(pt)
+                    return
+
+        q_cf = query_text.casefold()
+        points = self._point_service.get_points()
+        # 1. Точное совпадение (сохраняя ведущие нули!)
+        for idx, pt in enumerate(points, start=1):
+            row_label = str(pt.object_number).strip() if pt.object_number else str(idx)
+            if pt.name.casefold() == q_cf or (pt.object_number and str(pt.object_number).strip().casefold() == q_cf) or row_label.casefold() == q_cf:
+                self._select_and_center_found_point(pt)
+                return
+        # 2. Подстрочное совпадение (только если запрос не похож на пару координат)
+        matches = [
+            pt for pt in points
+            if q_cf in pt.name.casefold() or (pt.object_number and q_cf in str(pt.object_number).casefold())
+        ]
+        if matches:
+            self._select_and_center_found_point(matches[0])
+            if len(matches) > 1:
+                self.statusBar().showMessage(tr("search.results_count", count=len(matches)), 3000)
+            return
+
+        # 3. Координатный переход (делегируем исходной логике)
+        super().navigate_to_input()
