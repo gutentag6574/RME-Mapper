@@ -149,8 +149,15 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         map_path: Path | str | None = None,
         backend: MapDataBackend | None = None,
         project_path: Path | str | None = None,
+        license_controller: Any | None = None,
+        license_service: Any | None = None,
+        license_locked: bool = False,
     ) -> None:
         super().__init__(parent)
+        self._license_locked: bool = bool(license_locked)
+        self._license_controller: Any | None = license_controller
+        self._license_service: Any | None = license_service
+        self._force_closing_unlicensed: bool = False
         self._frameless_helper = Win32FramelessHelper()
         self._apply_default_geometry()
 
@@ -322,14 +329,15 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         self._update_window_title()
 
         # Проверка аварийного снимка при запуске
-        self._check_recovery_snapshot_on_startup()
+        if not self._license_locked:
+            self._check_recovery_snapshot_on_startup()
 
         # Загрузка проекта или карты при старте при наличии параметров
-        if project_path is not None:
+        if not self._license_locked and project_path is not None:
             self.open_project(project_path)
-        elif map_profile is not None:
+        elif not self._license_locked and map_profile is not None:
             self.load_map(map_profile)
-        elif map_path is not None:
+        elif not self._license_locked and map_path is not None:
             self.load_map(map_path)
         elif (
             self.map_controller.active_profile is None
@@ -337,6 +345,9 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
             and not self.project_controller.is_project_active
         ):
             self._unload_map()
+
+        if self._license_locked:
+            self.set_license_locked(True)
 
     def _setup_ui(self) -> None:
         """Инициализация компонентов интерфейса."""
@@ -517,18 +528,18 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         # Меню: Импорт / Экспорт
         self.import_menu = menu_bar.addMenu("")
         self.import_points_action = QAction(self)
-        self.import_points_action.triggered.connect(lambda: self.import_controller.open_import_wizard())
+        self.import_points_action.triggered.connect(lambda: self.open_import_points_workflow())
         self.import_menu.addAction(self.import_points_action)
         self.export_menu = menu_bar.addMenu("")
 
         self.export_map_image_action = QAction(self)
         self.export_map_image_action.setShortcut(QKeySequence("Ctrl+Shift+E"))
-        self.export_map_image_action.triggered.connect(lambda: self.export_controller.open_export_dialog())
+        self.export_map_image_action.triggered.connect(lambda: self.open_export_map_workflow())
         self.export_map_image_action.setEnabled(False)
         self.export_menu.addAction(self.export_map_image_action)
 
         self.export_objects_action = QAction(self)
-        self.export_objects_action.triggered.connect(lambda: self.export_controller.open_export_objects_dialog())
+        self.export_objects_action.triggered.connect(lambda: self.open_export_objects_workflow())
         self.export_objects_action.setEnabled(False)
         self.export_menu.addAction(self.export_objects_action)
 
@@ -948,8 +959,9 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
 
     def _on_points_count_changed(self, total: int, shown: int) -> None:
         """Обновление счетчика точек в строке состояния."""
+        unlocked = not getattr(self, "_license_locked", False)
         if hasattr(self, "export_objects_action"):
-            self.export_objects_action.setEnabled(total > 0)
+            self.export_objects_action.setEnabled(unlocked and total > 0)
 
         if self.map_controller.active_profile is None and self.map_controller.map_path is None:
             if hasattr(self, "status_points_label"):
@@ -972,6 +984,7 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
 
     def _update_map_dependent_actions(self, enabled: bool) -> None:
         """Включение/выключение действий, зависящих от наличия активной карты."""
+        enabled = bool(enabled) and not getattr(self, "_license_locked", False)
         if hasattr(self,"measure_bar"):
             self.measure_bar.setVisible(enabled)
         if hasattr(self, "add_pt_action"):
@@ -1801,6 +1814,10 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
 
     def dropEvent(self, event: Any) -> None:
         """Обработка сброса перетащенных файлов."""
+        if getattr(self, "_license_locked", False):
+            event.ignore()
+            self._guard_license_unlocked()
+            return
         if not event.mimeData().hasUrls():
             event.ignore()
             return
@@ -1878,7 +1895,11 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
 
     def closeEvent(self, event: Any) -> None:
         """Обработка события закрытия окна с проверкой несохраненных изменений."""
-        if self.project_controller.maybe_save_prompt(tr("dialog.unsaved_action_exit")):
+        if getattr(self, "_license_controller", None) is not None:
+            self._license_controller.stop()
+        if getattr(self, "_force_closing_unlicensed", False) or self.project_controller.maybe_save_prompt(
+            tr("dialog.unsaved_action_exit")
+        ):
             if getattr(self, "_focus_map_active", False):
                 self.toggle_focus_map_mode(False)
             self.save_ui_state()
@@ -1894,16 +1915,162 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
 
 
     # -------------------------------------------------------------------------
+    # Лицензионная блокировка рабочей области и управление жизненным циклом
+    # -------------------------------------------------------------------------
+
+    @property
+    def license_controller(self) -> Any | None:
+        return getattr(self, "_license_controller", None)
+
+    def set_license_controller(self, ctrl: Any | None) -> None:
+        self._license_controller = ctrl
+        if ctrl is not None and getattr(ctrl, "service", None) is not None:
+            self._license_service = ctrl.service
+
+    @property
+    def license_service(self) -> Any | None:
+        return getattr(self, "_license_service", None)
+
+    def set_license_service(self, svc: Any | None) -> None:
+        self._license_service = svc
+
+    def is_license_locked(self) -> bool:
+        return bool(getattr(self, "_license_locked", False))
+
+    def _guard_license_unlocked(self, interactive: bool = True) -> bool:
+        if not getattr(self, "_license_locked", False):
+            return True
+        if interactive:
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(
+                self,
+                tr("license.locked_action_title"),
+                tr("license.locked_action_body"),
+            )
+        return False
+
+    def set_license_locked(self, locked: bool) -> None:
+        """Заблокировать или разблокировать рабочие функции при потере/подтверждении лицензии."""
+        self._license_locked = bool(locked)
+        enabled = not self._license_locked
+        self.setAcceptDrops(enabled)
+
+        for act_name in (
+            "new_action",
+            "open_action",
+            "open_map_action",
+            "import_points_action",
+            "recent_projects_menu",
+            "recent_maps_menu",
+        ):
+            obj = getattr(self, act_name, None)
+            if obj is not None:
+                obj.setEnabled(enabled)
+
+        if self._license_locked:
+            for act_name in (
+                "export_map_image_action",
+                "export_objects_action",
+                "add_pt_action",
+                "add_pt_map_action",
+                "delete_selected_action",
+                "bulk_edit_style_action",
+                "move_pt_action",
+                "btn_add_point",
+                "undo_action",
+                "redo_action",
+                "measure_distance_action",
+                "measure_area_action",
+            ):
+                obj = getattr(self, act_name, None)
+                if obj is not None:
+                    obj.setEnabled(False)
+            if hasattr(self, "points_panel"):
+                self.points_panel.setEnabled(False)
+            if hasattr(self, "groups_panel"):
+                self.groups_panel.setEnabled(False)
+            if hasattr(self, "properties_panel"):
+                self.properties_panel.setEnabled(False)
+            if hasattr(self, "map_canvas"):
+                self.map_canvas.setEnabled(False)
+        else:
+            if hasattr(self, "points_panel"):
+                self.points_panel.setEnabled(True)
+            if hasattr(self, "groups_panel"):
+                self.groups_panel.setEnabled(True)
+            if hasattr(self, "properties_panel"):
+                self.properties_panel.setEnabled(True)
+            if hasattr(self, "map_canvas"):
+                self.map_canvas.setEnabled(True)
+            has_map = (
+                self.map_controller.active_profile is not None
+                or self.map_controller.map_path is not None
+                or (
+                    hasattr(self, "map_canvas")
+                    and bool(getattr(self.map_canvas, "active_crs", ""))
+                    and self.map_canvas.is_online_map_active()
+                )
+            )
+            self._update_map_dependent_actions(has_map)
+            self._update_undo_redo_actions()
+            total = self.points_panel.total_count if hasattr(self, "points_panel") else 0
+            self._on_points_count_changed(total, total)
+
+    def is_project_dirty(self) -> bool:
+        attr = getattr(self.project_controller, "is_modified", False)
+        return bool(attr()) if callable(attr) else bool(attr)
+
+    def save_project_before_license_lock(self) -> bool:
+        """Разрешённое сохранение уже открытого несохранённого проекта при отзыве/истечении лицензии."""
+        return self.save_project()
+
+    def reset_workspace_on_license_loss(self) -> None:
+        """Сбросить рабочую область после обработки несохранённого проекта при потере лицензии."""
+        try:
+            self.project_controller.set_modified(False)
+        except Exception:
+            pass
+        try:
+            self.map_controller.close_map_workflow(prompt=False)
+        except Exception:
+            pass
+
+    def force_close_unlicensed(self) -> None:
+        """Закрыть окно после отказа от повторной активации (несохранённый проект уже обработан)."""
+        self._force_closing_unlicensed = True
+        self.close()
+
+    def open_import_points_workflow(self, file_path: Path | str | None = None) -> None:
+        if not self._guard_license_unlocked():
+            return
+        self.import_controller.open_import_wizard(file_path)
+
+    def open_export_map_workflow(self) -> None:
+        if not self._guard_license_unlocked():
+            return
+        self.export_controller.open_export_dialog()
+
+    def open_export_objects_workflow(self) -> None:
+        if not self._guard_license_unlocked():
+            return
+        self.export_controller.open_export_objects_dialog()
+
+    # -------------------------------------------------------------------------
     # Делегирование методов контроллерам для обратной совместимости
     # -------------------------------------------------------------------------
 
     def open_map(self, map_target: MapProfile | Path | str | None = None) -> bool:
+        if not self._guard_license_unlocked():
+            return False
         return self.map_controller.open_map_workflow(map_target)
 
     def close_map(self, prompt: bool = True) -> bool:
         return self.map_controller.close_map_workflow(prompt)
 
     def load_map(self, map_target: MapProfile | Path | str) -> None:
+        if not self._guard_license_unlocked():
+            return
         self.map_controller.load_map(map_target)
 
     def _unload_map(self) -> None:
@@ -1919,12 +2086,18 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         self.layers_panel.clear_layers()
 
     def show_add_point_dialog(self) -> None:
+        if not self._guard_license_unlocked():
+            return
         self.point_controller.add_point_workflow()
 
     def edit_selected_point(self) -> None:
+        if not self._guard_license_unlocked():
+            return
         self.point_controller.edit_point_workflow()
 
     def delete_selected_point(self, confirm: bool = False) -> None:
+        if not self._guard_license_unlocked():
+            return
         self.point_controller.delete_point_workflow(confirm=confirm)
 
     # -------------------------------------------------------------------------
@@ -2174,6 +2347,8 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         self.properties_panel.clear()
 
     def new_project(self) -> bool:
+        if not self._guard_license_unlocked():
+            return False
         return self.project_controller.new_project_workflow()
 
     def save_project(self) -> bool:
@@ -2183,6 +2358,8 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         return self.project_controller.save_project_as_workflow(file_path)
 
     def open_project(self, file_path: Path | str | None = None) -> bool:
+        if not self._guard_license_unlocked():
+            return False
         return self.project_controller.open_project_workflow(file_path)
 
     def _maybe_save_prompt(self, action_name: str | None = None) -> bool:

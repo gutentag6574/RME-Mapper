@@ -113,8 +113,13 @@ hiddenimports = [
     "rasterio._shim",
     "affine",
     "certifi",
+    "cryptography",
+    "cryptography.exceptions",
+    "cryptography.hazmat.primitives.asymmetric.ed25519",
+    "cryptography.hazmat.primitives.serialization",
 ]
 hiddenimports += collect_submodules("rme_mapper")
+hiddenimports += collect_submodules("cryptography")
 hiddenimports += collect_submodules("rasterio")
 hiddenimports += collect_submodules("pyogrio", filter=lambda name: ".tests" not in name and not name.endswith(".tests"))
 
@@ -131,10 +136,13 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[str(SPECPATH / "packaging" / "ux_preview_runtime.py")] if os.environ.get("GPM_UX_PREVIEW_BUILD") == "1" else [],
     excludes=[
+        "license_manager",
         "PyQt5",
         "PyQt6",
         "PySide2",
         "tkinter",
+        "license_manager",
+        "license_server",
         "matplotlib",
         "IPython",
         "scipy.optimize",
@@ -157,7 +165,7 @@ a = Analysis(
 if sys.platform == "win32":
     a.binaries = [entry for entry in a.binaries if Path(entry[0]).name.lower() != "icuuc.dll"]
 
-_forbidden_data_parts = {"tests", "scratch", "__pycache__", ".pytest_cache", ".git", ".venv"}
+_forbidden_data_parts = {"tests", "scratch", "__pycache__", ".pytest_cache", ".git", ".venv", "license_manager", "license_server"}
 a.datas = [
     entry
     for entry in a.datas

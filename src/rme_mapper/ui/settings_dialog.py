@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 
 from rme_mapper.app_info import APP_NAME, APP_VERSION
 from rme_mapper.i18n import tr
+from rme_mapper.services.license_service import LicenseCheckResult, LicenseService
 from rme_mapper.services.tile_cache import TileDiskCache
 from rme_mapper.services.update_service import (
     INSTALL_MODE_INSTALLED,
@@ -69,7 +70,7 @@ def _scroll_wrap(widget: QWidget, parent: QWidget | None = None) -> QScrollArea:
 
 
 class SettingsDialog(QDialog):
-    """Единый 6-раздельный диалог настроек с двусторонней синхронизацией."""
+    """Единый 7-раздельный диалог настроек с двусторонней синхронизацией."""
 
     SECTION_KEYS = (
         "general",
@@ -77,6 +78,7 @@ class SettingsDialog(QDialog):
         "map_coords",
         "network_cache",
         "updates",
+        "license",
         "help_about",
     )
 
@@ -111,6 +113,7 @@ class SettingsDialog(QDialog):
             tr("settings.section.map_coords"),
             tr("settings.section.network_cache"),
             tr("settings.section.updates"),
+            tr("settings.section.license"),
             tr("settings.section.help_about"),
         ]
         for key, title in zip(self.SECTION_KEYS, section_titles):
@@ -127,6 +130,7 @@ class SettingsDialog(QDialog):
         self._build_map_coords_page()
         self._build_network_cache_page()
         self._build_updates_page()
+        self._build_license_page()
         self._build_help_about_page()
 
         self.nav_list.currentRowChanged.connect(self.stack.setCurrentIndex)
@@ -691,7 +695,171 @@ class SettingsDialog(QDialog):
             self.btn_release_notes.setVisible(False)
 
     # ------------------------------------------------------------------
-    # 6. Справка и о программе
+    # 6. Лицензия
+    # ------------------------------------------------------------------
+    def _get_license_service_and_controller(self) -> tuple[LicenseService, Any | None]:
+        w = self._parent_window
+        ctrl = getattr(w, "license_controller", None) if w is not None else None
+        if ctrl is not None and getattr(ctrl, "service", None) is not None:
+            return ctrl.service, ctrl
+        svc = getattr(w, "license_service", None) if w is not None else None
+        if isinstance(svc, LicenseService):
+            return svc, ctrl
+        return LicenseService(), ctrl
+
+    def _build_license_page(self) -> None:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(4, 4, 12, 4)
+        layout.setSpacing(12)
+
+        grp_status = QGroupBox(tr("license.settings.group_status"), page)
+        form = QFormLayout(grp_status)
+        form.setSpacing(8)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        self.lbl_license_status = QLabel("", grp_status)
+        self.lbl_license_status.setObjectName("lblLicenseStatus")
+        self.lbl_license_status.setWordWrap(True)
+        self.lbl_license_status.setStyleSheet("font-weight: 700;")
+
+        self.lbl_license_key_mask = QLabel("", grp_status)
+        self.lbl_license_key_mask.setObjectName("lblLicenseKeyMask")
+        self.lbl_license_key_mask.setWordWrap(False)
+        self.lbl_license_key_mask.setMinimumWidth(280)
+        self.lbl_license_key_mask.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.lbl_license_key_mask.setStyleSheet("font-family: Consolas, 'Cascadia Mono', monospace;")
+
+        self.lbl_license_expires = QLabel("", grp_status)
+        self.lbl_license_expires.setObjectName("lblLicenseExpires")
+        self.lbl_license_expires.setWordWrap(True)
+
+        self.lbl_license_last_verified = QLabel("", grp_status)
+        self.lbl_license_last_verified.setObjectName("lblLicenseLastVerified")
+        self.lbl_license_last_verified.setWordWrap(True)
+
+        self.lbl_license_list_version = QLabel("", grp_status)
+        self.lbl_license_list_version.setObjectName("lblLicenseListVersion")
+        self.lbl_license_list_version.setWordWrap(True)
+
+        form.addRow(tr("license.settings.status_label"), self.lbl_license_status)
+        form.addRow(tr("license.settings.key_mask_label"), self.lbl_license_key_mask)
+        form.addRow(tr("license.settings.license_expires_label"), self.lbl_license_expires)
+        form.addRow(tr("license.settings.last_verified_label"), self.lbl_license_last_verified)
+        form.addRow(tr("license.settings.list_version_label"), self.lbl_license_list_version)
+        layout.addWidget(grp_status)
+
+        grp_actions = QGroupBox(tr("license.settings.group_actions"), page)
+        act_lay = QVBoxLayout(grp_actions)
+        act_lay.setSpacing(10)
+
+        hint = QLabel(tr("license.settings.hint"), grp_actions)
+        hint.setWordWrap(True)
+        act_lay.addWidget(hint)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        self.btn_license_recheck = QPushButton(tr("license.settings.btn_check_now"), grp_actions)
+        self.btn_license_recheck.setObjectName("btnLicenseRecheck")
+        self.btn_license_recheck.clicked.connect(self._on_license_recheck_clicked)
+        btn_row.addWidget(self.btn_license_recheck)
+
+        self.btn_license_deactivate = QPushButton(tr("license.settings.btn_deactivate"), grp_actions)
+        self.btn_license_deactivate.setObjectName("btnLicenseDeactivate")
+        self.btn_license_deactivate.clicked.connect(self._on_license_deactivate_clicked)
+        btn_row.addWidget(self.btn_license_deactivate)
+        btn_row.addStretch(1)
+        act_lay.addLayout(btn_row)
+
+        self.lbl_license_feedback = QLabel("", grp_actions)
+        self.lbl_license_feedback.setObjectName("lblLicenseFeedback")
+        self.lbl_license_feedback.setWordWrap(True)
+        self.lbl_license_feedback.setVisible(False)
+        act_lay.addWidget(self.lbl_license_feedback)
+
+        layout.addWidget(grp_actions)
+        layout.addStretch(1)
+        self.stack.addWidget(_scroll_wrap(page, self))
+        self._refresh_license_status_ui()
+
+    def _refresh_license_status_ui(self, res: LicenseCheckResult | None = None) -> None:
+        svc, ctrl = self._get_license_service_and_controller()
+        if res is None:
+            local_res = svc.get_status_snapshot()
+            ctrl_res = getattr(ctrl, "latest_result", None) if ctrl is not None else None
+            if ctrl_res is not None and ctrl_res.authorized == local_res.authorized:
+                res = ctrl_res
+            else:
+                res = local_res
+
+        hours_left = max(1, res.offline_remaining_seconds // 3600) if res.offline_remaining_seconds > 0 else 0
+        if res.status == "active":
+            status_text = tr("license.settings.status_active")
+        elif res.status == "active_offline":
+            status_text = tr("license.settings.status_offline_hours", hours=hours_left)
+        elif res.status == "revoked":
+            status_text = tr("license.settings.status_revoked")
+        elif res.status in ("expired", "offline_expired"):
+            status_text = tr("license.settings.status_expired")
+        elif res.status == "unactivated":
+            status_text = tr("license.settings.status_unlicensed")
+        else:
+            status_text = tr("license.settings.status_active") if res.authorized else (res.message or res.status)
+        self.lbl_license_status.setText(status_text)
+
+        dash = tr("license.settings.not_available")
+        self.lbl_license_key_mask.setText(res.key_mask or dash)
+        self.lbl_license_expires.setText(
+            format_utc_local_display(res.license_expires_at)
+            if res.license_expires_at
+            else (tr("license.settings.no_expiry") if res.authorized else dash)
+        )
+        self.lbl_license_last_verified.setText(
+            format_utc_local_display(res.last_verified_at) if res.last_verified_at else dash
+        )
+        self.lbl_license_list_version.setText(f"v{res.list_version}" if res.list_version > 0 else dash)
+        self.btn_license_deactivate.setEnabled(bool(res.key_mask or res.authorized))
+
+    def _on_license_recheck_clicked(self) -> None:
+        svc, ctrl = self._get_license_service_and_controller()
+        self.btn_license_recheck.setEnabled(False)
+        try:
+            res = ctrl.check_now_sync() if ctrl is not None else svc.verify_online()
+            self._refresh_license_status_ui(res)
+            if res.authorized and res.online_checked:
+                self.lbl_license_feedback.setText(
+                    tr("license.settings.recheck_ok", version=res.list_version)
+                )
+            else:
+                self.lbl_license_feedback.setText(res.message or tr("license.settings.offline_warning", message=""))
+            self.lbl_license_feedback.setVisible(True)
+        finally:
+            self.btn_license_recheck.setEnabled(True)
+
+    def _on_license_deactivate_clicked(self) -> None:
+        svc, ctrl = self._get_license_service_and_controller()
+        if ctrl is not None:
+            ctrl.reset_activation_flow(parent=self)
+            self._refresh_license_status_ui()
+            return
+
+        answer = QMessageBox.question(
+            self,
+            tr("license.reset_confirm_title"),
+            tr("license.reset_confirm_body"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        svc.reset_activation()
+        self._refresh_license_status_ui(svc.get_status_snapshot())
+        self.lbl_license_feedback.setText(tr("license.reset_done_msg"))
+        self.lbl_license_feedback.setVisible(True)
+
+    # ------------------------------------------------------------------
+    # 7. Справка и о программе
     # ------------------------------------------------------------------
     def _build_help_about_page(self) -> None:
         page = QWidget()

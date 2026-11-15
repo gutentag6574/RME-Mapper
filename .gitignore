@@ -22,8 +22,9 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual environments
+# Environment variables & virtual environments
 .env
+.env.*
 .venv
 env/
 venv/
@@ -47,13 +48,33 @@ htmlcov/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+.DS_Store
+
 # Documentation (excluded from GitHub repository)
 docs/
 AUDIT_BUGS_AND_DEAD_TOOLS.md
 BUGS_REPORT_1_1_0.md
+HYDROGEN_TASK.md
 README.md
 RECOMMENDATIONS_AND_ROADMAP.md
 maps/test_map/*.md
+
+# Licensing secrets, owner utility, owner DB, and runtime artifacts
+license_manager/
+LicenseManager.spec
+tools/run_license_manager.bat
+private_key.pem
+*.pem
+*.key
+owner_licenses.db*
+owner_data/
+license_cache.json
+licenses.json
+
+# Runtime logs and local settings
+logs/
+*.log
+app_settings.ini
 
 # Temporary scratch files
 scratch/

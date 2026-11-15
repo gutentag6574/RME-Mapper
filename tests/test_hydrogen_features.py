@@ -74,14 +74,15 @@ def clean_settings():
 def test_settings_dialog_has_six_sections_and_navigation(qapp, clean_settings):
     dlg = SettingsDialog(clean_settings)
     try:
-        assert dlg.nav_list.count() == 6
-        assert dlg.stack.count() == 6
+        assert dlg.nav_list.count() == 7
+        assert dlg.stack.count() == 7
         assert SettingsDialog.SECTION_KEYS == (
             "general",
             "interface",
             "map_coords",
             "network_cache",
             "updates",
+            "license",
             "help_about",
         )
         for idx, sec_key in enumerate(SettingsDialog.SECTION_KEYS):
