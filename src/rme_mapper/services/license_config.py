@@ -11,7 +11,7 @@ LICENSE_LIST_URL: Final[str] = "https://raw.githubusercontent.com/gutentag6574/g
 # Встроенный открытый ключ Ed25519 для проверки подписи списка лицензий
 LICENSE_PUBLIC_KEY_PEM: Final[str] = (
     "-----BEGIN PUBLIC KEY-----\n"
-    "MCowBQYDK2VwAyEALd1QkBWoZXvfTN4+qBb0nJ+6SNtQedcx/jhdb3tyGyo=\n"
+    "MCowBQYDK2VwAyEAEJ/3/kfTsomRKfoxUtX7h1oeVwJIqML4BGf0sag76bg=\n"
     "-----END PUBLIC KEY-----\n"
 )
 
