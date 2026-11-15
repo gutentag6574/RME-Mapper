@@ -238,13 +238,61 @@ def sanitize_asset_filename(filename: str) -> str:
     return base
 
 
+def _new_tls_client_context() -> ssl.SSLContext:
+    """Создать SSLContext без падения, если stdlib-патч ищет PEM рядом с frozen ssl.pyc."""
+    try:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except FileNotFoundError:
+        raw_base = getattr(ssl, "_SSLContext", ssl.SSLContext)
+        ctx = raw_base.__new__(ssl.SSLContext, ssl.PROTOCOL_TLS_CLIENT)
+        meipass = getattr(sys, "_MEIPASS", None)
+        exe_dir = Path(sys.executable).resolve().parent
+        for cand in (
+            *( [Path(meipass) / "codex-rejected-cas.pem"] if meipass else [] ),
+            exe_dir / "_internal" / "codex-rejected-cas.pem",
+            exe_dir / "codex-rejected-cas.pem",
+        ):
+            if cand.is_file():
+                try:
+                    ctx.load_verify_locations(cafile=str(cand))
+                except Exception:
+                    pass
+                break
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    ctx.check_hostname = True
+    return ctx
+
+
 def build_ssl_context() -> ssl.SSLContext:
     """Создать SSL-контекст с доверенными корневыми сертификатами."""
+    candidates: list[Path] = []
     try:
         import certifi
-        return ssl.create_default_context(cafile=certifi.where())
+        candidates.append(Path(certifi.where()))
     except Exception:
-        return ssl.create_default_context()
+        pass
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "certifi" / "cacert.pem")
+    exe_dir = Path(sys.executable).resolve().parent
+    candidates.append(exe_dir / "_internal" / "certifi" / "cacert.pem")
+    candidates.append(exe_dir / "certifi" / "cacert.pem")
+
+    for ca_path in candidates:
+        try:
+            if ca_path.is_file():
+                ctx = _new_tls_client_context()
+                ctx.load_verify_locations(cafile=str(ca_path))
+                return ctx
+        except Exception as exc:
+            logger.debug("Не удалось загрузить CA-файл %s: %s", ca_path, exc)
+
+    ctx = _new_tls_client_context()
+    try:
+        ctx.load_default_certs(ssl.Purpose.SERVER_AUTH)
+    except Exception as exc:
+        logger.warning("Не удалось загрузить системные корневые сертификаты: %s", exc)
+    return ctx
 
 
 def expected_asset_name_for_mode(version: str, install_mode: str) -> str:

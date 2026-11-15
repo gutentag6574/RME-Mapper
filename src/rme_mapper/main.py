@@ -126,9 +126,12 @@ def main() -> int:
             if gpkg_backend is None or raster_backend is None:
                 raise RuntimeError("Бэкенды GeoPackage/GeoTIFF не инициализированы")
 
-            # 5. Валидация криптографии Ed25519 и службы лицензирования
+            # 5. Валидация криптографии Ed25519, SSL и службы лицензирования
             import tempfile
             from rme_mapper.services.credential_store import MemoryCredentialStore
+            from rme_mapper.services.update_service import build_ssl_context
+
+            _ = build_ssl_context()
 
             with tempfile.TemporaryDirectory() as tmp_dir:
                 smoke_lic = LicenseService(

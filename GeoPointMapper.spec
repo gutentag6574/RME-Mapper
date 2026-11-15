@@ -63,12 +63,19 @@ for gc in gdal_candidates:
         gdal_found = True
         break
 
-# 3. Сертификаты certifi
+# 3. Сертификаты certifi и сопутствующий PEM рядом со ssl.py (если присутствует)
 try:
     import certifi
     ca_file = certifi.where()
     if os.path.exists(ca_file):
         datas.append((ca_file, "certifi"))
+except Exception:
+    pass
+try:
+    import ssl as _ssl_mod
+    _rejected_cas = Path(_ssl_mod.__file__).with_name("codex-rejected-cas.pem")
+    if _rejected_cas.is_file():
+        datas.append((str(_rejected_cas), "."))
 except Exception:
     pass
 

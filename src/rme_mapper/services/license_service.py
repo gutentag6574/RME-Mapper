@@ -47,6 +47,10 @@ _B32_BODY_RE = re.compile(r"^[A-Z2-7]{32}$")
 _SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
+class CredentialStorageError(OSError):
+    """Ошибка обращения к хранилищу учётных данных (Windows Credential Manager)."""
+
+
 class LicenseError(RuntimeError):
     """Структурированная ошибка загрузки или проверки лицензии."""
 
@@ -286,8 +290,8 @@ def fetch_signed_list_bytes(
         },
     )
     opener = url_opener or urllib.request.urlopen
-    ctx = build_ssl_context()
     try:
+        ctx = build_ssl_context()
         try:
             resp_ctx = opener(req, timeout=timeout_sec, context=ctx)
         except TypeError:
@@ -297,6 +301,7 @@ def fetch_signed_list_bytes(
     except urllib.error.HTTPError as exc:
         raise LicenseError("network_error", tr("license.err.github_http", code=exc.code)) from exc
     except (urllib.error.URLError, TimeoutError, ssl.SSLError, OSError) as exc:
+        logger.warning("Ошибка HTTPS-загрузки списка лицензий: %s", exc, exc_info=True)
         raise LicenseError("network_error", tr("license.err.network_unavailable")) from exc
 
     if len(raw) > MAX_LIST_BYTES:
@@ -333,7 +338,11 @@ class LicenseService:
         self._timeout_sec = float(timeout_sec)
 
     def _read_json_cred(self, target: str) -> dict[str, Any] | None:
-        raw = self._store.read(target)
+        try:
+            raw = self._store.read(target)
+        except OSError as exc:
+            logger.exception("Ошибка чтения из хранилища учётных данных (%s)", target)
+            raise CredentialStorageError(str(exc)) from exc
         if not raw:
             return None
         try:
@@ -344,7 +353,11 @@ class LicenseService:
 
     def _write_json_cred(self, target: str, payload: dict[str, Any]) -> None:
         raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-        self._store.write(target, raw)
+        try:
+            self._store.write(target, raw)
+        except OSError as exc:
+            logger.exception("Ошибка записи в хранилище учётных данных (%s)", target)
+            raise CredentialStorageError(str(exc)) from exc
 
     def _get_watermark(self) -> int:
         data = self._read_json_cred(CRED_TARGET_WATERMARK)
@@ -471,12 +484,20 @@ class LicenseService:
                 error_code=exc.code,
                 message=exc.message,
             )
-        except OSError as exc:
+        except CredentialStorageError as exc:
             return LicenseCheckResult(
                 authorized=False,
                 status="storage_error",
                 error_code="storage_error",
                 message=tr("license.err.storage_failed", detail=str(exc)),
+            )
+        except OSError as exc:
+            logger.exception("Системная ошибка при загрузке/проверке лицензии")
+            return LicenseCheckResult(
+                authorized=False,
+                status="network_error",
+                error_code="network_error",
+                message=f"{tr('license.err.network_unavailable')} ({exc})",
             )
 
         key_hash = hash_license_key(canonical, self._app_id)
@@ -517,12 +538,20 @@ class LicenseService:
         }
         try:
             self._write_state(state)
-        except OSError as exc:
+        except CredentialStorageError as exc:
             return LicenseCheckResult(
                 authorized=False,
                 status="storage_error",
                 error_code="storage_error",
                 message=tr("license.err.storage_failed", detail=str(exc)),
+            )
+        except OSError as exc:
+            logger.exception("Системная ошибка при загрузке/проверке лицензии")
+            return LicenseCheckResult(
+                authorized=False,
+                status="network_error",
+                error_code="network_error",
+                message=f"{tr('license.err.network_unavailable')} ({exc})",
             )
 
         remaining, _ = self._offline_remaining_sec(now_iso, entry.expires_at, now)
@@ -637,12 +666,20 @@ class LicenseService:
         """Проверить разрешение при запуске до открытия рабочего окна."""
         try:
             state = self._read_state()
-        except OSError as exc:
+        except CredentialStorageError as exc:
             return LicenseCheckResult(
                 authorized=False,
                 status="storage_error",
                 error_code="storage_error",
                 message=tr("license.err.storage_failed", detail=str(exc)),
+            )
+        except OSError as exc:
+            logger.exception("Системная ошибка при загрузке/проверке лицензии")
+            return LicenseCheckResult(
+                authorized=False,
+                status="network_error",
+                error_code="network_error",
+                message=f"{tr('license.err.network_unavailable')} ({exc})",
             )
 
         if state is None:
@@ -669,12 +706,20 @@ class LicenseService:
         """Скачать свежий список с GitHub, проверить подпись/версию и обновить состояние."""
         try:
             state = self._read_state()
-        except OSError as exc:
+        except CredentialStorageError as exc:
             return LicenseCheckResult(
                 authorized=False,
                 status="storage_error",
                 error_code="storage_error",
                 message=tr("license.err.storage_failed", detail=str(exc)),
+            )
+        except OSError as exc:
+            logger.exception("Системная ошибка при загрузке/проверке лицензии")
+            return LicenseCheckResult(
+                authorized=False,
+                status="network_error",
+                error_code="network_error",
+                message=f"{tr('license.err.network_unavailable')} ({exc})",
             )
 
         if state is None:
@@ -721,12 +766,21 @@ class LicenseService:
                 list_version=prev_ver,
                 online_checked=False,
             )
-        except OSError as exc:
+        except CredentialStorageError as exc:
             return LicenseCheckResult(
                 authorized=False,
                 status="storage_error",
                 error_code="storage_error",
                 message=tr("license.err.storage_failed", detail=str(exc)),
+                key_mask=key_mask,
+            )
+        except OSError as exc:
+            logger.exception("Системная ошибка при фоновой проверке лицензии")
+            return LicenseCheckResult(
+                authorized=False,
+                status="network_error",
+                error_code="network_error",
+                message=f"{tr('license.err.network_unavailable')} ({exc})",
                 key_mask=key_mask,
             )
 
@@ -767,12 +821,21 @@ class LicenseService:
         }
         try:
             self._write_state(updated_state)
-        except OSError as exc:
+        except CredentialStorageError as exc:
             return LicenseCheckResult(
                 authorized=False,
                 status="storage_error",
                 error_code="storage_error",
                 message=tr("license.err.storage_failed", detail=str(exc)),
+                key_mask=key_mask,
+            )
+        except OSError as exc:
+            logger.exception("Системная ошибка при фоновой проверке лицензии")
+            return LicenseCheckResult(
+                authorized=False,
+                status="network_error",
+                error_code="network_error",
+                message=f"{tr('license.err.network_unavailable')} ({exc})",
                 key_mask=key_mask,
             )
 
@@ -793,12 +856,20 @@ class LicenseService:
         """Текущее локальное состояние лицензии для отображения в «Настройки → Лицензия»."""
         try:
             state = self._read_state()
-        except OSError as exc:
+        except CredentialStorageError as exc:
             return LicenseCheckResult(
                 authorized=False,
                 status="storage_error",
                 error_code="storage_error",
                 message=tr("license.err.storage_failed", detail=str(exc)),
+            )
+        except OSError as exc:
+            logger.exception("Системная ошибка при загрузке/проверке лицензии")
+            return LicenseCheckResult(
+                authorized=False,
+                status="network_error",
+                error_code="network_error",
+                message=f"{tr('license.err.network_unavailable')} ({exc})",
             )
         if state is None:
             return LicenseCheckResult(

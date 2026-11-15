@@ -105,7 +105,7 @@ class WindowsCredentialStore:
             err = ctypes.get_last_error()
             if err == self.ERROR_NOT_FOUND:
                 return None
-            raise OSError(err, f"CredReadW failed for target ({err})")
+            raise OSError(None, f"CredReadW failed ({err}): {ctypes.FormatError(err).strip()}", None, err)
         try:
             cred = pcred.contents
             size = int(cred.CredentialBlobSize)
@@ -135,7 +135,7 @@ class WindowsCredentialStore:
         ok = self._CredWriteW(ctypes.byref(cred), 0)
         if not ok:
             err = ctypes.get_last_error()
-            raise OSError(err, f"CredWriteW failed ({err})")
+            raise OSError(None, f"CredWriteW failed ({err}): {ctypes.FormatError(err).strip()}", None, err)
 
     def delete(self, target_name: str) -> bool:
         ok = self._CredDeleteW(target_name, self.CRED_TYPE_GENERIC, 0)
@@ -144,7 +144,7 @@ class WindowsCredentialStore:
         err = ctypes.get_last_error()
         if err == self.ERROR_NOT_FOUND:
             return False
-        raise OSError(err, f"CredDeleteW failed ({err})")
+        raise OSError(None, f"CredDeleteW failed ({err}): {ctypes.FormatError(err).strip()}", None, err)
 
 
 def create_default_credential_store() -> CredentialStore:

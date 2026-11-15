@@ -117,5 +117,31 @@ def _setup_gis_environment() -> None:
         except Exception:
             pass
 
+    if is_frozen:
+        try:
+            import ssl as _ssl
+            _orig_ssl_new = _ssl.SSLContext.__new__
+            if not getattr(_orig_ssl_new, "_gpm_patched", False):
+                def _safe_ssl_context_new(cls, protocol=None, *args, **kwargs):
+                    try:
+                        return _orig_ssl_new(cls, protocol, *args, **kwargs)
+                    except FileNotFoundError:
+                        proto = _ssl.PROTOCOL_TLS if protocol is None else protocol
+                        raw_base = getattr(_ssl, "_SSLContext", cls)
+                        ctx = raw_base.__new__(cls, proto)
+                        for base in (*bundle_dirs, exe_dir / "_internal", exe_dir):
+                            pem = base / "codex-rejected-cas.pem"
+                            if pem.is_file():
+                                try:
+                                    raw_base.load_verify_locations(ctx, cafile=str(pem))
+                                except Exception:
+                                    pass
+                                break
+                        return ctx
+                _safe_ssl_context_new._gpm_patched = True  # type: ignore[attr-defined]
+                _ssl.SSLContext.__new__ = staticmethod(_safe_ssl_context_new)  # type: ignore[method-assign]
+        except Exception:
+            pass
+
 _setup_gis_environment()
 
