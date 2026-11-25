@@ -101,6 +101,8 @@ def test_settings_dialog_bidirectional_sync_and_persistence(qapp, clean_settings
         assert "Справка" not in menubar_titles
         assert "Язык" not in menubar_titles
         assert win.preferences_action.shortcut().toString() == "Ctrl+,"
+        assert win.settings_menu.actions() == [win.check_updates_action, win.preferences_action]
+        assert win.preferences_action not in win.main_toolbar.actions()
 
         dlg = SettingsDialog(win._settings_service, win)
         try:

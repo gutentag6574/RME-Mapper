@@ -101,6 +101,11 @@ class ThemeStyleFilter(QObject):
             self.busy = False
 
     def apply(self, dark):
+        import shiboken6
         self.dark = dark
         for widget in QApplication.allWidgets():
-            self.adapt(widget)
+            if shiboken6.isValid(widget):
+                try:
+                    self.adapt(widget)
+                except RuntimeError:
+                    pass

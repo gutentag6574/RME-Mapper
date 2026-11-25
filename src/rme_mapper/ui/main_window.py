@@ -704,17 +704,14 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
         self.check_updates_action = QAction(self)
         self.check_updates_action.triggered.connect(self._open_updates_in_settings)
         self.settings_menu.addAction(self.check_updates_action)
-        self.settings_menu.addSeparator()
 
         self.help_about_action = QAction(self)
         self.help_about_action.triggered.connect(lambda: self.open_preferences(section="help_about"))
-        self.settings_menu.addAction(self.help_about_action)
 
         self.quick_start_action = QAction(self)
         self.quick_start_action.triggered.connect(self.show_quick_start)
         self.about_action = QAction(self)
         self.about_action.triggered.connect(self.show_about_dialog)
-        self.settings_menu.addAction(self.about_action)
 
     def _create_toolbar(self) -> None:
         """Создание компактной верхней панели инструментов."""
@@ -2456,7 +2453,7 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
     # -------------------------------------------------------------------------
 
     def _finalize_toolbar_right_controls(self) -> None:
-        """Разместить справа индикатор режима, кнопку фокуса и шестерёнку настроек."""
+        """Разместить справа индикатор режима и кнопку фокуса."""
         if not hasattr(self, "main_toolbar") or hasattr(self, "_toolbar_right_ready"):
             return
         self._toolbar_right_ready = True
@@ -2476,12 +2473,6 @@ class MainWindow(WorkspaceLayoutMixin, QMainWindow):
             focus_btn = self.main_toolbar.widgetForAction(self.focus_map_action)
             if focus_btn is not None:
                 focus_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-
-        if hasattr(self, "preferences_action"):
-            self.main_toolbar.addAction(self.preferences_action)
-            gear_btn = self.main_toolbar.widgetForAction(self.preferences_action)
-            if gear_btn is not None:
-                gear_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
 
     def _refresh_toolbar_icons(self) -> None:
         """Обновить все иконки верхней панели в едином стиле под активную тему."""

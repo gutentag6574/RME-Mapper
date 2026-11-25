@@ -359,6 +359,33 @@ def test_clean_startup_and_cli_project_blocked_without_license(qapp, tmp_path: P
     assert opened_windows == []
 
 
+def test_activation_dialog_minimal_ui(qapp, tmp_path: Path):
+    from PySide6.QtWidgets import QGroupBox, QLabel, QPushButton
+    from rme_mapper.app_info import APP_NAME
+
+    svc = LicenseService(
+        credential_store=MemoryCredentialStore(),
+        cache_path=tmp_path / "empty_cache.json",
+    )
+    dlg = ActivationDialog(svc)
+    try:
+        assert not hasattr(dlg, "btn_help")
+        assert not hasattr(dlg, "support_label")
+        assert dlg.findChildren(QGroupBox) == []
+        non_status_labels = [lbl for lbl in dlg.findChildren(QLabel) if lbl is not dlg.status_label]
+        assert len(non_status_labels) == 1
+        assert APP_NAME in non_status_labels[0].text()
+        assert dlg.status_label.isHidden()
+        assert [b.objectName() for b in dlg.findChildren(QPushButton)] == ["btnExitUnlicensed", "primaryAccentBtn"]
+
+        # Пустой ключ показывает сообщение об ошибке в status_label
+        dlg._on_activate_clicked()
+        assert not dlg.status_label.isHidden()
+        assert dlg.status_label.text() != ""
+    finally:
+        dlg.close()
+
+
 @_REQUIRES_OWNER_TOOL
 def test_activation_dialog_settings_license_page_and_unsaved_project_save(qapp, tmp_path: Path, monkeypatch):
     clock = _FakeClock()
@@ -374,9 +401,18 @@ def test_activation_dialog_settings_license_page_and_unsaved_project_save(qapp, 
         host.set_file(list_path)
         svc, _ = _make_client_service(owner, host, tmp_path, clock)
 
-        # 1. Окно активации: ошибка без сети, затем успешная активация
+        # 1. Окно активации: минимальный UI (название программы, поле ключа, кнопки), ошибка без сети, затем успешная активация
         host.fail_network = True
         dlg = ActivationDialog(svc)
+        assert not hasattr(dlg, "btn_help")
+        assert not hasattr(dlg, "support_label")
+        from PySide6.QtWidgets import QGroupBox, QLabel, QPushButton
+        from rme_mapper.app_info import APP_NAME
+        assert dlg.findChildren(QGroupBox) == []
+        extra_labels = [lbl for lbl in dlg.findChildren(QLabel) if lbl is not dlg.status_label]
+        assert len(extra_labels) == 1
+        assert APP_NAME in extra_labels[0].text()
+        assert [b.objectName() for b in dlg.findChildren(QPushButton)] == ["btnExitUnlicensed", "primaryAccentBtn"]
         dlg.key_edit.setText(plain_key)
         res_err = svc.activate(plain_key)
         dlg._on_activation_finished(res_err)

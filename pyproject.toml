@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rme-mapper"
-version = "1.1.0"
+version = "1.1.1"
 description = "GeoPoint Mapper — универсальное настольное ГИС-приложение для работы с картами, координатами и геодезическими зонами"
 readme = "README.md"
 requires-python = ">=3.12"
